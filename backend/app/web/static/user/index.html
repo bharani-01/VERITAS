@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Your profile · VERITAS</title>
+    <link rel="stylesheet" href="/user/assets/user.css" />
+    <script>
+      try {
+        if (localStorage.getItem("veritas.user.navCollapsed") === "1") {
+          document.documentElement.classList.add("nav-pref-collapsed");
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div class="app-frame" id="appFrame">
+      <aside id="appNav" class="app-nav"></aside>
+      <main class="admin-main profile-main">
+        <header class="admin-header">
+          <div>
+            <div class="eyebrow">Account</div>
+            <h1>Your profile</h1>
+            <p>Choose a photo, update your name, and manage how you appear in VERITAS.</p>
+          </div>
+        </header>
+        <div id="profile" class="profile-layout" aria-live="polite">
+          <p class="lede">Loading your profile…</p>
+        </div>
+      </main>
+    </div>
+    <script src="/user/assets/user.js"></script>
+  </body>
+</html>

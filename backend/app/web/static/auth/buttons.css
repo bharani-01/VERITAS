@@ -1,0 +1,4 @@
+/* Kept for compatibility — flat controls, no lift/3D. */
+.auth-panel > button:disabled {
+  opacity: 0.6;
+}

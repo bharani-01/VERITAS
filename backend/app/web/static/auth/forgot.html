@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Reset password · VERITAS</title>
+    <link rel="stylesheet" href="/assets/auth.css" />
+  </head>
+  <body>
+    <main class="auth-shell">
+      <section class="brand-pane">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14L12 19 5 5Z" /></svg>
+          </span>
+          VERITAS
+        </div>
+        <div class="brand-copy">
+          <h1>Restore access safely.</h1>
+          <p>Reset links are issued only for active accounts—never confirming whether an email exists.</p>
+        </div>
+        <div class="brand-note">
+          <span>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></svg>
+            Rate limited
+          </span>
+          <span>
+            <svg class="icon" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+            Time-bound tokens
+          </span>
+        </div>
+      </section>
+
+      <section class="form-pane">
+        <form class="auth-panel" id="resetRequestForm">
+          <div class="eyebrow">Password reset</div>
+          <h2>Reset your password</h2>
+          <p class="lede">Enter your email. We send a link only if an active account uses it.</p>
+          <div class="notice" role="status"></div>
+          <div class="field">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" required autocomplete="email" />
+          </div>
+          <button type="submit">Send reset link</button>
+          <div class="links">
+            <a href="/">Return to sign in</a>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/assets/auth.js"></script>
+  </body>
+</html>

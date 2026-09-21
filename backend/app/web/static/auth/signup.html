@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Create a VERITAS account. Email verification and administrator approval required." />
+    <title>Create account · VERITAS</title>
+    <link rel="stylesheet" href="/assets/auth.css" />
+  </head>
+  <body>
+    <main class="auth-shell">
+      <section class="brand-pane">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5h14L12 19 5 5Z" /></svg>
+          </span>
+          VERITAS
+        </div>
+        <div class="brand-copy">
+          <h1>Begin with a verified identity.</h1>
+          <p>After you confirm your work email, an administrator reviews access before activation.</p>
+        </div>
+        <div class="brand-note">
+          <span>
+            <svg class="icon" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" /><path d="m15 9-6 6M9 9l6 6" /></svg>
+            No scan access at signup
+          </span>
+          <span>
+            <svg class="icon" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 11h-6M19 8v6" /></svg>
+            Admin approval required
+          </span>
+        </div>
+      </section>
+
+      <section class="form-pane">
+        <form class="auth-panel" id="signupForm">
+          <div class="eyebrow">New account</div>
+          <h2>Create your account</h2>
+          <p class="lede">Verification and administrator approval are required before sign-in.</p>
+          <div class="notice" role="status"></div>
+          <div class="field">
+            <label for="display_name">Full name</label>
+            <input id="display_name" name="display_name" required maxlength="120" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="email">Work email</label>
+            <input id="email" name="email" type="email" required autocomplete="email" />
+          </div>
+          <div class="field">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" minlength="12" required autocomplete="new-password" />
+            <small>At least 12 characters.</small>
+          </div>
+          <button type="submit">Create account</button>
+          <div class="links">
+            <a href="/">Already have an account?</a>
+          </div>
+        </form>
+      </section>
+    </main>
+    <script src="/assets/auth.js"></script>
+  </body>
+</html>

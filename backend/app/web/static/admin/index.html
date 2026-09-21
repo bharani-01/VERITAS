@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>User management · VERITAS Admin</title>
+    <link rel="stylesheet" href="/admin/assets/admin.css" />
+    <script>
+      try {
+        if (localStorage.getItem("veritas.admin.navCollapsed") === "1") {
+          document.documentElement.classList.add("nav-pref-collapsed");
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div class="app-frame" id="appFrame">
+      <aside id="appNav" class="app-nav"></aside>
+      <main class="admin-main">
+        <header class="admin-header">
+          <div>
+            <div class="eyebrow">Administration</div>
+            <h1>User management</h1>
+            <p>Approve verified users, adjust roles, and review account state.</p>
+          </div>
+        </header>
+        <section class="toolbar" aria-label="Filters">
+          <div class="field-wrap">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+            <input id="search" type="search" placeholder="Search name or email" aria-label="Search users" />
+          </div>
+          <select id="statusFilter" aria-label="Filter by status">
+            <option value="">All account states</option>
+            <option value="pending_approval">Pending approval</option>
+            <option value="pending_verification">Pending verification</option>
+            <option value="active">Active</option>
+            <option value="deactivated">Deactivated</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </section>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Activity</th>
+                <th class="col-actions"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="userRows"></tbody>
+          </table>
+        </div>
+      </main>
+    </div>
+    <script src="/admin/assets/admin.js"></script>
+  </body>
+</html>
