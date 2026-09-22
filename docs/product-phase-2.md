@@ -16,7 +16,7 @@ Phase 2 adds a user **workspace**: projects, scan records (stub lifecycle), and 
 
 ## Out of scope (Phase 3+)
 
-- Real vulnerability scanners / exploit tooling
+- Real vulnerability scanners / exploit tooling — **delivered in Phase 3** (see [product-phase-3.md](product-phase-3.md))
 - Org GitHub Apps, webhooks, CI-driven scans
 - Deployment pipelines and full reporting exports
 

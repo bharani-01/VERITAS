@@ -26,6 +26,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
   const { pathname } = useLocation();
   const dashActive = pathname === "/admin" || pathname === "/admin/";
   const usersActive = pathname.startsWith("/admin/directory");
+  const auditActive = pathname.startsWith("/admin/audit");
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
@@ -100,6 +101,15 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
           <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
         <span className="nav-link-text">Users</span>
+      </Link>
+      <Link className={`nav-link ${auditActive ? "active" : ""}`} to="/admin/audit">
+        <svg className="icon" viewBox="0 0 24 24">
+          <path d="M12 3v18" />
+          <path d="M5 8h14" />
+          <path d="M5 14h10" />
+          <path d="M5 20h7" />
+        </svg>
+        <span className="nav-link-text">Audit</span>
       </Link>
 
       <div

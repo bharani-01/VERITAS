@@ -11,7 +11,7 @@ Use the narrowest agent persona for the task. Prefer reading the matching playbo
 
 ## Workflow
 
-1. Confirm scope in `docs/product.md` and `docs/product-phase-2.md`
+1. Confirm scope in `docs/product.md`, `docs/product-phase-2.md`, and `docs/product-phase-3.md` as needed
 2. Locate the owning package from `docs/architecture.md`
 3. Implement the smallest coherent change
 4. Run relevant tests / smoke the affected routes
@@ -21,6 +21,6 @@ Use the narrowest agent persona for the task. Prefer reading the matching playbo
 
 - Putting business logic back into `main.py`
 - Sharing admin/user nav components
-- Adding Phase 3 engines “while we’re here”
+- Adding Phase 3 engines on unrelated Phase 1 tickets (see [product-phase-3.md](../product-phase-3.md))
 - Trusting client-side GitHub repo selection without server re-check
 - Editing `.env` secrets into the repo

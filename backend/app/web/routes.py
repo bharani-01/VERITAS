@@ -68,6 +68,7 @@ def login_page():
 @router.get("/admin")
 @router.get("/admin/")
 @router.get("/admin/directory")
+@router.get("/admin/audit")
 @router.get("/admin/profile")
 @router.get("/admin/settings")
 def admin_spa():
@@ -88,6 +89,11 @@ def user_spa():
 @router.get("/user/projects/{project_id}")
 def user_project_spa(project_id: str):
     return spa_or_legacy("user")
+
+
+@router.get("/report/{token}")
+def shared_report_spa(token: str):
+    return spa_or_legacy("")
 
 
 @router.get("/signup")

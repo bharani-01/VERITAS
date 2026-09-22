@@ -16,7 +16,7 @@ VERITAS Phase 1 delivers secure account access and administrator-managed user li
 - Identity overview dashboards (`/admin/` metrics + approval queue; `/user/` account home)
 - Separate UI surfaces: public auth, `/admin/`, `/user/`
 
-See also [product-phase-2.md](product-phase-2.md) for workspace projects, stub scans, and Connect GitHub.
+See also [product-phase-2.md](product-phase-2.md) for workspace projects and Connect GitHub, and [product-phase-3.md](product-phase-3.md) for real scan engines.
 
 ## Out of scope (do not implement in Phase 1)
 

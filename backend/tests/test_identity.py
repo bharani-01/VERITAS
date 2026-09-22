@@ -79,7 +79,47 @@ def test_signup_verify_approve_login_and_deactivate():
         )
 
 
-def test_password_reset_revokes_sessions_and_email_change_requires_verification():
+def test_admin_audit_events_list_enrichment_and_auth_required():
+    with fresh_client() as client:
+        health = client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["api"] == "up"
+        assert client.get("/admin/audit-events").status_code == 401
+        assert client.post("/auth/login", json={"email": "admin@veritas.example", "password": "bootstrap-password-123"}).status_code == 200
+        feed = client.get("/admin/audit-events?page_size=20")
+        assert feed.status_code == 200
+        body = feed.json()
+        assert "items" in body
+        assert "total" in body
+        assert "server_time" in body
+        assert body["total"] >= 1
+        assert any(item["action"] == "login_succeeded" for item in body["items"])
+        login_ok = next(item for item in body["items"] if item["action"] == "login_succeeded")
+        assert login_ok["status_code"] == 200
+        assert login_ok["how"]["status_code"] == 200
+        sample = body["items"][0]
+        assert "ip_address" in sample
+        assert "user_agent" in sample
+        assert "actor" in sample
+        assert "who" in sample and "what" in sample and "where" in sample and "how" in sample
+        assert "summary" in sample
+        assert "status_code" in sample
+        assert client.post("/auth/login", json={"email": "admin@veritas.example", "password": "wrong-password"}).status_code == 401
+        for _ in range(12):
+            client.post("/auth/login", json={"email": "admin@veritas.example", "password": "wrong-password"})
+        limited = client.post("/auth/login", json={"email": "admin@veritas.example", "password": "wrong-password"})
+        assert limited.status_code == 429
+        failures = client.get("/admin/audit-events?category=auth_failures")
+        assert failures.status_code == 200
+        fail_actions = {item["action"] for item in failures.json()["items"]}
+        assert "login_failed" in fail_actions
+        assert "rate_limited" in fail_actions
+        assert any(item["status_code"] == 429 for item in failures.json()["items"])
+        workspace = client.get("/admin/audit-events?category=workspace")
+        assert workspace.status_code == 200
+        admin_actions = client.get("/admin/audit-events?category=admin")
+        assert admin_actions.status_code == 200
+
     with fresh_client() as client:
         client.post("/auth/login", json={"email": "admin@veritas.example", "password": "bootstrap-password-123"})
         with db.SessionLocal() as session:

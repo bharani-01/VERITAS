@@ -12,6 +12,7 @@
 - Do not store or log plaintext passwords or raw session/reset tokens
 - Preserve opaque responses on signup/reset where enumeration matters
 - Flag any change that weakens cookie flags, hashing, rate limits, or last-admin protections
+- Audit stays server-side and append-only; do not add client-trusted activity logs or per-query DB auditing
 - Production checklist: PostgreSQL, `APP_ENV=production`, `SESSION_COOKIE_SECURE=true`, Resend configured, bootstrap secrets rotated
 
 ## Review prompts

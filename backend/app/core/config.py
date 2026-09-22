@@ -42,18 +42,21 @@ def _parse_env_file(path: Path) -> dict[str, str]:
 
 
 def reload_env() -> Path:
-    """Load backend/.env into os.environ (override). Returns the path used."""
+    """Load backend/.env into os.environ without clobbering already-set process vars.
+
+    Process environment (including test setup) wins over the file so local/tests
+    can override bootstrap credentials safely.
+    """
     global _ENV_PATH
     path = _env_path()
     _ENV_PATH = path
     for key, value in _parse_env_file(path).items():
-        os.environ[key] = value
-    # Also try python-dotenv if present (optional)
+        os.environ.setdefault(key, value)
     try:
         from dotenv import load_dotenv
 
         if path.is_file():
-            load_dotenv(path, override=True, encoding="utf-8-sig")
+            load_dotenv(path, override=False, encoding="utf-8-sig")
     except Exception:
         pass
     return path
@@ -77,6 +80,10 @@ RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "VERITAS <onboarding@resend.d
 TOKEN_ENCRYPTION_SECRET = os.getenv("TOKEN_ENCRYPTION_SECRET", "") or os.getenv(
     "VERITAS_BOOTSTRAP_ADMIN_PASSWORD", "veritas-dev-token-secret-change-me"
 )
+
+# Optional Phase 3 AI triage (Groq OpenAI-compatible API). Fail-open when unset.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or os.getenv("AI_API_KEY", "")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 def github_client_id() -> str:

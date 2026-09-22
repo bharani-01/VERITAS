@@ -11,8 +11,18 @@ from app.models import User
 from app.schemas.workspace import ProjectCreate, ProjectUpdate, ScanCreate
 from app.services import github as github_svc
 from app.services import projects as project_svc
+from app.services.audit import audit
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
+
+
+def _project_snapshot(project) -> dict:
+    return {
+        "project_id": project.id,
+        "name": project.name,
+        "github_repo_id": project.github_repo_id,
+        "github_repo_full_name": project.github_repo_full_name,
+    }
 
 
 @router.get("/dashboard")
@@ -28,16 +38,37 @@ def list_projects(user: User = Depends(get_current_user), db: Session = Depends(
 @router.post("/projects", status_code=201)
 def create_project(
     body: ProjectCreate,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(db_session),
 ):
-    project = project_svc.create_project(
-        db,
-        user,
-        name=body.name,
-        description=body.description,
-        github_repo_id=body.github_repo_id,
-    )
+    try:
+        project = project_svc.create_project(
+            db,
+            user,
+            name=body.name,
+            description=body.description,
+            github_repo_id=body.github_repo_id,
+            security_level=body.security_level,
+        )
+    except HTTPException as exc:
+        if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
+            audit(
+                db,
+                request,
+                "github_repo_rejected",
+                actor=user,
+                target=user,
+                after={"github_repo_id": body.github_repo_id, "reason": str(exc.detail)},
+                status_code=exc.status_code,
+            )
+            db.commit()
+        raise
+    after = _project_snapshot(project)
+    audit(db, request, "project_created", actor=user, target=user, after=after, status_code=201)
+    if project.github_repo_id is not None:
+        audit(db, request, "github_repo_attached", actor=user, target=user, after=after, status_code=201)
+    db.commit()
     return {"project": project_svc.public_project(project)}
 
 
@@ -51,24 +82,60 @@ def get_project(project_id: str, user: User = Depends(get_current_user), db: Ses
 def patch_project(
     project_id: str,
     body: ProjectUpdate,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(db_session),
 ):
-    project = project_svc.update_project(
-        db,
-        user,
-        project_id,
-        name=body.name,
-        description=body.description,
-        github_repo_id=body.github_repo_id,
-        clear_github=body.clear_github,
-    )
+    before_project = project_svc.get_owned_project(db, user, project_id)
+    before = _project_snapshot(before_project)
+    try:
+        project = project_svc.update_project(
+            db,
+            user,
+            project_id,
+            name=body.name,
+            description=body.description,
+            github_repo_id=body.github_repo_id,
+            clear_github=body.clear_github,
+            security_level=body.security_level,
+            base_url=body.base_url,
+            criticality=body.criticality,
+            notify_email_default=body.notify_email_default,
+            notify_in_app_default=body.notify_in_app_default,
+        )
+    except HTTPException as exc:
+        if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
+            audit(
+                db,
+                request,
+                "github_repo_rejected",
+                actor=user,
+                target=user,
+                after={"project_id": project_id, "github_repo_id": body.github_repo_id, "reason": str(exc.detail)},
+                status_code=exc.status_code,
+            )
+            db.commit()
+        raise
+    after = _project_snapshot(project)
+    audit(db, request, "project_updated", actor=user, target=user, before=before, after=after, status_code=200)
+    if body.github_repo_id is not None and project.github_repo_id is not None:
+        audit(db, request, "github_repo_attached", actor=user, target=user, before=before, after=after, status_code=200)
+    db.commit()
     return {"project": project_svc.public_project(project)}
 
 
 @router.delete("/projects/{project_id}", status_code=204)
-def remove_project(project_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+def remove_project(
+    project_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+):
+    project = project_svc.get_owned_project(db, user, project_id)
+    before = _project_snapshot(project)
     project_svc.delete_project(db, user, project_id)
+    audit(db, request, "project_deleted", actor=user, target=user, before=before, status_code=204)
+    db.commit()
     return None
 
 
@@ -83,12 +150,57 @@ def list_project_scans(project_id: str, user: User = Depends(get_current_user), 
 def create_project_scan(
     project_id: str,
     body: ScanCreate,
+    request: Request,
     user: User = Depends(get_current_user),
     db: Session = Depends(db_session),
 ):
-    scan = project_svc.create_scan(db, user, project_id, target=body.target)
+    scan = project_svc.create_scan(
+        db,
+        user,
+        project_id,
+        target=body.target,
+        security_level=body.security_level,
+        scan_mode=body.scan_mode,
+        notify_email=body.notify_email,
+        notify_in_app=body.notify_in_app,
+        ref=body.ref,
+    )
     project = project_svc.get_owned_project(db, user, project_id)
+    audit(
+        db,
+        request,
+        "scan_started",
+        actor=user,
+        target=user,
+        after={
+            "scan_id": scan.id,
+            "project_id": project.id,
+            "project_name": project.name,
+            "target": scan.target,
+            "source": scan.source,
+            "status": scan.status,
+            "scan_mode": scan.scan_mode,
+            "security_level": scan.security_level,
+            "eta_seconds": scan.eta_seconds,
+        },
+        status_code=201,
+    )
+    db.commit()
     return {"scan": project_svc.public_scan(scan, project.name)}
+
+
+@router.get("/projects/{project_id}/scans/{scan_id}/findings")
+@router.get("/scans/{scan_id}/findings")
+def scan_findings(
+    scan_id: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+    project_id: str | None = None,
+):
+    items = project_svc.list_findings(db, user, scan_id)
+    if project_id is not None:
+        project_svc.get_owned_project(db, user, project_id)
+    return {"items": [project_svc.public_finding(f) for f in items], "total": len(items)}
 
 
 @router.get("/scans")
@@ -105,6 +217,22 @@ def list_scans(
 def get_scan(scan_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
     scan, project = project_svc.get_owned_scan(db, user, scan_id)
     return {"scan": project_svc.public_scan(scan, project.name)}
+
+
+@router.post("/scans/{scan_id}/share")
+def share_scan(scan_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+    scan = project_svc.ensure_share_token(db, user, scan_id)
+    return {
+        "share_token": scan.share_token,
+        "share_url": f"{PUBLIC_APP_URL}/report/{scan.share_token}",
+        "scan": project_svc.public_scan(scan),
+    }
+
+
+@router.delete("/scans/{scan_id}/share")
+def unshare_scan(scan_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+    scan = project_svc.revoke_share_token(db, user, scan_id)
+    return {"shared": False, "scan": project_svc.public_scan(scan)}
 
 
 @router.get("/github/status")
@@ -128,18 +256,50 @@ def github_callback(
     if not code or not state:
         return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error=missing_code", status_code=302)
     try:
-        github_svc.complete_oauth(db, code=code, state=state)
+        conn = github_svc.complete_oauth(db, code=code, state=state)
+        user = db.get(User, conn.user_id)
+        if user:
+            audit(
+                db,
+                request,
+                "github_connected",
+                actor=user,
+                target=user,
+                after={"github_login": conn.github_login, "github_user_id": conn.github_user_id},
+                status_code=302,
+            )
+            db.commit()
     except HTTPException as exc:
         detail = str(exc.detail).replace(" ", "_")[:80]
+        # Best-effort failure audit without a resolved user (state may be invalid).
+        audit(db, request, "github_oauth_failed", after={"reason": str(exc.detail)[:200]}, status_code=302)
+        db.commit()
         return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error={detail}", status_code=302)
     except Exception:
+        audit(db, request, "github_oauth_failed", after={"reason": "oauth_failed"}, status_code=302)
+        db.commit()
         return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error=oauth_failed", status_code=302)
     return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?connected=1", status_code=302)
 
 
 @router.post("/github/disconnect")
-def github_disconnect(user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+def github_disconnect(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+):
+    status = github_svc.connection_status(db, user)
     github_svc.disconnect(db, user)
+    audit(
+        db,
+        request,
+        "github_disconnected",
+        actor=user,
+        target=user,
+        before={"github_login": status.get("github_login"), "connected": status.get("connected")},
+        status_code=200,
+    )
+    db.commit()
     return {"ok": True}
 
 

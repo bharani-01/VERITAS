@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -146,7 +149,7 @@ def patch_user(
             {"revoked_at": utcnow()}
         )
         send_token_email(db, target, "verification")
-    audit(db, request, "user_profile_updated", actor=actor, target=target, before=before, after=snapshot(target))
+    audit(db, request, "user_profile_updated", actor=actor, target=target, before=before, after=snapshot(target), status_code=200)
     db.commit()
     return {"user": public_user(target)}
 
@@ -179,7 +182,7 @@ def transition_user(
             {"revoked_at": utcnow()}
         )
     target.status = new_status
-    audit(db, request, action, actor=actor, target=target, before=before, after=snapshot(target))
+    audit(db, request, action, actor=actor, target=target, before=before, after=snapshot(target), status_code=200)
     send_email(
         db,
         target,
@@ -240,16 +243,108 @@ def reactivate_user(
     )
 
 
+def _user_label(user: User | None) -> dict | None:
+    if not user:
+        return None
+    return {
+        "id": user.id,
+        "display_name": user.display_name,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+    }
+
+
+def _label_from_context(blob: dict | None) -> dict | None:
+    if not blob or not isinstance(blob, dict):
+        return None
+    if not blob.get("id") and not blob.get("email") and not blob.get("display_name"):
+        return None
+    return {
+        "id": blob.get("id"),
+        "display_name": blob.get("display_name") or blob.get("email") or "Unknown",
+        "username": blob.get("username"),
+        "email": blob.get("email"),
+        "role": blob.get("role"),
+    }
+
+
+def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
+    context = None
+    if event.context_json:
+        try:
+            context = json.loads(event.context_json)
+        except json.JSONDecodeError:
+            context = None
+    who = (context or {}).get("who") if isinstance(context, dict) else None
+    actor = users.get(event.actor_user_id) if event.actor_user_id else None
+    target = users.get(event.target_user_id) if event.target_user_id else None
+    actor_label = _user_label(actor) or _label_from_context((who or {}).get("actor") if isinstance(who, dict) else None)
+    target_label = _user_label(target) or _label_from_context((who or {}).get("target") if isinstance(who, dict) else None)
+    geo = (context or {}).get("where", {}).get("geo") if context else None
+    how = (context or {}).get("how") if isinstance(context, dict) else None
+    summary = (context or {}).get("what", {}).get("summary") if context else None
+    status_code = (how or {}).get("status_code") if isinstance(how, dict) else None
+    location_label = None
+    if isinstance(geo, dict):
+        location_label = geo.get("label")
+        if not location_label and geo.get("skipped"):
+            location_label = "Local network" if geo.get("reason") == "private_or_local" else "Unavailable"
+    return {
+        "id": event.id,
+        "actor_user_id": event.actor_user_id,
+        "target_user_id": event.target_user_id,
+        "actor": actor_label,
+        "target": target_label,
+        "action": event.action,
+        "summary": summary or event.action.replace("_", " "),
+        "status_code": status_code,
+        "before_state": event.before_state,
+        "after_state": event.after_state,
+        "ip_address": event.ip_address,
+        "user_agent": event.user_agent,
+        "location_label": location_label,
+        "geo": geo,
+        "context": context,
+        "created_at": event.created_at,
+        "who": {
+            "actor": actor_label,
+            "target": target_label,
+            "actor_is_admin": bool(
+                (actor and actor.role == "admin")
+                or (actor_label and actor_label.get("role") == "admin")
+                or (isinstance(who, dict) and who.get("actor_is_admin"))
+            ),
+        },
+        "what": {"action": event.action, "summary": summary or event.action.replace("_", " ")},
+        "when": event.created_at,
+        "where": {
+            "ip": event.ip_address,
+            "location": location_label,
+            "geo": geo,
+        },
+        "how": {
+            "user_agent": event.user_agent,
+            "method": (how or {}).get("method") if isinstance(how, dict) else None,
+            "path": (how or {}).get("path") if isinstance(how, dict) else None,
+            "status_code": status_code,
+        },
+    }
+
+
 @router.get("/audit-events")
 def list_audit_events(
     actor_id: str | None = None,
     target_id: str | None = None,
     action: str | None = None,
+    category: str | None = None,
     page: int = 1,
     page_size: int = 50,
+    since: str | None = None,
     _: User = Depends(require_admin),
     db: Session = Depends(db_session),
 ):
+    """Append-only audit feed for administrators. Supports filters and live polling via `since`."""
     query = select(AuditEvent)
     if actor_id:
         query = query.where(AuditEvent.actor_user_id == actor_id)
@@ -257,21 +352,67 @@ def list_audit_events(
         query = query.where(AuditEvent.target_user_id == target_id)
     if action:
         query = query.where(AuditEvent.action == action)
+    if category == "auth":
+        query = query.where(
+            AuditEvent.action.in_(
+                [
+                    "login_succeeded",
+                    "login_failed",
+                    "login_blocked_status",
+                    "logout",
+                    "user_signed_up",
+                    "email_verified",
+                    "verification_resent",
+                    "password_reset_requested",
+                    "password_reset_completed",
+                ]
+            )
+        )
+    elif category == "auth_failures":
+        query = query.where(AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]))
+    elif category == "admin":
+        query = query.where(AuditEvent.action.like("user_%"))
+    elif category == "workspace":
+        query = query.where(
+            AuditEvent.action.in_(
+                [
+                    "project_created",
+                    "project_updated",
+                    "project_deleted",
+                    "scan_started",
+                    "github_connected",
+                    "github_disconnected",
+                    "github_oauth_failed",
+                    "github_repo_attached",
+                    "github_repo_rejected",
+                ]
+            )
+        )
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid since timestamp.") from None
+        query = query.where(AuditEvent.created_at > since_dt)
+
     limit = min(max(page_size, 1), 100)
-    events = list(
-        db.scalars(query.order_by(AuditEvent.created_at.desc()).offset((max(page, 1) - 1) * limit).limit(limit))
-    )
+    page = max(page, 1)
+    total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+    events = list(db.scalars(query.order_by(AuditEvent.created_at.desc()).offset((page - 1) * limit).limit(limit)))
+
+    user_ids = {uid for event in events for uid in (event.actor_user_id, event.target_user_id) if uid}
+    users: dict[str, User] = {}
+    if user_ids:
+        users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(list(user_ids)))).all()}
+
     return {
-        "items": [
-            {
-                "id": event.id,
-                "actor_user_id": event.actor_user_id,
-                "target_user_id": event.target_user_id,
-                "action": event.action,
-                "before_state": event.before_state,
-                "after_state": event.after_state,
-                "created_at": event.created_at,
-            }
-            for event in events
-        ]
+        "items": [_serialize_audit_event(event, users) for event in events],
+        "page": page,
+        "page_size": limit,
+        "total": total,
+        "server_time": utcnow(),
     }
+
+
+
+#

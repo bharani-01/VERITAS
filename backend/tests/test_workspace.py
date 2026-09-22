@@ -15,7 +15,7 @@ from app import main
 from app.core import database as db
 from app.core.crypto import encrypt_secret
 from app.core.rate_limit import rate_limiter
-from app.models import GitHubConnection, User
+from app.models import AuditEvent, GitHubConnection, User
 from app.services.tokens import issue_token
 
 
@@ -56,7 +56,7 @@ def _activate_student(client: TestClient) -> str:
     return user_id
 
 
-def test_project_crud_and_stub_scan_lifecycle():
+def test_project_crud_and_scan_lifecycle():
     with fresh_client() as client:
         _activate_student(client)
         created = client.post("/workspace/projects", json={"name": "Alpha", "description": "First project"})
@@ -65,16 +65,33 @@ def test_project_crud_and_stub_scan_lifecycle():
         listed = client.get("/workspace/projects")
         assert listed.status_code == 200
         assert len(listed.json()["items"]) == 1
-        scan = client.post(f"/workspace/projects/{project_id}/scans", json={"target": "example.test"})
+        scan = client.post(
+            f"/workspace/projects/{project_id}/scans",
+            json={"target": "example.test", "scan_mode": "rules_only"},
+        )
         assert scan.status_code == 201
         body = scan.json()["scan"]
         assert body["status"] == "completed"
-        assert body["summary"]["engine"] == "stub"
         assert body["summary"]["findings_count"] == 0
+        assert body["summary"]["scan_mode"] == "rules_only"
+        assert "engines" in body["summary"]
+        findings = client.get(f"/workspace/scans/{body['id']}/findings")
+        assert findings.status_code == 200
+        assert findings.json()["items"] == []
         dash = client.get("/workspace/dashboard")
         assert dash.status_code == 200
         assert dash.json()["totals"]["projects"] == 1
         assert len(dash.json()["recent_scans"]) == 1
+
+        client.post("/auth/logout")
+        assert client.post("/auth/login", json={"email": "admin@veritas.example", "password": "bootstrap-password-123"}).status_code == 200
+        audit = client.get("/admin/audit-events?category=workspace&page_size=50")
+        assert audit.status_code == 200
+        actions = {item["action"] for item in audit.json()["items"]}
+        assert "project_created" in actions
+        assert "scan_started" in actions
+        with db.SessionLocal() as session:
+            assert session.scalar(select(AuditEvent).where(AuditEvent.action == "project_created")) is not None
 
 
 def test_project_ownership_isolation():
@@ -146,6 +163,11 @@ def test_github_foreign_repo_rejected():
             )
         assert res.status_code == 400
         assert "owned by your connected GitHub" in res.json()["detail"]
+        client.post("/auth/logout")
+        assert client.post("/auth/login", json={"email": "admin@veritas.example", "password": "bootstrap-password-123"}).status_code == 200
+        audit = client.get("/admin/audit-events?action=github_repo_rejected")
+        assert audit.status_code == 200
+        assert any(item["action"] == "github_repo_rejected" for item in audit.json()["items"])
 
 
 def test_github_owned_repo_accepted():

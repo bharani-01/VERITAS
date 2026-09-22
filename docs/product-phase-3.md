@@ -1,0 +1,33 @@
+# Product — VERITAS Phase 3 (scanning)
+
+## Purpose
+
+Replace Phase 2 stub scans with real linked-repo analysis: secrets (Gitleaks), SCA (OSV-Scanner), SAST (Semgrep), optional AI triage (Groq API — not local LLM on EC2), progress/ETA, notifications, and finding reports.
+
+## Scan modes
+
+- **rules_only** — deterministic engines only
+- **rules_plus_ai** — same engines + Groq second-pass fields (heuristic until `GROQ_API_KEY` is set for full triage)
+
+## Notifications
+
+Per scan: in-app (`app_notifications`) and/or email (Resend).
+
+## Host requirements
+
+- `git`
+- **Semgrep** via `pip install semgrep` on **Linux/macOS** (in `requirements.txt` with platform marker; runner prefers `python -m semgrep`). Windows local installs skip Semgrep — run real SAST on EC2.
+- `gitleaks`, `osv-scanner` (optional binaries; skipped if missing)
+
+## UX / reporting
+
+- Progress/ETA with friendly labels (not engine names like Semgrep)
+- Engines run in deep coverage mode by default (broader Semgrep packs, git-history secrets, recursive SCA)
+- Report popup with risk-sorted findings, multi-format export (md/json/csv/html), and shareable public links (`/report/{token}`, no login)
+
+## Out of scope (later)
+
+- Full DAST / HTTP corpus (Module 2/4)
+- Local Ollama on t3.medium
+- AWS Bedrock (account model access blocked)
+- VS Code SecureCoder extension

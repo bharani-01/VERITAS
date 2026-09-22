@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.time import utcnow
@@ -20,6 +20,12 @@ class Project(Base):
     github_repo_full_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     github_default_branch: Mapped[str | None] = mapped_column(String(128), nullable=True)
     github_html_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    security_level: Mapped[str] = mapped_column(String(16), default="standard")
+    base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    criticality: Mapped[str] = mapped_column(String(16), default="medium")
+    scan_options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notify_email_default: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_in_app_default: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -32,9 +38,60 @@ class Scan(Base):
     target: Mapped[str] = mapped_column(String(512))
     source: Mapped[str] = mapped_column(String(32), default="manual")
     status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
+    security_level: Mapped[str] = mapped_column(String(16), default="standard")
+    scan_mode: Mapped[str] = mapped_column(String(32), default="rules_only")
+    ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    commit_short: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    commit_message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    commit_author: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    git_history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    share_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
+    progress_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    eta_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notify_email: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class Finding(Base):
+    __tablename__ = "findings"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    scan_id: Mapped[str] = mapped_column(ForeignKey("scans.id"), index=True)
+    engine: Mapped[str] = mapped_column(String(32), index=True)
+    rule_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    vuln_family: Mapped[str] = mapped_column(String(32), default="other", index=True)
+    cwe: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    owasp_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    severity: Mapped[str] = mapped_column(String(16), default="info", index=True)
+    title: Mapped[str] = mapped_column(String(512))
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    line_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    line_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    ai_verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    countermeasures_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class AppNotification(Base):
+    __tablename__ = "app_notifications"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    scan_id: Mapped[str | None] = mapped_column(ForeignKey("scans.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(256))
+    body: Mapped[str] = mapped_column(Text, default="")
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 

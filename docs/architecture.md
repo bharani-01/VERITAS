@@ -34,7 +34,7 @@ VERITAS-Infosec/
 ## Single-server request flow
 
 1. Browser hits FastAPI on one origin (e.g. `:8000`).
-2. Page routes (`/`, `/admin/`, `/admin/directory`, `/user/projects`, …) return the React `index.html`.
+2. Page routes (`/`, `/admin/`, `/admin/directory`, `/admin/audit`, `/user/projects`, …) return the React `index.html`.
 3. JS/CSS load from `/assets/*` (Vite build hashed files).
 4. React calls `/auth/*`, `/admin/*`, and `/workspace/*` JSON APIs with same-origin cookies.
 5. Services persist via SQLAlchemy.
@@ -53,7 +53,9 @@ No separate frontend host is required in production.
 | `audit_events` | Admin/user action trail |
 | `email_deliveries` | Outbound email status |
 | `projects` | User-owned workspace projects (Phase 2) |
-| `scans` | Scan records + stub lifecycle (Phase 2) |
+| `scans` | Scan records + Phase 3 async engines (progress, ETA, summary) |
+| `findings` | Normalized engine findings per scan |
+| `app_notifications` | In-app scan completion notices |
 | `github_connections` | Encrypted GitHub OAuth tokens (Phase 2) |
 
 SQLite is default for local development. Production expects PostgreSQL.

@@ -7,6 +7,7 @@ class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=2000)
     github_repo_id: int | None = None
+    security_level: str = "standard"
 
 
 class ProjectUpdate(BaseModel):
@@ -14,7 +15,17 @@ class ProjectUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     github_repo_id: int | None = None
     clear_github: bool = False
+    security_level: str | None = None
+    base_url: str | None = Field(default=None, max_length=512)
+    criticality: str | None = None
+    notify_email_default: bool | None = None
+    notify_in_app_default: bool | None = None
 
 
 class ScanCreate(BaseModel):
     target: str | None = Field(default=None, min_length=1, max_length=512)
+    security_level: str | None = None
+    scan_mode: str | None = None
+    notify_email: bool | None = None
+    notify_in_app: bool | None = None
+    ref: str | None = Field(default=None, max_length=128)

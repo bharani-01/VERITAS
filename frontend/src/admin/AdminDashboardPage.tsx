@@ -124,6 +124,9 @@ export function AdminDashboardPage() {
         <div className="dash-panel">
           <div className="dash-panel-head">
             <h2>Recent activity</h2>
+            <Link className="btn ghost small" to="/admin/audit">
+              Full audit log
+            </Link>
           </div>
           {!data.recent_events.length ? (
             <div className="empty-state compact">

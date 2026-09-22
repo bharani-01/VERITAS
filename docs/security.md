@@ -28,9 +28,20 @@
 
 Login is blocked unless status is `active`.
 
+## Audit log
+
+- Server-side `audit_events` table; append-only (no update/delete API)
+- Written after security-relevant actions: auth (login success/fail/block, logout, signup, verify, reset), **admin lifecycle** (approve/reject/deactivate/profile), workspace (project CRUD, scan start, GitHub connect/disconnect/failures, foreign-repo reject)
+- Each event stores a rich `context_json` answering who / what / when / where / how (including HTTP `status_code` such as 200 / 401 / 429)
+- Where: IP + multi-provider geolocation consensus (`ip-api`, `ipwho.is`, `ipapi.co`), cached per process; private/localhost IPs skipped
+- Rate-limit blocks (`429`) are audited as `rate_limited`
+- Does **not** log every HTTP request or every SQL query (noise, PII risk, performance)
+- Admin UI: `/admin/audit` via `GET /admin/audit-events` (filters, infinite scroll, response status column)
+- Never stores passwords or raw tokens
+
 ## Rate limiting
 
-In-memory limiter on signup, login, verify, reset, and profile update endpoints. Suitable for single-process local/dev; replace with shared store before multi-instance production scale-out.
+In-memory limiter on signup, login, verify, reset, and profile update endpoints. Exceeded limits return `429` and write an audit event. Suitable for single-process local/dev; replace with shared store before multi-instance production scale-out.
 
 ## Secrets
 
@@ -38,6 +49,8 @@ In-memory limiter on signup, login, verify, reset, and profile update endpoints.
 - Bootstrap admin credentials required for empty production DB
 - Resend API key optional locally (emails stay `queued`)
 - GitHub OAuth client secret and access tokens never returned to the client; tokens encrypted at rest (`TOKEN_ENCRYPTION_SECRET`)
+- Optional `GROQ_API_KEY` for Phase 3 AI triage; scans fail-open (rules-only engines still complete) when unset
+- Repo clones for scans use short-lived workdirs under a server temp path and are deleted after the job
 
 ## Agent rules
 

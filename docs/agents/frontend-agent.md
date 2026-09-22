@@ -2,7 +2,7 @@
 
 ## Owns
 
-- `frontend/src/admin/` — admin shell, nav, dashboard, directory, profile
+- `frontend/src/admin/` — admin shell, nav, dashboard, directory, audit log, profile
 - `frontend/src/user/` — user shell, nav, home, projects, scans, integrations, profile
 - `frontend/src/pages/` — public auth screens only
 - `backend/app/web/routes.py` (SPA serving)
@@ -12,7 +12,7 @@
 
 - Single-server: build into `backend/app/web/static/spa`; FastAPI serves it
 - **Never share React pages/components between admin and user**
-- Admins: `/admin/`, `/admin/directory`, `/admin/profile` (not `/admin/users` — that is the JSON API)
+- Admins: `/admin/`, `/admin/directory`, `/admin/audit`, `/admin/profile` (not `/admin/users` — that is the JSON API)
 - Users: `/user/`, `/user/projects`, `/user/scans`, `/user/integrations`, `/user/profile`
 - Collapse keys stay per-area
 - Follow Inter + slate/blue visual language in `docs/design.md`

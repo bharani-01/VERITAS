@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { AdminAuditPage } from "./admin/AdminAuditPage";
 import { AdminDashboardPage } from "./admin/AdminDashboardPage";
 import { AdminProfilePage } from "./admin/AdminProfilePage";
 import { AdminSettingsPage } from "./admin/AdminSettingsPage";
@@ -7,6 +8,7 @@ import { AdminUsersPage } from "./admin/AdminUsersPage";
 import { ForgotPage } from "./pages/ForgotPage";
 import { LoginPage } from "./pages/LoginPage";
 import { ResetPage } from "./pages/ResetPage";
+import { SharedReportPage } from "./pages/SharedReportPage";
 import { SignupPage } from "./pages/SignupPage";
 import { VerifyPage } from "./pages/VerifyPage";
 import { UserDashboardPage } from "./user/UserDashboardPage";
@@ -26,11 +28,13 @@ export default function App() {
       <Route path="/forgot" element={<ForgotPage />} />
       <Route path="/reset" element={<ResetPage />} />
       <Route path="/verify" element={<VerifyPage />} />
+      <Route path="/report/:token" element={<SharedReportPage />} />
 
       <Route path="/admin" element={<Navigate to="/admin/" replace />} />
       <Route element={<AdminShell />}>
         <Route path="/admin/" element={<AdminDashboardPage />} />
         <Route path="/admin/directory" element={<AdminUsersPage />} />
+        <Route path="/admin/audit" element={<AdminAuditPage />} />
         <Route path="/admin/profile" element={<AdminProfilePage />} />
         <Route path="/admin/settings" element={<AdminSettingsPage />} />
       </Route>
