@@ -4,6 +4,7 @@ import { LoadingMark } from "./LoadingMark";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
+import { shortCommit } from "../lib/scanDisplay";
 import type { Finding, FindingStatus, Scan } from "../lib/workspace";
 
 type Props = {
@@ -15,14 +16,15 @@ type Props = {
   onClose: () => void;
   onShared?: (scan: Scan) => void;
   onFindingsChange?: (items: Finding[]) => void;
+  variant?: "modal" | "page";
 };
 
 const STATUSES: FindingStatus[] = ["open", "triage", "fixed", "false_positive"];
 
 function shareCaption(scan: Scan, projectName?: string) {
   const name = projectName || scan.project_name || scan.target;
-  const version = scan.commit_short ? ` · ${scan.commit_short}` : "";
-  return `${name}${version}`;
+  const version = shortCommit(scan.commit_short, scan.commit_sha);
+  return version ? `${name} · ${version}` : name;
 }
 
 function CommitLink({
@@ -34,11 +36,12 @@ function CommitLink({
   sha?: string | null;
   repo?: string | null;
 }) {
+  const display = shortCommit(short, sha) || short.slice(0, 7);
   const href = githubCommitUrl(repo, sha || short);
-  if (!href) return <code title={sha || undefined}>{short}</code>;
+  if (!href) return <code title={sha || undefined}>{display}</code>;
   return (
-    <a className="scan-git-link" href={href} target="_blank" rel="noreferrer" title={`Open ${short} on GitHub`}>
-      <code>{short}</code>
+    <a className="scan-git-link" href={href} target="_blank" rel="noreferrer" title={`Open ${display} on GitHub`}>
+      <code>{display}</code>
     </a>
   );
 }
@@ -52,6 +55,7 @@ export function ScanReportModal({
   onClose,
   onShared,
   onFindingsChange,
+  variant = "modal",
 }: Props) {
   const [exportFormat, setExportFormat] = useState<ExportFormat>("md");
   const [shareUrl, setShareUrl] = useState<string | null>(
@@ -83,11 +87,12 @@ export function ScanReportModal({
         setShareOpen(false);
         return;
       }
+      if (variant === "page") return;
       onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [shareOpen, onClose, selected]);
+  }, [shareOpen, onClose, selected, variant]);
 
   async function openShare() {
     setShareOpen(true);
@@ -157,131 +162,140 @@ export function ScanReportModal({
     ? githubBlobUrl(githubRepoFullName, scan.commit_sha || scan.commit_short, selected.file_path, selected.line_start)
     : null;
 
-  return createPortal(
-    <div className="modal-root" role="presentation">
-      <button type="button" className="modal-backdrop" aria-label="Close dialog" onClick={onClose} />
-      <div className="modal-panel report-modal" role="dialog" aria-modal="true" aria-labelledby="scan-report-title">
-        <div className="modal-head">
-          <div>
-            <p className="modal-kicker">Report</p>
-            <h2 id="scan-report-title">{projectName || scan.project_name || "Scan report"}</h2>
-          </div>
+  const commitDisplay = shortCommit(scan.commit_short, scan.commit_sha);
+
+  const reportBody = (
+    <>
+      <div className="modal-head">
+        <div>
+          <p className="modal-kicker">Report</p>
+          <h2 id="scan-report-title">{projectName || scan.project_name || "Scan report"}</h2>
+        </div>
+        {variant === "modal" ? (
           <span className="muted small">Esc to close</span>
-        </div>
-
-        <div className="report-meta modal-body-pad">
-          <div>
-            <span className="muted">Target</span>
-            <div>
-              <b>{scan.target}</b>
-            </div>
-          </div>
-          <div>
-            <span className="muted">Git version</span>
-            <div>
-              {scan.commit_short ? (
-                <>
-                  <CommitLink short={scan.commit_short} sha={scan.commit_sha} repo={githubRepoFullName} />
-                  {scan.commit_message ? <span className="muted"> — {scan.commit_message}</span> : null}
-                </>
-              ) : (
-                <span className="muted">Not available</span>
-              )}
-            </div>
-            {scan.commit_author ? <div className="muted small">{scan.commit_author}</div> : null}
-          </div>
-          <div>
-            <span className="muted">Risk</span>
-            <div>
-              <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
-              <span className="muted">
-                {" "}
-                ·{" "}
-                {findingsLoading
-                  ? `${scan.summary?.findings_count ?? "…"} findings`
-                  : `${sorted.length} findings`}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="report-toolbar modal-body-pad">
-          <label className="report-export">
-            Status
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} disabled={findingsLoading}>
-              <option value="all">All</option>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s.replace(/_/g, " ")}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="report-export">
-            Export
-            <select
-              value={exportFormat}
-              onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-              disabled={findingsLoading}
-            >
-              <option value="md">Markdown (.md)</option>
-              <option value="json">JSON (.json)</option>
-              <option value="csv">CSV (.csv)</option>
-              <option value="html">HTML (.html)</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn secondary report-tool-btn"
-            disabled={findingsLoading}
-            onClick={() => exportScanReport(exportFormat, scan, sorted, projectName)}
-          >
-            Download
+        ) : (
+          <button type="button" className="btn ghost" onClick={onClose}>
+            Back to scans
           </button>
-          <button type="button" className="btn ghost report-tool-btn" onClick={() => void openShare()}>
-            Share report
-          </button>
-        </div>
+        )}
+      </div>
 
-        <div className="report-findings modal-body-pad">
-          <h3>Findings (highest risk first)</h3>
-          {findingsLoading ? (
-            <div className="report-findings-loading">
-              <LoadingMark
-                size="sm"
-                label={
-                  scan.summary?.findings_count
-                    ? `Loading ${scan.summary.findings_count} findings…`
-                    : "Loading findings…"
-                }
-              />
-            </div>
-          ) : !filtered.length ? (
-            <div className="empty-state compact">No findings for this filter.</div>
-          ) : (
-            <ul className="finding-list">
-              {filtered.map((f) => (
-                <li key={f.id}>
-                  <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
-                    <div className="finding-head">
-                      <span className={`badge ${f.severity}`}>{f.severity}</span>
-                      <span className="badge muted">{f.status.replace(/_/g, " ")}</span>
-                      <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
-                      <b>{f.title}</b>
-                    </div>
-                    <div className="muted small">
-                      {f.engine}
-                      {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
-                      {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+      <div className="report-meta modal-body-pad">
+        <div>
+          <span className="muted">Target</span>
+          <div>
+            <b>{scan.target}</b>
+          </div>
+        </div>
+        <div>
+          <span className="muted">Git version</span>
+          <div>
+            {commitDisplay ? (
+              <>
+                <CommitLink short={commitDisplay} sha={scan.commit_sha} repo={githubRepoFullName} />
+                {scan.commit_message ? <span className="muted"> — {scan.commit_message}</span> : null}
+              </>
+            ) : (
+              <span className="muted">Not available</span>
+            )}
+          </div>
+          {scan.commit_author ? <div className="muted small">{scan.commit_author}</div> : null}
+        </div>
+        <div>
+          <span className="muted">Risk</span>
+          <div>
+            <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
+            <span className="muted">
+              {" "}
+              ·{" "}
+              {findingsLoading
+                ? `${scan.summary?.findings_count ?? "…"} findings`
+                : `${sorted.length} findings`}
+            </span>
+          </div>
         </div>
       </div>
 
+      <div className="report-toolbar modal-body-pad">
+        <label className="report-export">
+          Status
+          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} disabled={findingsLoading}>
+            <option value="all">All</option>
+            {STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {s.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="report-export">
+          Export
+          <select
+            value={exportFormat}
+            onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
+            disabled={findingsLoading}
+          >
+            <option value="md">Markdown (.md)</option>
+            <option value="json">JSON (.json)</option>
+            <option value="csv">CSV (.csv)</option>
+            <option value="html">HTML (.html)</option>
+          </select>
+        </label>
+        <button
+          type="button"
+          className="btn secondary report-tool-btn"
+          disabled={findingsLoading}
+          onClick={() => exportScanReport(exportFormat, scan, sorted, projectName)}
+        >
+          Download
+        </button>
+        <button type="button" className="btn ghost report-tool-btn" onClick={() => void openShare()}>
+          Share report
+        </button>
+      </div>
+
+      <div className="report-findings modal-body-pad">
+        <h3>Findings (highest risk first)</h3>
+        {findingsLoading ? (
+          <div className="report-findings-loading">
+            <LoadingMark
+              size="sm"
+              label={
+                scan.summary?.findings_count
+                  ? `Loading ${scan.summary.findings_count} findings…`
+                  : "Loading findings…"
+              }
+            />
+          </div>
+        ) : !filtered.length ? (
+          <div className="empty-state compact">No findings for this filter.</div>
+        ) : (
+          <ul className="finding-list">
+            {filtered.map((f) => (
+              <li key={f.id}>
+                <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
+                  <div className="finding-head">
+                    <span className={`badge ${f.severity}`}>{f.severity}</span>
+                    <span className="badge muted">{f.status.replace(/_/g, " ")}</span>
+                    <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
+                    <b>{f.title}</b>
+                  </div>
+                  <div className="muted small">
+                    {f.engine}
+                    {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
+                    {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  );
+
+  const drawers = (
+    <>
       {selected
         ? createPortal(
             <div className="modal-root finding-drawer-root" role="presentation">
@@ -388,6 +402,25 @@ export function ScanReportModal({
             document.body,
           )
         : null}
+    </>
+  );
+
+  if (variant === "page") {
+    return (
+      <main className="admin-main scan-report-page">
+        <div className="report-page-panel">{reportBody}</div>
+        {drawers}
+      </main>
+    );
+  }
+
+  return createPortal(
+    <div className="modal-root" role="presentation">
+      <button type="button" className="modal-backdrop" aria-label="Close dialog" onClick={onClose} />
+      <div className="modal-panel report-modal" role="dialog" aria-modal="true" aria-labelledby="scan-report-title">
+        {reportBody}
+      </div>
+      {drawers}
     </div>,
     document.body,
   );

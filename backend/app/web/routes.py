@@ -80,6 +80,7 @@ def admin_spa():
 @router.get("/user/profile")
 @router.get("/user/settings")
 @router.get("/user/projects")
+@router.get("/user/projects/new")
 @router.get("/user/scans")
 @router.get("/user/integrations")
 def user_spa():
@@ -87,7 +88,8 @@ def user_spa():
 
 
 @router.get("/user/projects/{project_id}")
-def user_project_spa(project_id: str):
+@router.get("/user/projects/{project_id}/scans/{scan_id}")
+def user_project_spa(project_id: str, scan_id: str | None = None):
     return spa_or_legacy("user")
 
 

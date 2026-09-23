@@ -57,6 +57,7 @@ def ensure_schema() -> None:
             "notify_email_default": "ALTER TABLE projects ADD COLUMN notify_email_default BOOLEAN DEFAULT 1",
             "notify_in_app_default": "ALTER TABLE projects ADD COLUMN notify_in_app_default BOOLEAN DEFAULT 1",
             "auto_scan_on_push": "ALTER TABLE projects ADD COLUMN auto_scan_on_push BOOLEAN DEFAULT 0",
+            "auto_scan_branch": "ALTER TABLE projects ADD COLUMN auto_scan_branch VARCHAR(128)",
             "github_webhook_id": "ALTER TABLE projects ADD COLUMN github_webhook_id INTEGER",
             "github_webhook_secret": "ALTER TABLE projects ADD COLUMN github_webhook_secret TEXT",
         }

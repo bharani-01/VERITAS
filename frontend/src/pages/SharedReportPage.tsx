@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
+import { shortCommit } from "../lib/scanDisplay";
 import type { Finding, Scan } from "../lib/workspace";
 
 type SharedPayload = {
@@ -43,8 +44,9 @@ export function SharedReportPage() {
 
   const sorted = useMemo(() => sortFindingsByRisk(data?.items || []), [data]);
   const repo = data?.project.github_repo_full_name;
-  const headHref = data?.scan.commit_short
-    ? githubCommitUrl(repo, data.scan.commit_sha || data.scan.commit_short)
+  const headShort = shortCommit(data?.scan.commit_short, data?.scan.commit_sha);
+  const headHref = headShort
+    ? githubCommitUrl(repo, data?.scan.commit_sha || headShort)
     : null;
   const blobHref = selected
     ? githubBlobUrl(repo, data?.scan.commit_sha || data?.scan.commit_short, selected.file_path, selected.line_start)
@@ -84,16 +86,16 @@ export function SharedReportPage() {
           <h1>{project.name}</h1>
           <p className="muted">
             {scan.target}
-            {scan.commit_short ? (
+            {headShort ? (
               <>
                 {" "}
                 · Git{" "}
                 {headHref ? (
                   <a className="scan-git-link" href={headHref} target="_blank" rel="noreferrer">
-                    <code>{scan.commit_short}</code>
+                    <code>{headShort}</code>
                   </a>
                 ) : (
-                  <code>{scan.commit_short}</code>
+                  <code>{headShort}</code>
                 )}
                 {scan.commit_message ? ` — ${scan.commit_message}` : ""}
               </>

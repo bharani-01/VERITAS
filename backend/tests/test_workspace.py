@@ -603,5 +603,5 @@ def test_github_webhook_signature_and_push_scan():
             headers={"Content-Type": "application/json", "X-GitHub-Event": "push", "X-Hub-Signature-256": other_sig},
         )
         assert skipped.status_code == 200
-        assert skipped.json().get("skipped") == "not_default_branch"
+        assert skipped.json().get("skipped") == "not_watched_branch"
         _ = user_id

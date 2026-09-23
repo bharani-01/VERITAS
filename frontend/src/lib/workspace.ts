@@ -12,6 +12,7 @@ export type Project = {
   notify_email_default?: boolean;
   notify_in_app_default?: boolean;
   auto_scan_on_push?: boolean;
+  auto_scan_branch?: string | null;
   created_at: string;
   updated_at: string;
 };

@@ -1,18 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
-import { ScanReportModal } from "../components/ScanReportModal";
 import { api } from "../lib/api";
-import type { Finding, GitRef, Project, Scan } from "../lib/workspace";
-import { formatStatus } from "../lib/avatars";
-import { scanProgressLabel } from "../lib/scanProgress";
-import { githubCommitUrl } from "../lib/githubLinks";
+import type { GitRef, Project, Scan } from "../lib/workspace";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { ScanHistoryList } from "./ScanHistoryList";
+import { useDocumentTitle } from "../lib/documentTitle";
 
-/** Project-scoped scans with Mode A/B, ETA, and findings report. */
+/** Project-scoped scans with Mode A/B, ETA, and Render-style history. */
 export function UserProjectDetailPage() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [scans, setScans] = useState<Scan[]>([]);
   const [target, setTarget] = useState("");
@@ -31,14 +30,14 @@ export function UserProjectDetailPage() {
   const [draftTarget, setDraftTarget] = useState("");
   const [draftNotifyEmail, setDraftNotifyEmail] = useState(true);
   const [draftNotifyInApp, setDraftNotifyInApp] = useState(true);
-  const [selectedScanId, setSelectedScanId] = useState<string | null>(null);
-  const [reportOpen, setReportOpen] = useState(false);
-  const [findings, setFindings] = useState<Finding[]>([]);
-  const [findingsLoading, setFindingsLoading] = useState(false);
+  const [draftAutoScan, setDraftAutoScan] = useState(false);
+  const [draftAutoBranch, setDraftAutoBranch] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ghNeedsReauth, setGhNeedsReauth] = useState(false);
-  const [autoScanBusy, setAutoScanBusy] = useState(false);
+  const [advancedBusy, setAdvancedBusy] = useState(false);
+
+  useDocumentTitle(project ? `${project.name} · Scans` : "Scans");
 
   async function load() {
     if (!projectId) return;
@@ -73,39 +72,6 @@ export function UserProjectDetailPage() {
     return () => window.clearInterval(id);
   }, [scans, projectId]);
 
-  useEffect(() => {
-    if (!selectedScanId || !projectId) {
-      setFindings([]);
-      setFindingsLoading(false);
-      return;
-    }
-    const selected = scans.find((s) => s.id === selectedScanId);
-    const status = selected?.status;
-    if (status && status !== "completed" && status !== "failed") {
-      setFindings([]);
-      setFindingsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    setFindingsLoading(true);
-    setFindings([]);
-    api<{ items: Finding[] }>(`/workspace/projects/${projectId}/scans/${selectedScanId}/findings`)
-      .then((data) => {
-        if (!cancelled) setFindings(data.items);
-      })
-      .catch(() => {
-        if (!cancelled) setFindings([]);
-      })
-      .finally(() => {
-        if (!cancelled) setFindingsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // Re-fetch only when the selected scan identity/status changes — not on scan list poll ticks.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: avoid findings flicker on ETA polls
-  }, [selectedScanId, projectId, scans.find((s) => s.id === selectedScanId)?.status]);
-
   async function startScan() {
     if (!projectId) return;
     setConfirmOpen(false);
@@ -125,8 +91,8 @@ export function UserProjectDetailPage() {
         body: JSON.stringify(body),
       });
       setTarget("");
-      setSelectedScanId(res.scan.id);
       await load();
+      navigate(`/user/projects/${projectId}/scans/${res.scan.id}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -143,23 +109,6 @@ export function UserProjectDetailPage() {
     }
   }
 
-  async function toggleAutoScan(enabled: boolean) {
-    if (!projectId || !project) return;
-    setAutoScanBusy(true);
-    setError(null);
-    try {
-      const res = await api<{ project: Project }>(`/workspace/projects/${projectId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ auto_scan_on_push: enabled }),
-      });
-      setProject(res.project);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setAutoScanBusy(false);
-    }
-  }
-
   function onAskScan(e: FormEvent) {
     e.preventDefault();
     if (!projectId || busy) return;
@@ -173,6 +122,10 @@ export function UserProjectDetailPage() {
     setDraftTarget(target);
     setDraftNotifyEmail(notifyEmail);
     setDraftNotifyInApp(notifyInApp);
+    setDraftAutoScan(!!project?.auto_scan_on_push);
+    setDraftAutoBranch(
+      project?.auto_scan_branch || project?.github_default_branch || "",
+    );
     setShowAdvanced(true);
     if (projectId && project?.github_repo_full_name) {
       api<{ branches: GitRef[]; tags: GitRef[] }>(`/workspace/projects/${projectId}/git-refs`)
@@ -190,15 +143,37 @@ export function UserProjectDetailPage() {
     setAdvancedConfirmOpen(true);
   }
 
-  function saveAdvanced() {
-    setScanMode(draftMode);
-    setScanScope(draftScope);
-    setScanRef(draftRef);
-    setTarget(draftTarget);
-    setNotifyEmail(draftNotifyEmail);
-    setNotifyInApp(draftNotifyInApp);
-    setAdvancedConfirmOpen(false);
-    setShowAdvanced(false);
+  async function saveAdvanced() {
+    if (!projectId || !project) return;
+    setAdvancedBusy(true);
+    setError(null);
+    try {
+      const autoChanged =
+        draftAutoScan !== !!project.auto_scan_on_push ||
+        (draftAutoBranch || "") !== (project.auto_scan_branch || project.github_default_branch || "");
+      if (autoChanged && project.github_repo_full_name) {
+        const res = await api<{ project: Project }>(`/workspace/projects/${projectId}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            auto_scan_on_push: draftAutoScan,
+            auto_scan_branch: draftAutoBranch.trim() || project.github_default_branch || null,
+          }),
+        });
+        setProject(res.project);
+      }
+      setScanMode(draftMode);
+      setScanScope(draftScope);
+      setScanRef(draftRef);
+      setTarget(draftTarget);
+      setNotifyEmail(draftNotifyEmail);
+      setNotifyInApp(draftNotifyInApp);
+      setAdvancedConfirmOpen(false);
+      setShowAdvanced(false);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAdvancedBusy(false);
+    }
   }
 
   if (error && !project) {
@@ -220,7 +195,9 @@ export function UserProjectDetailPage() {
     );
   }
 
-  const selected = scans.find((s) => s.id === selectedScanId) || null;
+  const autoBranchLabel =
+    project.auto_scan_branch || project.github_default_branch || "default branch";
+  const branchOptions = gitRefs.filter((r) => r.type === "branch" || !r.type);
 
   return (
     <main className="admin-main">
@@ -247,18 +224,13 @@ export function UserProjectDetailPage() {
                 )}
               </>
             ) : null}
+            {project.auto_scan_on_push ? (
+              <>
+                {" "}
+                · Auto-scan on <code>{autoBranchLabel}</code>
+              </>
+            ) : null}
           </p>
-          {project.github_repo_full_name ? (
-            <label className="check auto-scan-toggle">
-              <input
-                type="checkbox"
-                checked={!!project.auto_scan_on_push}
-                disabled={autoScanBusy || ghNeedsReauth}
-                onChange={(e) => void toggleAutoScan(e.target.checked)}
-              />
-              Auto-scan on push to {project.github_default_branch || "default branch"}
-            </label>
-          ) : null}
         </div>
         <ProjectSwitcher current={project} compact menuAlign="right" />
       </header>
@@ -266,7 +238,7 @@ export function UserProjectDetailPage() {
       {ghNeedsReauth ? (
         <div className="notice warning" role="status">
           Reconnect GitHub — authorization expired or missing repo scope.{" "}
-          <Link to="/user/integrations">Open integrations</Link>
+          <Link to="/user/projects/new">Reconnect on New project</Link>
         </div>
       ) : null}
 
@@ -327,7 +299,7 @@ export function UserProjectDetailPage() {
                     </select>
                   </label>
                   <label>
-                    Branch or tag
+                    Branch or tag (this scan)
                     <select value={draftRef} onChange={(e) => setDraftRef(e.target.value)}>
                       <option value={project.github_default_branch || ""}>
                         {project.github_default_branch || "default"} (default)
@@ -378,6 +350,40 @@ export function UserProjectDetailPage() {
                       </label>
                     </div>
                   </div>
+
+                  {project.github_repo_full_name ? (
+                    <div className="scan-advanced-autoscan">
+                      <p className="scan-notify-label">Auto-scan on push</p>
+                      <label className="check">
+                        <input
+                          type="checkbox"
+                          checked={draftAutoScan}
+                          disabled={ghNeedsReauth}
+                          onChange={(e) => setDraftAutoScan(e.target.checked)}
+                        />
+                        Run a scan when commits land on the watched branch
+                      </label>
+                      <label>
+                        Watched branch
+                        <select
+                          value={draftAutoBranch}
+                          disabled={!draftAutoScan || ghNeedsReauth}
+                          onChange={(e) => setDraftAutoBranch(e.target.value)}
+                        >
+                          <option value={project.github_default_branch || ""}>
+                            {project.github_default_branch || "default"} (default)
+                          </option>
+                          {branchOptions
+                            .filter((r) => r.name !== project.github_default_branch)
+                            .map((r) => (
+                              <option key={`auto:${r.name}`} value={r.name}>
+                                {r.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
                 </div>
                 <div className="modal-actions">
                   <button type="button" className="btn ghost" onClick={closeAdvanced}>
@@ -429,14 +435,22 @@ export function UserProjectDetailPage() {
                   <strong>{draftTarget.trim() || project.github_repo_full_name || "default target"}</strong>
                   {" · notify "}
                   {[draftNotifyInApp ? "in-app" : null, draftNotifyEmail ? "email" : null].filter(Boolean).join(" + ") || "none"}
+                  {project.github_repo_full_name ? (
+                    <>
+                      {" · auto-scan "}
+                      <strong>
+                        {draftAutoScan ? `on ${draftAutoBranch || project.github_default_branch || "branch"}` : "off"}
+                      </strong>
+                    </>
+                  ) : null}
                   .
                 </p>
                 <div className="modal-actions">
-                  <button type="button" className="btn ghost" onClick={() => setAdvancedConfirmOpen(false)}>
+                  <button type="button" className="btn ghost" onClick={() => setAdvancedConfirmOpen(false)} disabled={advancedBusy}>
                     Cancel
                   </button>
-                  <button type="button" className="btn" onClick={saveAdvanced}>
-                    Confirm save
+                  <button type="button" className="btn" onClick={() => void saveAdvanced()} disabled={advancedBusy}>
+                    {advancedBusy ? "Saving…" : "Confirm save"}
                   </button>
                 </div>
               </div>
@@ -493,154 +507,11 @@ export function UserProjectDetailPage() {
         </div>
       ) : null}
 
-      {!scans.length ? (
-        <div className="empty-state">
-          <strong>No scans yet</strong>
-          Start a scan to run Semgrep / secrets / dependency checks on the linked repo.
-        </div>
-      ) : (
-        <>
-        <div className="scan-table-wrap">
-          <table className="scan-table">
-            <colgroup>
-              <col className="col-target" />
-              <col className="col-git" />
-              <col className="col-mode" />
-              <col className="col-status" />
-              <col className="col-eta" />
-              <col className="col-findings" />
-              <col className="col-started" />
-              <col className="col-actions" />
-            </colgroup>
-            <thead>
-              <tr>
-                <th>Target</th>
-                <th>Git</th>
-                <th>Mode</th>
-                <th>Status</th>
-                <th>ETA</th>
-                <th>Findings</th>
-                <th>Started</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {scans.map((scan) => {
-                const eta = scan.progress?.eta_remaining_seconds ?? scan.eta_seconds;
-                const pct = scan.progress?.percent;
-                const progressLabel = scanProgressLabel(scan.progress, scan.status);
-                const scanning = scan.status === "queued" || scan.status === "running";
-                const commitHref = githubCommitUrl(
-                  project.github_repo_full_name,
-                  scan.commit_sha || scan.commit_short,
-                );
-                return (
-                  <tr key={scan.id} className={selectedScanId === scan.id ? "selected" : undefined}>
-                    <td className="scan-target">
-                      <b title={scan.target}>{scan.target}</b>
-                    </td>
-                    <td className="muted scan-git" title={scan.commit_sha || undefined}>
-                      {scanning && !scan.commit_short ? (
-                        <LoadingMark variant="scan" size="xs" label="" />
-                      ) : scan.commit_short && commitHref ? (
-                        <a
-                          className="scan-git-link"
-                          href={commitHref}
-                          target="_blank"
-                          rel="noreferrer"
-                          title={`Open ${scan.commit_short} on GitHub`}
-                        >
-                          {scan.commit_short}
-                        </a>
-                      ) : (
-                        scan.commit_short || "—"
-                      )}
-                    </td>
-                    <td className="muted scan-mode">
-                      {(scan.scan_mode || "rules_only").replace(/_/g, " ")}
-                      {scan.source === "github_push" ? (
-                        <span className="badge muted" style={{ marginLeft: 6 }}>
-                          push
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="scan-status">
-                      <div className="scan-status-stack">
-                        <span className={`badge ${scan.status}`}>{formatStatus(scan.status)}</span>
-                        {progressLabel && scanning ? (
-                          <span className="muted small scan-progress-line">
-                            {progressLabel}
-                            {pct != null && scan.status === "running" ? ` · ${pct}%` : ""}
-                          </span>
-                        ) : null}
-                        {scan.error_message ? (
-                          <span className="scan-error-line" title={scan.error_message}>
-                            {scan.error_message}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="muted scan-eta">
-                      {scanning
-                        ? eta != null
-                          ? `~${Math.max(1, Math.round(eta / 60))} min`
-                          : "…"
-                        : "—"}
-                    </td>
-                    <td className="scan-findings">
-                      {scanning ? (
-                        <LoadingMark variant="scan" size="xs" label="" />
-                      ) : (
-                        (scan.summary?.findings_count ?? "—")
-                      )}
-                    </td>
-                    <td className="muted scan-started">{new Date(scan.created_at).toLocaleString()}</td>
-                    <td className="scan-row-actions">
-                      {scanning ? (
-                        <button
-                          type="button"
-                          className="btn ghost small"
-                          onClick={() => void cancelScan(scan.id)}
-                          disabled={!!scan.cancel_requested}
-                        >
-                          {scan.cancel_requested ? "Cancelling…" : "Cancel"}
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn ghost small"
-                          onClick={() => {
-                            setSelectedScanId(scan.id);
-                            setReportOpen(true);
-                          }}
-                        >
-                          Report
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        </>
-      )}
-
-      {reportOpen && selected ? (
-        <ScanReportModal
-          scan={selected}
-          findings={findings}
-          findingsLoading={findingsLoading}
-          projectName={project.name}
-          githubRepoFullName={project.github_repo_full_name}
-          onClose={() => setReportOpen(false)}
-          onShared={(updated) => {
-            setScans((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
-          }}
-          onFindingsChange={setFindings}
-        />
-      ) : null}
+      <ScanHistoryList
+        scans={scans}
+        projectId={projectId}
+        onCancel={(id) => void cancelScan(id)}
+      />
     </main>
   );
 }

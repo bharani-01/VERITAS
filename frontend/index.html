@@ -11,9 +11,9 @@
         var key = path.indexOf("/admin") === 0 ? "veritas.admin.navCollapsed" : "veritas.user.navCollapsed";
         if (localStorage.getItem(key) === "1") document.documentElement.classList.add("nav-pref-collapsed");
         var theme = localStorage.getItem("veritas.theme");
-        if (theme === "dark" || theme === "miro" || theme === "light") {
-          document.documentElement.setAttribute("data-theme", theme);
-        }
+        document.documentElement.setAttribute("data-theme", "dark");
+        document.documentElement.style.colorScheme = "dark";
+        void theme;
       } catch (e) {}
     </script>
   </head>

@@ -9,6 +9,7 @@ class ProjectCreate(BaseModel):
     github_repo_id: int | None = None
     security_level: str = "standard"
     auto_scan_on_push: bool = False
+    auto_scan_branch: str | None = Field(default=None, max_length=128)
 
 
 class ProjectUpdate(BaseModel):
@@ -22,6 +23,7 @@ class ProjectUpdate(BaseModel):
     notify_email_default: bool | None = None
     notify_in_app_default: bool | None = None
     auto_scan_on_push: bool | None = None
+    auto_scan_branch: str | None = Field(default=None, max_length=128)
 
 
 class ScanCreate(BaseModel):

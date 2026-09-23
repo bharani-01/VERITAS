@@ -47,11 +47,11 @@ export function UserDashboardPage() {
           <p>Projects, recent scans, and your GitHub connection.</p>
         </div>
         <div className="profile-actions">
-          <Link className="btn" to="/user/projects">
+          <Link className="btn" to="/user/projects/new">
             New project
           </Link>
           {!data.github.connected ? (
-            <Link className="btn secondary" to="/user/integrations">
+            <Link className="btn secondary" to="/user/projects/new">
               Connect GitHub
             </Link>
           ) : null}

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type { User } from "../lib/api";
 import { avatarUrl } from "../lib/avatars";
-import { applyTheme, readTheme } from "../lib/theme";
+import { applyTheme } from "../lib/theme";
 
 type Props = {
   user: User;
@@ -43,7 +43,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
   }
 
   useEffect(() => {
-    applyTheme(readTheme());
+    applyTheme("dark");
   }, []);
 
   useEffect(() => {

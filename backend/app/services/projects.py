@@ -43,6 +43,8 @@ def public_project(project: Project) -> dict:
         "notify_email_default": bool(project.notify_email_default),
         "notify_in_app_default": bool(project.notify_in_app_default),
         "auto_scan_on_push": bool(getattr(project, "auto_scan_on_push", False)),
+        "auto_scan_branch": getattr(project, "auto_scan_branch", None)
+        or project.github_default_branch,
         "created_at": project.created_at,
         "updated_at": project.updated_at,
     }
@@ -93,7 +95,8 @@ def public_scan(scan: Scan, project_name: str | None = None) -> dict:
         "scan_scope": getattr(scan, "scan_scope", None) or "full",
         "ref": scan.ref,
         "commit_sha": scan.commit_sha,
-        "commit_short": scan.commit_short,
+        "commit_short": (scan.commit_short or (scan.commit_sha or "")[:7] or None)
+        and (scan.commit_short or scan.commit_sha or "")[:7],
         "commit_message": scan.commit_message,
         "commit_author": scan.commit_author,
         "git_history": _git_history(scan),
@@ -218,6 +221,7 @@ def create_project(
     github_repo_id: int | None = None,
     security_level: str = "standard",
     auto_scan_on_push: bool = False,
+    auto_scan_branch: str | None = None,
 ) -> Project:
     level = security_level if security_level in {"basic", "standard", "strict"} else "standard"
     project = Project(
@@ -233,6 +237,8 @@ def create_project(
         project.github_repo_full_name = repo["full_name"]
         project.github_default_branch = repo.get("default_branch")
         project.github_html_url = repo.get("html_url")
+    branch = (auto_scan_branch or "").strip() or project.github_default_branch
+    project.auto_scan_branch = branch
     if project.auto_scan_on_push and not project.github_repo_full_name:
         raise HTTPException(status_code=400, detail="Auto-scan on push requires a linked GitHub repository.")
     if project.auto_scan_on_push:
@@ -258,6 +264,7 @@ def update_project(
     notify_email_default: bool | None = None,
     notify_in_app_default: bool | None = None,
     auto_scan_on_push: bool | None = None,
+    auto_scan_branch: str | None = None,
 ) -> Project:
     project = get_owned_project(db, user, project_id)
     if name is not None:
@@ -280,6 +287,8 @@ def update_project(
         project.notify_in_app_default = notify_in_app_default
     if auto_scan_on_push is not None:
         project.auto_scan_on_push = bool(auto_scan_on_push)
+    if auto_scan_branch is not None:
+        project.auto_scan_branch = auto_scan_branch.strip() or None
 
     repo_changed = False
     if clear_github:
@@ -294,6 +303,7 @@ def update_project(
         project.github_repo_full_name = None
         project.github_default_branch = None
         project.github_html_url = None
+        project.auto_scan_branch = None
         _clear_webhook_fields(project)
         project.auto_scan_on_push = False
         repo_changed = True
@@ -312,12 +322,17 @@ def update_project(
         project.github_repo_full_name = repo["full_name"]
         project.github_default_branch = repo.get("default_branch")
         project.github_html_url = repo.get("html_url")
+        if not project.auto_scan_branch:
+            project.auto_scan_branch = project.github_default_branch
         repo_changed = True
+
+    if not project.auto_scan_branch and project.github_default_branch:
+        project.auto_scan_branch = project.github_default_branch
 
     if project.auto_scan_on_push and not project.github_repo_full_name:
         raise HTTPException(status_code=400, detail="Auto-scan on push requires a linked GitHub repository.")
 
-    if auto_scan_on_push is not None or repo_changed:
+    if auto_scan_on_push is not None or auto_scan_branch is not None or repo_changed:
         sync_project_webhook(db, user, project)
 
     project.updated_at = utcnow()
@@ -486,7 +501,7 @@ def create_scan(
         raise HTTPException(status_code=400, detail="Changed-files scans require a linked GitHub repository.")
 
     sha = (commit_sha or "").strip() or None
-    short = sha[:12] if sha else None
+    short = sha[:7] if sha else None
 
     eta = estimate_eta_seconds(
         security_level=level,
@@ -527,7 +542,7 @@ def create_scan(
 
 
 def handle_github_push_event(db: Session, *, payload: dict) -> dict:
-    """Create a scan for push to a project's default branch. Returns status dict."""
+    """Create a scan for push to the project's configured auto-scan branch."""
     repo = payload.get("repository") or {}
     repo_id = repo.get("id")
     if repo_id is None:
@@ -547,9 +562,14 @@ def handle_github_push_event(db: Session, *, payload: dict) -> dict:
     if not project:
         return {"ok": True, "skipped": "no_project"}
 
-    default_branch = (project.github_default_branch or repo.get("default_branch") or "main").strip()
-    if branch != default_branch:
-        return {"ok": True, "skipped": "not_default_branch", "branch": branch}
+    watch = (
+        getattr(project, "auto_scan_branch", None)
+        or project.github_default_branch
+        or repo.get("default_branch")
+        or "main"
+    ).strip()
+    if branch != watch:
+        return {"ok": True, "skipped": "not_watched_branch", "branch": branch, "watched": watch}
 
     head = payload.get("after") or ((payload.get("head_commit") or {}).get("id"))
     if not head or head == "0000000000000000000000000000000000000000":

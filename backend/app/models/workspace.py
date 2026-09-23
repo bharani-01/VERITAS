@@ -27,6 +27,7 @@ class Project(Base):
     notify_email_default: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_in_app_default: Mapped[bool] = mapped_column(Boolean, default=True)
     auto_scan_on_push: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_scan_branch: Mapped[str | None] = mapped_column(String(128), nullable=True)
     github_webhook_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     github_webhook_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -3,7 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import type { User } from "../lib/api";
 import { avatarUrl } from "../lib/avatars";
 import { initialsFromName } from "../lib/preferences";
-import { applyTheme, readTheme } from "../lib/theme";
+import { applyTheme } from "../lib/theme";
 
 type Props = {
   user: User;
@@ -27,7 +27,6 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
   const { pathname } = useLocation();
   const homeActive = pathname === "/user" || pathname === "/user/";
   const projectsActive = pathname.startsWith("/user/projects") || pathname.startsWith("/user/scans");
-  const integrationsActive = pathname.startsWith("/user/integrations");
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
@@ -46,7 +45,7 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
   }
 
   useEffect(() => {
-    applyTheme(readTheme());
+    applyTheme("dark");
   }, []);
 
   useEffect(() => {
@@ -101,13 +100,6 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
           <path d="M3 7l2.5-3h13L21 7" />
         </svg>
         <span className="nav-link-text">Projects</span>
-      </Link>
-      <Link className={`nav-link ${integrationsActive ? "active" : ""}`} to="/user/integrations">
-        <svg className="icon" viewBox="0 0 24 24">
-          <path d="M10 13a5 5 0 0 0 7.07 0l1.41-1.41a5 5 0 0 0-7.07-7.07L10 5.93" />
-          <path d="M14 11a5 5 0 0 0-7.07 0L5.5 12.4a5 5 0 0 0 7.07 7.07L14 18.07" />
-        </svg>
-        <span className="nav-link-text">Integrations</span>
       </Link>
 
       <div

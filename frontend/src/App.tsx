@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import { RouteTitle } from "./components/RouteTitle";
 import { AdminAuditPage } from "./admin/AdminAuditPage";
 import { AdminDashboardPage } from "./admin/AdminDashboardPage";
 import { AdminProfilePage } from "./admin/AdminProfilePage";
@@ -14,15 +15,19 @@ import { VerifyPage } from "./pages/VerifyPage";
 import { UserDashboardPage } from "./user/UserDashboardPage";
 import { UserIntegrationsPage } from "./user/UserIntegrationsPage";
 import { UserProfilePage } from "./user/UserProfilePage";
+import { UserNewProjectPage } from "./user/UserNewProjectPage";
 import { UserProjectDetailPage } from "./user/UserProjectDetailPage";
 import { UserProjectsPage } from "./user/UserProjectsPage";
+import { UserScanDetailPage } from "./user/UserScanDetailPage";
 import { UserScansPage } from "./user/UserScansPage";
 import { UserSettingsPage } from "./user/UserSettingsPage";
 import { UserShell } from "./user/UserShell";
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <RouteTitle />
+      <Routes>
       <Route path="/" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot" element={<ForgotPage />} />
@@ -43,7 +48,9 @@ export default function App() {
       <Route element={<UserShell />}>
         <Route path="/user/" element={<UserDashboardPage />} />
         <Route path="/user/projects" element={<UserProjectsPage />} />
+        <Route path="/user/projects/new" element={<UserNewProjectPage />} />
         <Route path="/user/projects/:projectId" element={<UserProjectDetailPage />} />
+        <Route path="/user/projects/:projectId/scans/:scanId" element={<UserScanDetailPage />} />
         <Route path="/user/scans" element={<UserScansPage />} />
         <Route path="/user/integrations" element={<UserIntegrationsPage />} />
         <Route path="/user/profile" element={<UserProfilePage />} />
@@ -51,6 +58,7 @@ export default function App() {
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }

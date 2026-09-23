@@ -51,6 +51,7 @@ def create_project(
             github_repo_id=body.github_repo_id,
             security_level=body.security_level,
             auto_scan_on_push=body.auto_scan_on_push,
+            auto_scan_branch=body.auto_scan_branch,
         )
     except HTTPException as exc:
         if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
@@ -104,6 +105,7 @@ def patch_project(
             notify_email_default=body.notify_email_default,
             notify_in_app_default=body.notify_in_app_default,
             auto_scan_on_push=body.auto_scan_on_push,
+            auto_scan_branch=body.auto_scan_branch,
         )
     except HTTPException as exc:
         if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
@@ -301,7 +303,7 @@ def github_callback(
     db: Session = Depends(db_session),
 ):
     if not code or not state:
-        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error=missing_code", status_code=302)
+        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/projects/new?error=missing_code", status_code=302)
     try:
         conn = github_svc.complete_oauth(db, code=code, state=state)
         user = db.get(User, conn.user_id)
@@ -321,12 +323,12 @@ def github_callback(
         # Best-effort failure audit without a resolved user (state may be invalid).
         audit(db, request, "github_oauth_failed", after={"reason": str(exc.detail)[:200]}, status_code=302)
         db.commit()
-        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error={detail}", status_code=302)
+        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/projects/new?error={detail}", status_code=302)
     except Exception:
         audit(db, request, "github_oauth_failed", after={"reason": "oauth_failed"}, status_code=302)
         db.commit()
-        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?error=oauth_failed", status_code=302)
-    return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/integrations?connected=1", status_code=302)
+        return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/projects/new?error=oauth_failed", status_code=302)
+    return RedirectResponse(url=f"{PUBLIC_APP_URL}/user/projects/new?connected=1", status_code=302)
 
 
 @router.post("/github/disconnect")

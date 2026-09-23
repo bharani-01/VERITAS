@@ -11,7 +11,7 @@ VERITAS-Infosec/
 ├── frontend/                      # React (Vite) source — single-server UI
 │   └── src/
 │       ├── admin/                 # Admin shell, nav, dashboard, directory, profile
-│       ├── user/                  # User shell, home, projects, scans, integrations, profile
+│       ├── user/                  # User shell, home, projects, new-project, scans, profile
 │       ├── pages/                 # Public auth screens
 │       ├── components/            # Auth-only UI (AuthShell)
 │       └── lib/                   # api client, avatars, workspace types
@@ -52,7 +52,7 @@ No separate frontend host is required in production.
 | `one_time_tokens` | Email verify / password reset (hashed) |
 | `audit_events` | Admin/user action trail |
 | `email_deliveries` | Outbound email status |
-| `projects` | User-owned workspace projects (Phase 2) + auto_scan_on_push / webhook fields (Phase 5) |
+| `projects` | User-owned workspace projects (Phase 2) + auto_scan_on_push / auto_scan_branch / webhook fields (Phase 5) |
 | `scans` | Scan records + Phase 3/4 async engines (progress, ETA, scope, cancel) |
 | `findings` | Normalized engine findings per scan (status, fingerprint, AI fields) |
 | `finding_suppressions` | Project-scoped fingerprints suppressed across re-scans |
