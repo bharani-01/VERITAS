@@ -169,6 +169,10 @@ def create_project_scan(
         notify_email=body.notify_email,
         notify_in_app=body.notify_in_app,
         ref=body.ref,
+        engines=body.engines,
+        path_excludes=body.path_excludes,
+        fail_severity=body.fail_severity,
+        code_review=body.code_review,
     )
     project = project_svc.get_owned_project(db, user, project_id)
     audit(
@@ -360,3 +364,12 @@ def github_repos(
     db: Session = Depends(db_session),
 ):
     return {"items": github_svc.list_owned_repos(db, user, page=page, per_page=per_page)}
+
+
+@router.get("/github/repos/{repo_id}/refs")
+def github_repo_refs(repo_id: int, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+    """Branches/tags for an owned repo (used by New project Advanced before create)."""
+    meta = github_svc.verify_owned_repo(db, user, repo_id)
+    refs = github_svc.list_repo_refs(db, user, meta["full_name"])
+    refs["default"] = meta.get("default_branch")
+    return refs

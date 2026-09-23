@@ -46,7 +46,18 @@ export function SignupPage() {
         </div>
         <div className="field">
           <label htmlFor="password">Password</label>
-          <input id="password" name="password" type="password" required minLength={12} autoComplete="new-password" />
+          <input
+            id="password"
+            name="password"
+            type="password"
+            required
+            minLength={12}
+            autoComplete="new-password"
+            aria-describedby="password-hint"
+          />
+          <p id="password-hint" className="muted small">
+            At least 12 characters.
+          </p>
         </div>
         <button type="submit" disabled={busy}>
           {busy ? "Creating account…" : "Create account"}

@@ -4,6 +4,7 @@ import { Link, useOutletContext } from "react-router-dom";
 import { api } from "../lib/api";
 import type { User } from "../lib/api";
 import { AVATARS, avatarUrl, formatStatus } from "../lib/avatars";
+import { formatLocalDateTime } from "../lib/time";
 
 type ShellContext = {
   user: User;
@@ -80,78 +81,82 @@ export function AdminProfilePage() {
             </div>
             <div>
               <span>Last login</span>
-              <strong>{user.last_login_at ? new Date(user.last_login_at).toLocaleString() : "—"}</strong>
+              <strong>{user.last_login_at ? formatLocalDateTime(user.last_login_at) : "—"}</strong>
             </div>
           </div>
         </section>
-        <section className="profile-card">
-          <div className="profile-card-head">
+        <section className="profile-card rr-row">
+          <div className="rr-meta profile-card-head">
             <h3>Profile photo</h3>
             <p>Choose an avatar for the directory and account views.</p>
           </div>
-          <div className="avatar-grid">
-            {AVATARS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={`avatar-option ${item.id === selectedAvatar ? "selected" : ""}`}
-                aria-label={item.label}
-                aria-pressed={item.id === selectedAvatar}
-                title={item.label}
-                onClick={() => setSelectedAvatar(item.id)}
-              >
-                <img className="avatar-art" src={avatarUrl(item.id)} alt={item.label} width={80} height={80} />
-              </button>
-            ))}
+          <div className="rr-controls">
+            <div className="avatar-grid">
+              {AVATARS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`avatar-option ${item.id === selectedAvatar ? "selected" : ""}`}
+                  aria-label={item.label}
+                  aria-pressed={item.id === selectedAvatar}
+                  title={item.label}
+                  onClick={() => setSelectedAvatar(item.id)}
+                >
+                  <img className="avatar-art" src={avatarUrl(item.id)} alt={item.label} width={80} height={80} />
+                </button>
+              ))}
+            </div>
           </div>
         </section>
-        <section className="profile-card">
-          <div className="profile-card-head">
+        <section className="profile-card rr-row">
+          <div className="rr-meta profile-card-head">
             <h3>Public details</h3>
             <p>Name and username appear across VERITAS.</p>
           </div>
-          <div className="profile-form-grid three-col">
-            <div className="field">
-              <label htmlFor="admin_display_name">Display name</label>
-              <input
-                id="admin_display_name"
-                name="display_name"
-                required
-                maxLength={120}
-                defaultValue={user.display_name}
-                key={`admin-name-${user.id}-${user.display_name}`}
-                autoComplete="name"
-              />
+          <div className="rr-controls">
+            <div className="profile-form-grid">
+              <div className="field">
+                <label htmlFor="admin_display_name">Display name</label>
+                <input
+                  id="admin_display_name"
+                  name="display_name"
+                  required
+                  maxLength={120}
+                  defaultValue={user.display_name}
+                  key={`admin-name-${user.id}-${user.display_name}`}
+                  autoComplete="name"
+                />
+              </div>
+              <div className="field">
+                <label htmlFor="admin_username">Username</label>
+                <input
+                  id="admin_username"
+                  name="username"
+                  required
+                  minLength={3}
+                  maxLength={32}
+                  pattern="[a-z][a-z0-9_]{2,31}"
+                  defaultValue={user.username || ""}
+                  key={`admin-user-${user.id}-${user.username}`}
+                  autoComplete="username"
+                  placeholder="your_handle"
+                />
+                <p className="hint">Lowercase letters, numbers, underscores.</p>
+              </div>
+              <div className="field">
+                <label htmlFor="admin_email">Email</label>
+                <input id="admin_email" name="email" type="email" value={user.email} disabled />
+                <p className="hint">Verified email is locked.</p>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor="admin_username">Username</label>
-              <input
-                id="admin_username"
-                name="username"
-                required
-                minLength={3}
-                maxLength={32}
-                pattern="[a-z][a-z0-9_]{2,31}"
-                defaultValue={user.username || ""}
-                key={`admin-user-${user.id}-${user.username}`}
-                autoComplete="username"
-                placeholder="your_handle"
-              />
-              <p className="hint">Lowercase letters, numbers, underscores.</p>
+            <div className="profile-actions">
+              <button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Save changes"}
+              </button>
+              <Link className="btn secondary" to="/forgot">
+                Change password
+              </Link>
             </div>
-            <div className="field">
-              <label htmlFor="admin_email">Email</label>
-              <input id="admin_email" name="email" type="email" value={user.email} disabled />
-              <p className="hint">Verified email is locked.</p>
-            </div>
-          </div>
-          <div className="profile-actions">
-            <button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save changes"}
-            </button>
-            <Link className="btn secondary" to="/forgot">
-              Change password
-            </Link>
           </div>
         </section>
       </form>

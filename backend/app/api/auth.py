@@ -15,7 +15,7 @@ from app.schemas import EmailInput, LoginInput, ProfileUpdate, ResetInput, Signu
 from app.api.deps import get_current_user
 from app.services.audit import audit, public_user, snapshot
 from app.services.auth import create_session
-from app.services.email import send_email, send_token_email
+from app.services.email import send_admin_approval_required, send_password_changed, send_token_email
 from app.services.profile import allocate_username, validate_avatar, validate_username
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -160,13 +160,7 @@ def verify_email(body: TokenInput, request: Request, db: Session = Depends(db_se
     user.status = "pending_approval"
     audit(db, request, "email_verified", target=user, before=before, after=snapshot(user), status_code=200)
     for admin in db.scalars(select(User).where(User.role == "admin", User.status == "active")):
-        send_email(
-            db,
-            admin,
-            "admin_approval_required",
-            "VERITAS account approval required",
-            f"<p>{user.display_name} has verified their email and is awaiting approval.</p>",
-        )
+        send_admin_approval_required(db, admin, user)
     db.commit()
     return {"message": "Email verified. Your account is awaiting administrator approval."}
 
@@ -215,6 +209,6 @@ def password_reset_confirm(body: ResetInput, request: Request, db: Session = Dep
         {"revoked_at": utcnow()}
     )
     audit(db, request, "password_reset_completed", target=user, status_code=200)
-    send_email(db, user, "password_changed", "Your VERITAS password was changed", "<p>Your password was changed successfully.</p>")
+    send_password_changed(db, user)
     db.commit()
     return {"message": "Password updated. Please sign in again."}

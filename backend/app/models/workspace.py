@@ -60,6 +60,7 @@ class Scan(Base):
     notify_email: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True)
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

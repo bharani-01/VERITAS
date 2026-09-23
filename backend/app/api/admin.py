@@ -15,7 +15,7 @@ from app.models import AuditEvent, AuthSession, GitHubConnection, Project, Scan,
 from app.schemas import UserPatch
 from app.services.audit import audit, public_user, snapshot
 from app.services.auth import active_admin_count
-from app.services.email import send_email, send_token_email
+from app.services.email import send_account_status, send_token_email
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -183,13 +183,7 @@ def transition_user(
         )
     target.status = new_status
     audit(db, request, action, actor=actor, target=target, before=before, after=snapshot(target), status_code=200)
-    send_email(
-        db,
-        target,
-        template,
-        subject,
-        f"<p>Your VERITAS account status is now: {new_status.replace('_', ' ')}.</p>",
-    )
+    send_account_status(db, target, new_status)
     db.commit()
     return {"user": public_user(target)}
 

@@ -61,14 +61,24 @@ export type Scan = {
     by_severity?: Record<string, number>;
     by_family?: Record<string, number>;
     ai_status?: string;
+    ai_report?: string | null;
     max_risk?: number;
     commit_short?: string;
     commit_sha?: string;
     engines?: Array<Record<string, unknown>>;
+    options?: Record<string, unknown>;
+    policy_failed?: boolean;
+    fail_severity?: string;
   } | null;
-  risk_summary?: { max_risk?: number; open_findings?: number } | null;
+  risk_summary?: { max_risk?: number; open_findings?: number; by_severity?: Record<string, number> } | null;
   notify_email?: boolean;
   notify_in_app?: boolean;
+  options?: {
+    engines?: string[];
+    path_excludes?: string[];
+    fail_severity?: string;
+    code_review?: boolean;
+  } | null;
   started_at?: string | null;
   finished_at?: string | null;
   created_at: string;

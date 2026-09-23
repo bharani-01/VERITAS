@@ -235,6 +235,7 @@ def test_github_disconnect_clears_active_connection():
         status2 = client.get("/workspace/github/status")
         assert status2.json()["connected"] is False
         assert client.get("/workspace/github/repos").status_code == 400
+        assert client.get("/workspace/github/repos/123/refs").status_code == 400
 
 
 def test_finding_status_patch_authz_and_suppress():
@@ -605,3 +606,41 @@ def test_github_webhook_signature_and_push_scan():
         assert skipped.status_code == 200
         assert skipped.json().get("skipped") == "not_watched_branch"
         _ = user_id
+
+
+def test_scan_create_accepts_quality_options():
+    with fresh_client() as client:
+        _activate_student(client)
+        created = client.post("/workspace/projects", json={"name": "Quality", "description": ""})
+        project_id = created.json()["project"]["id"]
+        with patch("app.services.projects.run_scan_job"):
+            with patch("app.services.projects.enqueue_scan"):
+                res = client.post(
+                    f"/workspace/projects/{project_id}/scans",
+                    json={
+                        "target": "example.test",
+                        "scan_mode": "rules_plus_ai",
+                        "security_level": "strict",
+                        "engines": ["gitleaks", "semgrep"],
+                        "path_excludes": ["node_modules/**", "vendor/**"],
+                        "fail_severity": "high",
+                        "code_review": True,
+                    },
+                )
+        assert res.status_code == 201
+        scan = res.json()["scan"]
+        assert scan["security_level"] == "strict"
+        assert scan["scan_mode"] == "rules_plus_ai"
+        opts = scan.get("options") or {}
+        assert "gitleaks" in opts.get("engines", [])
+        assert "semgrep" in opts.get("engines", [])
+        assert "osv" not in opts.get("engines", [])
+        assert opts.get("fail_severity") == "high"
+        assert opts.get("code_review") is True
+        assert "node_modules/**" in (opts.get("path_excludes") or [])
+
+        bad = client.post(
+            f"/workspace/projects/{project_id}/scans",
+            json={"engines": [], "fail_severity": "ultra"},
+        )
+        assert bad.status_code == 400

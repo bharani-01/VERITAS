@@ -110,10 +110,27 @@ def public_scan(scan: Scan, project_name: str | None = None) -> dict:
         "notify_email": bool(scan.notify_email),
         "notify_in_app": bool(scan.notify_in_app),
         "cancel_requested": bool(getattr(scan, "cancel_requested", False)),
+        "options": _scan_options(scan),
         "started_at": scan.started_at,
         "finished_at": scan.finished_at,
         "created_at": scan.created_at,
     }
+
+
+def _scan_options(scan: Scan) -> dict:
+    raw = getattr(scan, "options_json", None)
+    if not raw:
+        return {
+            "engines": ["gitleaks", "osv", "semgrep"],
+            "path_excludes": [],
+            "fail_severity": "off",
+            "code_review": False,
+        }
+    try:
+        data = json.loads(raw)
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
 
 
 def public_finding(finding: Finding) -> dict:
@@ -449,6 +466,10 @@ def create_scan(
     commit_sha: str | None = None,
     commit_message: str | None = None,
     commit_author: str | None = None,
+    engines: list[str] | None = None,
+    path_excludes: list[str] | None = None,
+    fail_severity: str | None = None,
+    code_review: bool | None = None,
     enforce_quota: bool = True,
 ) -> Scan:
     project = get_owned_project(db, user, project_id)
@@ -500,6 +521,33 @@ def create_scan(
     if scope == "changed" and resolved_source not in {"github_repo", "github_push"}:
         raise HTTPException(status_code=400, detail="Changed-files scans require a linked GitHub repository.")
 
+    allowed_engines = {"gitleaks", "osv", "semgrep"}
+    if engines is None:
+        chosen = ["gitleaks", "osv", "semgrep"]
+    else:
+        chosen = [e for e in engines if e in allowed_engines]
+        if not chosen:
+            raise HTTPException(status_code=400, detail="Select at least one engine (gitleaks, osv, semgrep).")
+
+    excludes = []
+    for item in path_excludes or []:
+        cleaned = str(item or "").strip()[:128]
+        if cleaned:
+            excludes.append(cleaned)
+    excludes = excludes[:40]
+
+    fail = (fail_severity or "off").strip().lower()
+    if fail not in {"off", "critical", "high", "medium"}:
+        raise HTTPException(status_code=400, detail="Invalid fail_severity.")
+
+    review = bool(code_review) if code_review is not None else (mode == "rules_plus_ai")
+    options = {
+        "engines": chosen,
+        "path_excludes": excludes,
+        "fail_severity": fail,
+        "code_review": review,
+    }
+
     sha = (commit_sha or "").strip() or None
     short = sha[:7] if sha else None
 
@@ -508,6 +556,8 @@ def create_scan(
         scan_mode=mode,
         has_github=bool(project.github_repo_full_name),
     )
+    if review:
+        eta += 40
     scan = Scan(
         project_id=project.id,
         created_by_user_id=user.id,
@@ -524,6 +574,7 @@ def create_scan(
         commit_author=(commit_author or "").strip()[:256] or None,
         eta_seconds=eta,
         cancel_requested=False,
+        options_json=json.dumps(options),
         progress_json=json.dumps(
             {"phase": "queued", "label": "Getting ready…", "percent": 0, "eta_remaining_seconds": eta}
         ),
@@ -679,8 +730,12 @@ def compare_scans(db: Session, user: User, project_id: str, *, scan_a: str, scan
     b, pb = get_owned_scan(db, user, scan_b)
     if pa.id != project.id or pb.id != project.id:
         raise HTTPException(status_code=400, detail="Both scans must belong to this project.")
-    if a.status != "completed" or b.status != "completed":
-        raise HTTPException(status_code=400, detail="Compare requires two completed scans.")
+    comparable = {"completed", "failed"}
+    if a.status not in comparable or b.status not in comparable:
+        raise HTTPException(
+            status_code=400,
+            detail="Compare requires two finished scans (completed or policy-failed).",
+        )
 
     def _map(scan: Scan) -> dict[str, Finding]:
         out: dict[str, Finding] = {}

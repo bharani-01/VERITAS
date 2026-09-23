@@ -54,8 +54,8 @@ export function SharedReportPage() {
 
   if (error) {
     return (
-      <main className="auth-shell shared-report-shell">
-        <div className="auth-panel" style={{ maxWidth: 480, margin: "4rem auto" }}>
+      <main className="shared-report-shell">
+        <div className="auth-panel">
           <h1>Report unavailable</h1>
           <p className="muted">{error}</p>
           <Link className="btn" to="/">
@@ -68,8 +68,8 @@ export function SharedReportPage() {
 
   if (!data) {
     return (
-      <main className="auth-shell shared-report-shell">
-        <div className="auth-panel" style={{ maxWidth: 480, margin: "4rem auto" }}>
+      <main className="shared-report-shell">
+        <div className="auth-panel">
           <LoadingMark label="Loading shared report…" />
         </div>
       </main>
@@ -110,6 +110,7 @@ export function SharedReportPage() {
               <option value="json">JSON (.json)</option>
               <option value="csv">CSV (.csv)</option>
               <option value="html">HTML (.html)</option>
+              <option value="sarif">SARIF (.sarif)</option>
             </select>
           </label>
           <button
@@ -123,6 +124,12 @@ export function SharedReportPage() {
       </header>
 
       <section className="scan-report-panel">
+        {scan.summary?.ai_report ? (
+          <div className="report-ai">
+            <h2>AI final report</h2>
+            <pre className="ai-report-body">{scan.summary.ai_report}</pre>
+          </div>
+        ) : null}
         <h2>Findings (highest risk first)</h2>
         {!sorted.length ? (
           <div className="empty-state">No findings in this report.</div>

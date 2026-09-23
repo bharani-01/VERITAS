@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
+import { parseUtc } from "../lib/time";
 
 type AuditUser = {
   id?: string;
@@ -108,11 +109,13 @@ function statusTone(code: number | null | undefined): "ok" | "redirect" | "clien
 }
 
 function formatTime(iso: string) {
-  const d = new Date(iso);
+  const d = parseUtc(iso) || new Date(NaN);
   return {
-    date: d.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
-    time: d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
-    full: d.toLocaleString(),
+    date: Number.isNaN(d.getTime()) ? "—" : d.toLocaleDateString(undefined, { day: "numeric", month: "short" }),
+    time: Number.isNaN(d.getTime())
+      ? "—"
+      : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }),
+    full: Number.isNaN(d.getTime()) ? "—" : d.toLocaleString(),
   };
 }
 
@@ -354,13 +357,12 @@ export function AdminAuditPage() {
       </header>
 
       <div className="audit-console-toolbar">
-        <div className="audit-seg" role="tablist" aria-label="Category">
+        <div className="audit-seg" role="group" aria-label="Category">
           {FILTERS.map(([id, label]) => (
             <button
               key={id || "all"}
               type="button"
-              role="tab"
-              aria-selected={category === id}
+              aria-pressed={category === id}
               className={category === id ? "active" : ""}
               onClick={() => setCategory(id)}
             >
@@ -409,7 +411,9 @@ export function AdminAuditPage() {
                   <th>Target</th>
                   <th>Location</th>
                   <th>Client</th>
-                  <th />
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

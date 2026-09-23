@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { formatStatus } from "../lib/avatars";
 import {
@@ -68,18 +68,9 @@ export function ScanHistoryList({
 }: Props) {
   const navigate = useNavigate();
 
-  if (!scans.length) {
-    return (
-      <div className="empty-state">
-        <strong>{emptyTitle}</strong>
-        {emptyBody}
-      </div>
-    );
-  }
-
   return (
     <section className="scan-hist" aria-label={title}>
-      <div className="scan-hist-grid scan-hist-head" aria-hidden="true">
+      <div className="scan-hist-grid scan-hist-head">
         <span className="scan-hist-h-main">
           {title}
           <span className="scan-hist-count">{scans.length}</span>
@@ -87,93 +78,112 @@ export function ScanHistoryList({
         <span className="scan-hist-h-col">Trigger</span>
         <span className="scan-hist-h-col">Findings</span>
         <span className="scan-hist-h-col">Duration</span>
-        <span className="scan-hist-h-action" />
+        <span className="scan-hist-h-action">
+          <span className="sr-only">Actions</span>
+        </span>
       </div>
-      <ul className="scan-hist-list">
-        {scans.map((scan) => {
-          const sha = shortCommit(scan.commit_short, scan.commit_sha);
-          const scanning = scan.status === "queued" || scan.status === "running";
-          const pid = projectId || scan.project_id;
-          const href = `/user/projects/${pid}/scans/${scan.id}`;
-          const when = relativeTime(scan.finished_at || scan.created_at);
-          const findings = findingsCountLabel(scan);
-          return (
-            <li key={scan.id}>
-              <button
-                type="button"
-                className="scan-hist-grid scan-hist-row"
-                onClick={() => navigate(href)}
-              >
-                <span className="scan-hist-main">
-                  <StatusIcon status={scan.status} />
-                  <span className="scan-hist-copy">
-                    <span className="scan-hist-msg">{scanHeadline(scan)}</span>
-                    <span className="scan-hist-meta">
-                      {showProjectName && scan.project_name ? (
-                        <>
-                          <span className="scan-hist-project">{scan.project_name}</span>
-                          <span className="scan-hist-dot" aria-hidden="true">
-                            ·
-                          </span>
-                        </>
-                      ) : null}
-                      {sha ? <code className="scan-hist-sha">{sha}</code> : <span>—</span>}
-                      {when ? (
-                        <>
-                          <span className="scan-hist-dot" aria-hidden="true">
-                            ·
-                          </span>
-                          <span>
-                            {scan.status === "completed" ? "Scanned" : formatStatus(scan.status)} {when}
-                          </span>
-                        </>
-                      ) : null}
+      {!scans.length ? (
+        <div className="empty-state scan-hist-empty">
+          <strong>{emptyTitle}</strong>
+          {emptyBody}
+        </div>
+      ) : (
+        <ul className="scan-hist-list">
+          {scans.map((scan) => {
+            const sha = shortCommit(scan.commit_short, scan.commit_sha);
+            const scanning = scan.status === "queued" || scan.status === "running";
+            const pid = projectId || scan.project_id;
+            const href = `/user/projects/${pid}/scans/${scan.id}`;
+            const when = relativeTime(scan.finished_at || scan.created_at);
+            const findings = findingsCountLabel(scan);
+            const headline = scanHeadline(scan);
+            return (
+              <li key={scan.id}>
+                <div className="scan-hist-grid scan-hist-row">
+                  <Link className="scan-hist-stretch" to={href} aria-label={`Open scan: ${headline}`} />
+                  <span className="scan-hist-main">
+                    <StatusIcon status={scan.status} />
+                    <span className="scan-hist-copy">
+                      <span className="scan-hist-msg">{headline}</span>
+                      <span className="scan-hist-meta">
+                        {showProjectName && scan.project_name ? (
+                          <>
+                            <span className="scan-hist-project">{scan.project_name}</span>
+                            <span className="scan-hist-dot" aria-hidden="true">
+                              ·
+                            </span>
+                          </>
+                        ) : null}
+                        {sha ? <code className="scan-hist-sha">{sha}</code> : <span>—</span>}
+                        {when ? (
+                          <>
+                            <span className="scan-hist-dot" aria-hidden="true">
+                              ·
+                            </span>
+                            <span>
+                              {scan.status === "completed" ? "Scanned" : formatStatus(scan.status)} {when}
+                            </span>
+                          </>
+                        ) : null}
+                        <span className="scan-hist-mobile-extra">
+                          {" · "}
+                          {scanTriggerLabel(scan)}
+                          {" · "}
+                          {findings === "—" || findings === "…" ? findings : `${findings} findings`}
+                          {" · "}
+                          {formatScanDuration(scan)}
+                        </span>
+                      </span>
                     </span>
                   </span>
-                </span>
-                <span className="scan-hist-col">{scanTriggerLabel(scan)}</span>
-                <span className="scan-hist-col scan-hist-findings">
-                  {findings === "—" || findings === "…" ? findings : (
-                    <>
-                      <b>{findings}</b>
-                      <span className="scan-hist-findings-label"> findings</span>
-                    </>
-                  )}
-                </span>
-                <span className="scan-hist-col">{formatScanDuration(scan)}</span>
-                <span className="scan-hist-action">
-                  {scanning && onCancel ? (
-                    <span
-                      className="scan-hist-cancel"
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onCancel(scan.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onCancel(scan.id);
-                        }
-                      }}
-                    >
-                      {scan.cancel_requested ? "Cancelling…" : "Cancel"}
-                    </span>
-                  ) : (
-                    <span className="scan-hist-chevron" aria-hidden="true">
-                      <svg viewBox="0 0 24 24">
-                        <path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </span>
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                  <span className="scan-hist-col">{scanTriggerLabel(scan)}</span>
+                  <span className="scan-hist-col scan-hist-findings">
+                    {findings === "—" || findings === "…" ? (
+                      findings
+                    ) : (
+                      <>
+                        <b>{findings}</b>
+                        <span className="scan-hist-findings-label"> findings</span>
+                      </>
+                    )}
+                  </span>
+                  <span className="scan-hist-col">{formatScanDuration(scan)}</span>
+                  <span className="scan-hist-action">
+                    {scanning && onCancel ? (
+                      <button
+                        type="button"
+                        className="scan-hist-cancel"
+                        onClick={() => onCancel(scan.id)}
+                      >
+                        {scan.cancel_requested ? "Cancelling…" : "Cancel"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="scan-hist-chevron"
+                        onClick={() => navigate(href)}
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      >
+                        <svg viewBox="0 0 24 24">
+                          <path
+                            d="M9 6l6 6-6 6"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.75"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </section>
   );
 }

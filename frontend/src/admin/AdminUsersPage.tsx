@@ -4,6 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { User } from "../lib/api";
 import { avatarUrl, formatStatus } from "../lib/avatars";
+import { formatLocalDate, formatLocalDateTime } from "../lib/time";
 
 type MenuPos = { top: number; left: number };
 
@@ -67,7 +68,7 @@ export function AdminUsersPage() {
       } else if (action === "history") {
         const details = await api<{ audit_events: { created_at: string; action: string }[] }>(`/admin/users/${id}`);
         alert(
-          details.audit_events.map((x) => `${new Date(x.created_at).toLocaleString()} — ${x.action}`).join("\n") ||
+          details.audit_events.map((x) => `${formatLocalDateTime(x.created_at)} — ${x.action}`).join("\n") ||
             "No audit events yet.",
         );
       } else {
@@ -148,7 +149,9 @@ export function AdminUsersPage() {
               <th>Role</th>
               <th>Status</th>
               <th>Activity</th>
-              <th className="col-actions"> </th>
+              <th className="col-actions">
+                <span className="sr-only">Actions</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -163,7 +166,9 @@ export function AdminUsersPage() {
               </tr>
             ) : (
               users.map((u) => {
-                const activity = new Date(u.last_login_at || u.email_verified_at || Date.now()).toLocaleDateString();
+                const activity = u.last_login_at || u.email_verified_at
+                  ? formatLocalDate(u.last_login_at || u.email_verified_at)
+                  : "—";
                 return (
                   <tr key={u.id}>
                     <td>

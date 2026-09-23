@@ -32,16 +32,6 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
   const closeTimer = useRef<number | null>(null);
   const handle = user.username ? `@${user.username}` : user.display_name;
 
-  function openMenu() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    setMenuOpen(true);
-  }
-
-  function scheduleClose() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setMenuOpen(false), 160);
-  }
-
   useEffect(() => {
     applyTheme("dark");
   }, []);
@@ -50,8 +40,15 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
     function onDoc(e: MouseEvent) {
       if (!wrapRef.current?.contains(e.target as Node)) setMenuOpen(false);
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   useEffect(() => {
@@ -85,8 +82,13 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
         </button>
       </div>
       <p className="nav-label">Admin</p>
-      <Link className={`nav-link ${dashActive ? "active" : ""}`} to="/admin/">
-        <svg className="icon" viewBox="0 0 24 24">
+      <Link
+        className={`nav-link ${dashActive ? "active" : ""}`}
+        to="/admin/"
+        aria-label="Overview"
+        aria-current={dashActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
           <rect x="3" y="3" width="7" height="9" rx="1" />
           <rect x="14" y="3" width="7" height="5" rx="1" />
           <rect x="14" y="12" width="7" height="9" rx="1" />
@@ -94,16 +96,26 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
         </svg>
         <span className="nav-link-text">Overview</span>
       </Link>
-      <Link className={`nav-link ${usersActive ? "active" : ""}`} to="/admin/directory">
-        <svg className="icon" viewBox="0 0 24 24">
+      <Link
+        className={`nav-link ${usersActive ? "active" : ""}`}
+        to="/admin/directory"
+        aria-label="Users"
+        aria-current={usersActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
         <span className="nav-link-text">Users</span>
       </Link>
-      <Link className={`nav-link ${auditActive ? "active" : ""}`} to="/admin/audit">
-        <svg className="icon" viewBox="0 0 24 24">
+      <Link
+        className={`nav-link ${auditActive ? "active" : ""}`}
+        to="/admin/audit"
+        aria-label="Audit"
+        aria-current={auditActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3v18" />
           <path d="M5 8h14" />
           <path d="M5 14h10" />
@@ -112,15 +124,10 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
         <span className="nav-link-text">Audit</span>
       </Link>
 
-      <div
-        className={`nav-account ${menuOpen ? "open" : ""}`}
-        ref={wrapRef}
-        onMouseEnter={openMenu}
-        onMouseLeave={scheduleClose}
-      >
+      <div className={`nav-account ${menuOpen ? "open" : ""}`} ref={wrapRef}>
         {menuOpen ? (
-          <div className="account-menu" role="menu" onMouseEnter={openMenu} onMouseLeave={scheduleClose}>
-            <Link className="account-menu-head" to="/admin/profile" role="menuitem" onClick={() => setMenuOpen(false)}>
+          <div className="account-menu" role="menu" aria-label="Account">
+            <div className="account-menu-head" role="presentation">
               <span className="account-avatar">
                 <img src={avatarUrl(user.avatar)} alt="" width={36} height={36} />
               </span>
@@ -128,20 +135,17 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
                 <b>{handle}</b>
                 <small>Administrator</small>
               </span>
-              <svg className="icon account-chevron" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M9 18l6-6-6-6" fill="none" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            </Link>
+            </div>
             <div className="account-menu-sep" />
             <Link className="account-menu-item" to="/admin/profile" role="menuitem" onClick={() => setMenuOpen(false)}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
               Profile
             </Link>
             <Link className="account-menu-item" to="/admin/settings" role="menuitem" onClick={() => setMenuOpen(false)}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
               </svg>
@@ -149,7 +153,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
             </Link>
             <div className="account-menu-sep" />
             <button type="button" className="account-menu-item danger" role="menuitem" onClick={onLogout}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <path d="M16 17l5-5-5-5" />
                 <path d="M21 12H9" />
@@ -162,6 +166,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
         <button
           type="button"
           className="nav-account-chip"
+          aria-label={`Account menu for ${handle}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={(e) => {

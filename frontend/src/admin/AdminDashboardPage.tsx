@@ -4,6 +4,7 @@ import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import type { User } from "../lib/api";
 import { avatarUrl, formatStatus } from "../lib/avatars";
+import { formatLocalDateTime } from "../lib/time";
 
 type DashboardData = {
   totals: {
@@ -139,7 +140,7 @@ export function AdminDashboardPage() {
                 <li key={event.id}>
                   <span>
                     <b>{formatAction(event.action)}</b>
-                    <small>{new Date(event.created_at).toLocaleString()}</small>
+                    <small>{formatLocalDateTime(event.created_at)}</small>
                   </span>
                 </li>
               ))}

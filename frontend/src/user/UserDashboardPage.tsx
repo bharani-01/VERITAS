@@ -3,8 +3,9 @@ import { Link, useOutletContext } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import type { User } from "../lib/api";
-import type { WorkspaceDashboard } from "../lib/workspace";
 import { avatarUrl, formatStatus } from "../lib/avatars";
+import { formatLocalDateTime } from "../lib/time";
+import type { WorkspaceDashboard } from "../lib/workspace";
 
 type ShellContext = { user: User };
 
@@ -91,10 +92,12 @@ export function UserDashboardPage() {
               {data.recent_scans.map((scan) => (
                 <li key={scan.id}>
                   <span>
-                    <b>{scan.target}</b>
+                    <b>
+                      <Link to={`/user/projects/${scan.project_id}/scans/${scan.id}`}>{scan.target}</Link>
+                    </b>
                     <small>
                       <Link to={`/user/projects/${scan.project_id}`}>{scan.project_name || "Project"}</Link> ·{" "}
-                      {new Date(scan.created_at).toLocaleString()}
+                      {formatLocalDateTime(scan.created_at)}
                     </small>
                   </span>
                   <span className={`badge ${scan.status}`}>{formatStatus(scan.status)}</span>

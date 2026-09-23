@@ -24,4 +24,4 @@ Use the narrowest agent persona for the task. Prefer reading the matching playbo
 - Adding Phase 3 engines on unrelated Phase 1 tickets (see [product-phase-3.md](../product-phase-3.md))
 - Trusting client-side GitHub repo selection without server re-check
 - Editing `.env` secrets into the repo
-- Committing `GROQ_API_KEY` or pasting keys into docs/PRs/chat
+- Committing `GROQ_API_KEY`, `OPENROUTER_API_KEY`, or pasting keys into docs/PRs/chat

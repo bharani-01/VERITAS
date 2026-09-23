@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI
+from fastapi.encoders import ENCODERS_BY_TYPE
 from sqlalchemy import create_engine, select
 
 from app.api import admin as admin_api
@@ -13,12 +15,17 @@ from app.api import workspace as workspace_api
 from app.core import database as database
 from app.core.config import reload_env
 from app.core.database import SessionLocal, engine
+from app.core.time import to_iso_utc
 from app.models import Base, User
 from app.services.auth import bootstrap_admin, ensure_schema
 from app.services.github import github_config_report
 from app.services.scan_runner import ensure_scan_worker
 from app.services.tokens import issue_token
 from app.web.routes import mount_static, router as web_router
+
+# SQLite returns naive UTC; without this, JSON omits the offset and browsers treat
+# timestamps as local time (e.g. IST), so "ago" and wall-clock labels drift.
+ENCODERS_BY_TYPE[datetime] = to_iso_utc
 
 DATABASE_URL = database.DATABASE_URL
 

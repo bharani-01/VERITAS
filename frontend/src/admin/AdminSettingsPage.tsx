@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { readPreferences, writePreferences, type UserPreferences } from "../lib/preferences";
 
-/** Admin preferences — email notification toggles (stored locally). */
+/** Admin preferences — Render left/right rows. */
 export function AdminSettingsPage() {
   const [prefs, setPrefs] = useState<UserPreferences>(() => readPreferences());
   const [saved, setSaved] = useState(false);
@@ -29,14 +29,16 @@ export function AdminSettingsPage() {
         ) : null}
       </header>
 
-      <section className="settings-section">
-        <h2>Email notifications</h2>
-        <p className="settings-lede">Stored on this device until server-side prefs ship.</p>
-        <div className="settings-toggles">
+      <section className="settings-section rr-row">
+        <div className="rr-meta">
+          <h2>Security alerts</h2>
+          <p>Sign-in and administrator security notices.</p>
+        </div>
+        <div className="rr-controls">
           <label className="settings-toggle">
             <span>
-              <b>Security alerts</b>
-              <small>Sign-in and administrator security notices</small>
+              <b>Email me</b>
+              <small>When something security-related happens</small>
             </span>
             <input
               type="checkbox"
@@ -44,10 +46,19 @@ export function AdminSettingsPage() {
               onChange={(e) => patchPrefs({ emailSecurityAlerts: e.target.checked })}
             />
           </label>
+        </div>
+      </section>
+
+      <section className="settings-section rr-row">
+        <div className="rr-meta">
+          <h2>Product updates</h2>
+          <p>Platform and identity changes.</p>
+        </div>
+        <div className="rr-controls">
           <label className="settings-toggle">
             <span>
-              <b>Product updates</b>
-              <small>Platform and identity changes</small>
+              <b>Email me</b>
+              <small>Occasional product announcements</small>
             </span>
             <input
               type="checkbox"
@@ -55,10 +66,19 @@ export function AdminSettingsPage() {
               onChange={(e) => patchPrefs({ emailProductUpdates: e.target.checked })}
             />
           </label>
+        </div>
+      </section>
+
+      <section className="settings-section rr-row">
+        <div className="rr-meta">
+          <h2>Weekly digest</h2>
+          <p>Identity and workspace totals.</p>
+        </div>
+        <div className="rr-controls">
           <label className="settings-toggle">
             <span>
-              <b>Weekly digest</b>
-              <small>Identity and workspace totals</small>
+              <b>Email me</b>
+              <small>Once a week</small>
             </span>
             <input
               type="checkbox"

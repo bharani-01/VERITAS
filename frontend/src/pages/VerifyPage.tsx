@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 
 export function VerifyPage() {
   const [params] = useSearchParams();
-  const [notice, setNotice] = useState<{ message: string; type: string }>({ message: "Verifying…", type: "" });
+  const [notice, setNotice] = useState<{ message: string; type: string }>({ message: "Verifying…", type: "info" });
 
   useEffect(() => {
     const token = params.get("token");

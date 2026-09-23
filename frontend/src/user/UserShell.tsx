@@ -50,9 +50,16 @@ export function UserShell() {
   }
 
   return (
-    <div className={`app-frame ${ready ? "nav-ready" : ""} ${collapsed ? "nav-collapsed" : ""}`} id="appFrame">
-      <UserNav user={user} collapsed={collapsed} onToggle={onToggle} onLogout={onLogout} />
-      <Outlet context={{ user, setUser }} />
-    </div>
+    <>
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
+      <div className={`app-frame ${ready ? "nav-ready" : ""} ${collapsed ? "nav-collapsed" : ""}`} id="appFrame">
+        <UserNav user={user} collapsed={collapsed} onToggle={onToggle} onLogout={onLogout} />
+        <div id="main-content" tabIndex={-1}>
+          <Outlet context={{ user, setUser }} />
+        </div>
+      </div>
+    </>
   );
 }

@@ -187,6 +187,7 @@ def run_semgrep(
     security_level: str = "standard",
     *,
     include_paths: list[str] | None = None,
+    excludes: list[str] | None = None,
 ) -> tuple[list[NormalizedFinding], dict]:
     meta: dict = {"engine": "semgrep", "available": False, "configs": semgrep_configs(security_level)}
     cmd_prefix = _semgrep_cmd()
@@ -208,9 +209,12 @@ def run_semgrep(
     for cfg in meta["configs"]:
         cmd.extend(["--config", cfg])
     if include_paths:
-        # Limit to changed paths (relative to workdir).
         for rel in include_paths[:400]:
             cmd.extend(["--include", rel.replace("\\", "/")])
+    for pattern in excludes or []:
+        cleaned = (pattern or "").strip().replace("\\", "/")
+        if cleaned:
+            cmd.extend(["--exclude", cleaned])
     cmd.append(str(workdir))
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, check=False)

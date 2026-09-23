@@ -34,6 +34,10 @@ class ScanCreate(BaseModel):
     notify_email: bool | None = None
     notify_in_app: bool | None = None
     ref: str | None = Field(default=None, max_length=128)
+    engines: list[str] | None = None
+    path_excludes: list[str] | None = None
+    fail_severity: str | None = None  # off | critical | high | medium
+    code_review: bool | None = None  # OpenRouter review when Rules+AI
 
 
 class FindingStatusUpdate(BaseModel):

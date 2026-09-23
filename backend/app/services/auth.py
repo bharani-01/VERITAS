@@ -86,6 +86,7 @@ def ensure_schema() -> None:
             "notify_email": "ALTER TABLE scans ADD COLUMN notify_email BOOLEAN DEFAULT 1",
             "notify_in_app": "ALTER TABLE scans ADD COLUMN notify_in_app BOOLEAN DEFAULT 1",
             "cancel_requested": "ALTER TABLE scans ADD COLUMN cancel_requested BOOLEAN DEFAULT 0",
+            "options_json": "ALTER TABLE scans ADD COLUMN options_json TEXT",
         }
         with db.engine.begin() as connection:
             for name, sql in scan_alters.items():

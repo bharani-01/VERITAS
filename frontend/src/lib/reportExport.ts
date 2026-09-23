@@ -1,6 +1,14 @@
 import type { Finding, Scan } from "./workspace";
 
-export type ExportFormat = "md" | "json" | "csv" | "html";
+export type ExportFormat = "md" | "json" | "csv" | "html" | "sarif";
+
+const SEVERITY_SARIF: Record<string, string> = {
+  critical: "error",
+  high: "error",
+  medium: "warning",
+  low: "note",
+  info: "note",
+};
 
 export function sortFindingsByRisk(items: Finding[]): Finding[] {
   return [...items].sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0));
@@ -81,6 +89,85 @@ export function buildHtmlReport(scan: Scan, findings: Finding[], projectName?: s
 </head><body><pre>${md}</pre></body></html>`;
 }
 
+/** SARIF 2.1.0 — for GitHub Code Scanning / IDE import. */
+export function buildSarifReport(scan: Scan, findings: Finding[], projectName?: string): string {
+  const sorted = sortFindingsByRisk(findings);
+  const rulesByKey = new Map<string, { id: string; name: string; shortDescription: { text: string } }>();
+  const results = sorted.map((f) => {
+    const ruleId = f.rule_id || `${f.engine}:${f.vuln_family}`;
+    if (!rulesByKey.has(ruleId)) {
+      rulesByKey.set(ruleId, {
+        id: ruleId,
+        name: f.title.slice(0, 120),
+        shortDescription: { text: f.title.slice(0, 200) },
+      });
+    }
+    const result: Record<string, unknown> = {
+      ruleId,
+      level: SEVERITY_SARIF[(f.severity || "").toLowerCase()] || "warning",
+      message: { text: f.message || f.title },
+      properties: {
+        severity: f.severity,
+        engine: f.engine,
+        family: f.vuln_family,
+        risk_score: f.risk_score,
+        status: f.status,
+      },
+    };
+    if (f.file_path) {
+      result.locations = [
+        {
+          physicalLocation: {
+            artifactLocation: { uri: f.file_path.replace(/\\/g, "/") },
+            region: {
+              startLine: f.line_start || 1,
+              ...(f.line_end ? { endLine: f.line_end } : {}),
+              ...(f.snippet ? { snippet: { text: f.snippet.slice(0, 500) } } : {}),
+            },
+          },
+        },
+      ];
+    }
+    return result;
+  });
+
+  const document = {
+    $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+    version: "2.1.0",
+    runs: [
+      {
+        tool: {
+          driver: {
+            name: "VERITAS",
+            informationUri: "https://veritas.trackifyapp.co.in",
+            version: "1.0.0",
+            rules: [...rulesByKey.values()],
+          },
+        },
+        properties: {
+          project: projectName || scan.project_name || null,
+          scan_id: scan.id,
+          target: scan.target,
+          commit_sha: scan.commit_sha || null,
+          security_level: scan.security_level || null,
+          scan_mode: scan.scan_mode || null,
+        },
+        results,
+      },
+    ],
+  };
+  return JSON.stringify(document, null, 2);
+}
+
+function buildMarkdownWithAi(scan: Scan, findings: Finding[], projectName?: string): string {
+  let md = buildMarkdownReport(scan, findings, projectName);
+  const report = scan.summary?.ai_report?.trim();
+  if (report) {
+    md += `\n## AI final report\n\n${report}\n`;
+  }
+  return md;
+}
+
 export function downloadReport(filename: string, content: string, mime: string) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -114,5 +201,9 @@ export function exportScanReport(
     downloadReport(`${base}.html`, buildHtmlReport(scan, findings, projectName), "text/html");
     return;
   }
-  downloadReport(`${base}.md`, buildMarkdownReport(scan, findings, projectName), "text/markdown");
+  if (format === "sarif") {
+    downloadReport(`${base}.sarif`, buildSarifReport(scan, findings, projectName), "application/sarif+json");
+    return;
+  }
+  downloadReport(`${base}.md`, buildMarkdownWithAi(scan, findings, projectName), "text/markdown");
 }

@@ -9,10 +9,10 @@ from queue import Empty, Queue
 from sqlalchemy import select
 
 from app.core import database as db
-from app.core.config import PUBLIC_APP_URL
 from app.core.time import utcnow
 from app.models import AppNotification, Finding, FindingSuppression, Project, Scan, User
-from app.services.ai_triage import triage_findings
+from app.services.ai_code_review import review_repository
+from app.services.ai_report import generate_final_report
 from app.services.engines import run_gitleaks, run_osv, run_semgrep
 from app.services.engines.normalize import public_repo_path
 from app.services.scan_clone import (
@@ -42,12 +42,52 @@ PHASE_LABELS = {
     "secrets": "Looking for exposed secrets…",
     "sca": "Checking dependencies…",
     "semgrep": "Reading through the code…",
-    "ai_triage": "Reviewing what stands out…",
-    "reporting": "Putting the report together…",
+    "code_review": "AI code review…",
+    "reporting": "Writing the security report…",
     "completed": "Done",
     "failed": "Something went wrong",
     "cancelled": "Cancelled",
 }
+
+_SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
+
+
+def _parse_options(scan: Scan) -> dict:
+    raw = getattr(scan, "options_json", None)
+    default = {
+        "engines": ["gitleaks", "osv", "semgrep"],
+        "path_excludes": [],
+        "fail_severity": "off",
+        "code_review": False,
+    }
+    if not raw:
+        return default
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return default
+        engines = [e for e in (data.get("engines") or default["engines"]) if e in {"gitleaks", "osv", "semgrep"}]
+        if not engines:
+            engines = default["engines"]
+        return {
+            "engines": engines,
+            "path_excludes": list(data.get("path_excludes") or [])[:40],
+            "fail_severity": (data.get("fail_severity") or "off"),
+            "code_review": bool(data.get("code_review")),
+        }
+    except json.JSONDecodeError:
+        return default
+
+
+def _countermeasures_for(nf, family: str, severity: str) -> list[dict]:
+    steps = None
+    if isinstance(nf.raw, dict):
+        raw_steps = nf.raw.get("ai_fix_steps")
+        if isinstance(raw_steps, list) and raw_steps:
+            steps = [str(s) for s in raw_steps]
+    if steps:
+        return [{"title": "AI recommended fix", "steps": steps, "severity": severity}]
+    return _playbook_for(family, severity)
 
 
 class ScanCancelled(Exception):
@@ -88,9 +128,10 @@ def _playbook_for(family: str, severity: str) -> list[dict]:
 
 
 def _notify(session, scan: Scan, project: Project, user: User, summary: dict) -> None:
-    count = summary.get("findings_count", 0)
-    title = f"Scan finished: {project.name}"
-    body = f"Status={scan.status}. Findings={count}. Mode={scan.scan_mode}."
+    count = int(summary.get("findings_count") or 0)
+    status_label = (scan.status or "unknown").replace("_", " ")
+    title = f"Scan finished · {project.name}"
+    body = f"{status_label} · {count} finding{'s' if count != 1 else ''}"
     if scan.notify_in_app:
         session.add(
             AppNotification(
@@ -103,15 +144,17 @@ def _notify(session, scan: Scan, project: Project, user: User, summary: dict) ->
         session.commit()
     if scan.notify_email and user.email:
         try:
-            from app.services.email import send_email
+            from app.services.email import send_scan_finished
 
-            link = f"{PUBLIC_APP_URL}/user/projects/{project.id}?scan={scan.id}"
-            send_email(
+            send_scan_finished(
                 session,
                 user,
-                "scan_completed",
-                title,
-                f"<p>{body}</p><p><a href='{link}'>View report</a></p>",
+                project_name=project.name,
+                project_id=project.id,
+                scan_id=scan.id,
+                status=scan.status,
+                findings_count=count,
+                scan_mode=scan.scan_mode or "rules_only",
             )
             session.commit()
         except Exception:
@@ -178,41 +221,70 @@ def run_scan_job(scan_id: str) -> None:
                     repo_path = None
 
                 _check_cancel(session, scan)
+                options = _parse_options(scan)
+                enabled = set(options["engines"])
+                excludes = options["path_excludes"]
+                want_review = bool(options["code_review"]) or scan.scan_mode == "rules_plus_ai"
+
                 if repo_path:
-                    _set_progress(
-                        session, scan, phase="secrets", percent=20, eta_remaining=max(10, (scan.eta_seconds or 60) // 2)
-                    )
-                    g_findings, g_meta = run_gitleaks(repo_path)
-                    engine_meta.append(g_meta)
-                    findings_out.extend(g_findings)
+                    if "gitleaks" in enabled:
+                        _set_progress(
+                            session, scan, phase="secrets", percent=20, eta_remaining=max(10, (scan.eta_seconds or 60) // 2)
+                        )
+                        g_findings, g_meta = run_gitleaks(repo_path)
+                        engine_meta.append(g_meta)
+                        findings_out.extend(g_findings)
+                    else:
+                        engine_meta.append({"engine": "gitleaks", "skipped": "disabled"})
 
                     _check_cancel(session, scan)
-                    _set_progress(
-                        session, scan, phase="sca", percent=40, eta_remaining=max(8, (scan.eta_seconds or 60) // 3)
-                    )
-                    o_findings, o_meta = run_osv(repo_path)
-                    engine_meta.append(o_meta)
-                    findings_out.extend(o_findings)
+                    if "osv" in enabled:
+                        _set_progress(
+                            session, scan, phase="sca", percent=40, eta_remaining=max(8, (scan.eta_seconds or 60) // 3)
+                        )
+                        o_findings, o_meta = run_osv(repo_path)
+                        engine_meta.append(o_meta)
+                        findings_out.extend(o_findings)
+                    else:
+                        engine_meta.append({"engine": "osv", "skipped": "disabled"})
 
                     _check_cancel(session, scan)
-                    _set_progress(
-                        session, scan, phase="semgrep", percent=65, eta_remaining=max(5, (scan.eta_seconds or 60) // 4)
-                    )
-                    s_findings, s_meta = run_semgrep(
-                        repo_path,
-                        security_level=scan.security_level,
-                        include_paths=changed_paths,
-                    )
-                    engine_meta.append(s_meta)
-                    findings_out.extend(s_findings)
+                    if "semgrep" in enabled:
+                        _set_progress(
+                            session, scan, phase="semgrep", percent=60, eta_remaining=max(5, (scan.eta_seconds or 60) // 4)
+                        )
+                        s_findings, s_meta = run_semgrep(
+                            repo_path,
+                            security_level=scan.security_level,
+                            include_paths=changed_paths,
+                            excludes=excludes,
+                        )
+                        engine_meta.append(s_meta)
+                        findings_out.extend(s_findings)
+                    else:
+                        engine_meta.append({"engine": "semgrep", "skipped": "disabled"})
+
+                    if want_review:
+                        _check_cancel(session, scan)
+                        _set_progress(
+                            session, scan, phase="code_review", percent=78, eta_remaining=max(4, (scan.eta_seconds or 40) // 5)
+                        )
+                        r_findings, r_meta = review_repository(
+                            repo_path,
+                            include_paths=changed_paths,
+                            excludes=excludes,
+                        )
+                        engine_meta.append(r_meta)
+                        findings_out.extend(r_findings)
+                    else:
+                        engine_meta.append({"engine": "openrouter_review", "skipped": "disabled"})
 
                     root = str(repo_path)
                     for nf in findings_out:
                         nf.file_path = public_repo_path(nf.file_path, repo_root=root)
                 else:
-                    engine_meta.append({"engine": "semgrep", "skipped": "no repository workspace"})
-                    engine_meta.append({"engine": "gitleaks", "skipped": "no repository workspace"})
-                    engine_meta.append({"engine": "osv", "skipped": "no repository workspace"})
+                    for name in ("gitleaks", "osv", "semgrep", "openrouter_review"):
+                        engine_meta.append({"engine": name, "skipped": "no repository workspace"})
 
                 cleanup_workdir(workdir)
                 workdir = None
@@ -225,12 +297,25 @@ def run_scan_job(scan_id: str) -> None:
                 }
 
                 ai_status = "skipped"
-                if scan.scan_mode == "rules_plus_ai":
+                ai_report = None
+                if scan.scan_mode == "rules_plus_ai" or want_review:
                     _check_cancel(session, scan)
-                    _set_progress(session, scan, phase="ai_triage", percent=85, eta_remaining=5)
-                    ai_meta = triage_findings(findings_out)
-                    ai_status = ai_meta.get("status") or "ok"
-                    engine_meta.append({"engine": "groq", **ai_meta})
+                    _set_progress(session, scan, phase="reporting", percent=90, eta_remaining=5)
+                    report_meta = generate_final_report(
+                        findings_out,
+                        project_name=project.name,
+                        target=scan.target,
+                    )
+                    ai_status = report_meta.get("status") or "ok"
+                    ai_report = report_meta.get("report_markdown")
+                    engine_meta.append(
+                        {
+                            "engine": "groq_report",
+                            "status": ai_status,
+                            "model": report_meta.get("model"),
+                            "findings_in_report": report_meta.get("findings_in_report"),
+                        }
+                    )
 
                 _check_cancel(session, scan)
                 _set_progress(session, scan, phase="reporting", percent=95, eta_remaining=2)
@@ -273,20 +358,29 @@ def run_scan_job(scan_id: str) -> None:
                             fingerprint=fp,
                             ai_verdict=ai_verdict,
                             ai_rationale=ai_rationale,
-                            countermeasures_json=json.dumps(_playbook_for(nf.vuln_family, nf.severity)),
+                            countermeasures_json=json.dumps(
+                                _countermeasures_for(nf, nf.vuln_family, nf.severity)
+                            ),
                             raw_json=json.dumps(nf.raw)[:20000] if nf.raw else None,
                         )
                     )
 
-                open_count = sum(1 for nf in findings_out if nf.fingerprint() not in suppressed)
+                open_findings = [nf for nf in findings_out if nf.fingerprint() not in suppressed]
+                open_count = len(open_findings)
                 max_risk = max(
-                    (
-                        nf.risk_score(criticality=project.criticality)
-                        for nf in findings_out
-                        if nf.fingerprint() not in suppressed
-                    ),
+                    (nf.risk_score(criticality=project.criticality) for nf in open_findings),
                     default=0.0,
                 )
+
+                fail_at = (options.get("fail_severity") or "off").lower()
+                policy_failed = False
+                if fail_at != "off":
+                    threshold = _SEVERITY_RANK.get(fail_at, 99)
+                    for nf in open_findings:
+                        if _SEVERITY_RANK.get((nf.severity or "").lower(), 0) >= threshold:
+                            policy_failed = True
+                            break
+
                 summary = {
                     "findings_count": len(findings_out),
                     "open_count": open_count,
@@ -297,20 +391,36 @@ def run_scan_job(scan_id: str) -> None:
                     "scan_mode": scan.scan_mode,
                     "scan_scope": scan.scan_scope or "full",
                     "security_level": scan.security_level,
+                    "options": options,
                     "ai_status": ai_status,
+                    "ai_report": ai_report,
                     "max_risk": max_risk,
                     "commit_short": scan.commit_short,
                     "commit_sha": scan.commit_sha,
                     "workspace_purged": True,
+                    "policy_failed": policy_failed,
+                    "fail_severity": fail_at,
                 }
                 scan.summary_json = json.dumps(summary)
                 scan.risk_summary_json = json.dumps(
                     {"max_risk": max_risk, "open_findings": open_count, "by_severity": dict(severity_counts)}
                 )
-                scan.status = "completed"
+                if policy_failed:
+                    scan.status = "failed"
+                    scan.error_message = (
+                        f"Severity policy failed: open finding at or above '{fail_at}'."
+                    )[:1000]
+                else:
+                    scan.status = "completed"
+                    scan.error_message = None
                 scan.finished_at = utcnow()
                 scan.progress_json = json.dumps(
-                    {"phase": "completed", "label": PHASE_LABELS["completed"], "percent": 100, "eta_remaining_seconds": 0}
+                    {
+                        "phase": "completed" if not policy_failed else "failed",
+                        "label": PHASE_LABELS["failed" if policy_failed else "completed"],
+                        "percent": 100,
+                        "eta_remaining_seconds": 0,
+                    }
                 )
                 scan.eta_seconds = 0
                 session.add(scan)

@@ -81,9 +81,14 @@ TOKEN_ENCRYPTION_SECRET = os.getenv("TOKEN_ENCRYPTION_SECRET", "") or os.getenv(
     "VERITAS_BOOTSTRAP_ADMIN_PASSWORD", "veritas-dev-token-secret-change-me"
 )
 
-# Optional Phase 3 AI triage (Groq OpenAI-compatible API). Fail-open when unset.
+# Optional Phase 3 AI (fail-open when unset).
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or os.getenv("AI_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "") or GROQ_MODEL
+
+# OpenRouter — structured code review (Jev-style). Optional.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_REVIEW_MODEL = os.getenv("OPENROUTER_REVIEW_MODEL", "openai/gpt-4o-mini")
 
 # Phase 4 scan quotas (per user)
 SCAN_RATE_LIMIT = int(os.getenv("SCAN_RATE_LIMIT", "10"))

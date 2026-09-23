@@ -34,16 +34,6 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
   const handle = user.username ? `@${user.username}` : user.display_name;
   const roleLabel = user.role === "admin" ? "Admin" : "User";
 
-  function openMenu() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    setMenuOpen(true);
-  }
-
-  function scheduleClose() {
-    if (closeTimer.current) window.clearTimeout(closeTimer.current);
-    closeTimer.current = window.setTimeout(() => setMenuOpen(false), 160);
-  }
-
   useEffect(() => {
     applyTheme("dark");
   }, []);
@@ -52,8 +42,15 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
     function onDoc(e: MouseEvent) {
       if (!wrapRef.current?.contains(e.target as Node)) setMenuOpen(false);
     }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false);
+    }
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   useEffect(() => {
@@ -87,30 +84,35 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
         </button>
       </div>
       <p className="nav-label">Workspace</p>
-      <Link className={`nav-link ${homeActive ? "active" : ""}`} to="/user/">
-        <svg className="icon" viewBox="0 0 24 24">
+      <Link
+        className={`nav-link ${homeActive ? "active" : ""}`}
+        to="/user/"
+        aria-label="Home"
+        aria-current={homeActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 10.5 12 3l9 7.5" />
           <path d="M5 9.5V20h14V9.5" />
         </svg>
         <span className="nav-link-text">Home</span>
       </Link>
-      <Link className={`nav-link ${projectsActive ? "active" : ""}`} to="/user/projects">
-        <svg className="icon" viewBox="0 0 24 24">
+      <Link
+        className={`nav-link ${projectsActive ? "active" : ""}`}
+        to="/user/projects"
+        aria-label="Projects"
+        aria-current={projectsActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 7h18v12H3z" />
           <path d="M3 7l2.5-3h13L21 7" />
         </svg>
         <span className="nav-link-text">Projects</span>
       </Link>
 
-      <div
-        className={`nav-account ${menuOpen ? "open" : ""}`}
-        ref={wrapRef}
-        onMouseEnter={openMenu}
-        onMouseLeave={scheduleClose}
-      >
+      <div className={`nav-account ${menuOpen ? "open" : ""}`} ref={wrapRef}>
         {menuOpen ? (
-          <div className="account-menu" role="menu" onMouseEnter={openMenu} onMouseLeave={scheduleClose}>
-            <Link className="account-menu-head" to="/user/profile" role="menuitem" onClick={() => setMenuOpen(false)}>
+          <div className="account-menu" role="menu" aria-label="Account">
+            <div className="account-menu-head" role="presentation">
               <span className="account-avatar">
                 <img src={avatarUrl(user.avatar)} alt="" width={36} height={36} />
               </span>
@@ -118,20 +120,17 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
                 <b>{handle}</b>
                 <small>{roleLabel}</small>
               </span>
-              <svg className="icon account-chevron" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M9 18l6-6-6-6" fill="none" stroke="currentColor" strokeWidth="2" />
-              </svg>
-            </Link>
+            </div>
             <div className="account-menu-sep" />
             <Link className="account-menu-item" to="/user/profile" role="menuitem" onClick={() => setMenuOpen(false)}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
                 <circle cx="12" cy="7" r="4" />
               </svg>
               Profile
             </Link>
             <Link className="account-menu-item" to="/user/settings" role="menuitem" onClick={() => setMenuOpen(false)}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="12" cy="12" r="3" />
                 <path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
               </svg>
@@ -139,7 +138,7 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
             </Link>
             <div className="account-menu-sep" />
             <button type="button" className="account-menu-item danger" role="menuitem" onClick={onLogout}>
-              <svg className="icon" viewBox="0 0 24 24">
+              <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
                 <path d="M16 17l5-5-5-5" />
                 <path d="M21 12H9" />
@@ -152,6 +151,7 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
         <button
           type="button"
           className="nav-account-chip"
+          aria-label={`Account menu for ${handle}`}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           onClick={(e) => {

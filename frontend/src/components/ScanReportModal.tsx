@@ -76,6 +76,12 @@ export function ScanReportModal({
   );
   const caption = shareCaption(scan, projectName);
 
+  const bySeverity = scan.summary?.by_severity || scan.risk_summary?.by_severity || {};
+  const byFamily = scan.summary?.by_family || {};
+  const enginesMeta = (scan.summary?.engines || []) as Array<Record<string, unknown>>;
+  const aiReport = scan.summary?.ai_report?.trim() || null;
+  const severityTotal = Object.values(bySeverity).reduce((a, b) => a + (Number(b) || 0), 0);
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
@@ -213,8 +219,73 @@ export function ScanReportModal({
                 : `${sorted.length} findings`}
             </span>
           </div>
+          {scan.summary?.policy_failed ? (
+            <div className="muted small">Policy failed (≥ {scan.summary.fail_severity})</div>
+          ) : null}
         </div>
       </div>
+
+      {(severityTotal > 0 || enginesMeta.length > 0) && (
+        <div className="report-coverage modal-body-pad">
+          <h3 className="report-section-title">Coverage</h3>
+          {severityTotal > 0 ? (
+            <div className="coverage-block">
+              <span className="muted small">By severity</span>
+              <div className="coverage-bars" role="list">
+                {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
+                  const n = Number(bySeverity[sev] || 0);
+                  if (!n) return null;
+                  const pct = Math.max(4, Math.round((n / severityTotal) * 100));
+                  return (
+                    <div key={sev} className="coverage-row" role="listitem">
+                      <span className={`badge ${sev}`}>{sev}</span>
+                      <div className="coverage-track" aria-hidden>
+                        <div className={`coverage-fill sev-${sev}`} style={{ width: `${pct}%` }} />
+                      </div>
+                      <span className="muted small">{n}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+          {Object.keys(byFamily).length ? (
+            <div className="coverage-block">
+              <span className="muted small">By family</span>
+              <div className="coverage-chips">
+                {Object.entries(byFamily).map(([fam, n]) => (
+                  <span key={fam} className="badge muted">
+                    {fam}: {Number(n)}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {enginesMeta.length ? (
+            <div className="coverage-block">
+              <span className="muted small">Engines</span>
+              <div className="coverage-chips">
+                {enginesMeta.map((e, i) => {
+                  const name = String(e.engine || e.name || `engine-${i}`);
+                  const skipped = e.skipped ? `skipped (${e.skipped})` : e.available === false ? "unavailable" : "ran";
+                  return (
+                    <span key={`${name}-${i}`} className="badge muted">
+                      {name}: {skipped}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {aiReport ? (
+        <div className="report-ai modal-body-pad">
+          <h3 className="report-section-title">AI final report</h3>
+          <pre className="ai-report-body">{aiReport}</pre>
+        </div>
+      ) : null}
 
       <div className="report-toolbar modal-body-pad">
         <label className="report-export">
@@ -239,6 +310,7 @@ export function ScanReportModal({
             <option value="json">JSON (.json)</option>
             <option value="csv">CSV (.csv)</option>
             <option value="html">HTML (.html)</option>
+            <option value="sarif">SARIF (.sarif)</option>
           </select>
         </label>
         <button
@@ -343,6 +415,16 @@ export function ScanReportModal({
                       <b>AI:</b> {selected.ai_verdict}
                       {selected.ai_rationale ? ` — ${selected.ai_rationale}` : ""}
                     </p>
+                  ) : null}
+                  {selected.countermeasures?.[0]?.steps?.length ? (
+                    <div className="finding-remediation">
+                      <b>{selected.countermeasures[0].title || "How to fix"}</b>
+                      <ul>
+                        {selected.countermeasures[0].steps.map((step, i) => (
+                          <li key={i}>{step}</li>
+                        ))}
+                      </ul>
+                    </div>
                   ) : null}
                   <label>
                     Status

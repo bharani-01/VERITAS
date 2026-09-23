@@ -37,13 +37,16 @@ VERITAS-Infosec/
 2. Page routes (`/`, `/admin/`, `/admin/directory`, `/admin/audit`, `/user/projects`, …) return the React `index.html`.
 3. JS/CSS load from `/assets/*` (Vite build hashed files).
 4. React calls `/auth/*`, `/admin/*`, and `/workspace/*` JSON APIs with same-origin cookies.
+   - New project Advanced loads branches via `GET /workspace/github/repos/{repo_id}/refs` (ownership re-checked server-side before listing refs).
 5. Services persist via SQLAlchemy.
 
 **Path rule:** never use the same path for SPA HTML and JSON. Example: users UI is `/admin/directory`; users API remains `/admin/users`.
 
 No separate frontend host is required in production.
 
-## Persistence
+## Email
+
+Transactional HTML lives in `backend/app/services/email_templates.py` (shared layout + builders). Copy is short and plain: product mark, one headline, one or two sentences, optional CTA, no gradients/emojis/marketing filler. Delivered via Resend (`email.py`); without an API key, deliveries stay `queued`.
 
 | Table | Role |
 |-------|------|
@@ -61,6 +64,8 @@ No separate frontend host is required in production.
 
 SQLite is default for local development. Production expects PostgreSQL.
 
+**Timestamps:** stored as UTC. API JSON always emits ISO-8601 with a `Z` suffix (`to_iso_utc`) so browsers do not mis-parse SQLite’s naive datetimes as local time. The SPA parses API times via `lib/time.ts` (`parseUtc`) and displays them in the user’s locale.
+
 ## Lifespan
 
 On startup (`main.lifespan`):
@@ -76,3 +81,11 @@ cd frontend && npm run build
 ```
 
 Output lands in `backend/app/web/static/spa` and is what uvicorn serves.
+
+## Scan pipeline (Phase 4 quality pack)
+
+1. Clone linked repo (short-lived workdir)
+2. Selected engines: Gitleaks → OSV → Semgrep (path excludes + security_level packs)
+3. Optional OpenRouter structured code review (`services/ai_code_review.py`)
+4. Merge findings → optional Groq final report (`services/ai_report.py`)
+5. Severity policy gate → persist summary (`by_severity`, `ai_report`, engine meta)
