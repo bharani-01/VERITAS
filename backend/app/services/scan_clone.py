@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -38,18 +39,20 @@ def prepare_workdir(scan_id: str) -> Path:
 
 
 def _force_writable(path: Path) -> None:
-    """Make cloned trees deletable (git often leaves read-only files)."""
+    """Make cloned trees deletable (git often leaves read-only files). Owner-only modes."""
     if not path.exists():
         return
+    dir_mode = stat.S_IRWXU  # owner rwx only — private temp workdir
+    file_mode = stat.S_IRUSR | stat.S_IWUSR  # owner rw only
     for root, dirs, files in os.walk(path):
         for name in dirs + files:
             target = Path(root) / name
             try:
-                os.chmod(target, 0o700 if target.is_dir() else 0o600)
+                os.chmod(target, dir_mode if target.is_dir() else file_mode)
             except OSError:
                 pass
     try:
-        os.chmod(path, 0o700)
+        os.chmod(path, dir_mode)
     except OSError:
         pass
 
@@ -190,3 +193,39 @@ def clone_project_repo(db: Session, user: User, project: Project, workdir: Path,
         err = (proc.stderr or proc.stdout or "git clone failed")[:400].replace(token, "***")
         raise CloneError(err)
     return str(dest), read_git_version(dest)
+
+
+def list_changed_files(repo_path: Path, *, base_branch: str) -> list[str]:
+    """Return paths changed between base_branch and HEAD (best-effort)."""
+    git = _git_bin()
+    base = (base_branch or "main").strip() or "main"
+    try:
+        # Fetch enough history for a three-dot diff when shallow.
+        subprocess.run(
+            [git, "-C", str(repo_path), "fetch", "--depth", "50", "origin", base],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        proc = subprocess.run(
+            [git, "-C", str(repo_path), "diff", "--name-only", f"origin/{base}...HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+        if proc.returncode != 0:
+            proc = subprocess.run(
+                [git, "-C", str(repo_path), "diff", "--name-only", f"{base}...HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+        if proc.returncode != 0:
+            return []
+        return [line.strip().replace("\\", "/") for line in (proc.stdout or "").splitlines() if line.strip()]
+    except Exception:
+        return []

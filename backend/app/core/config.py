@@ -85,6 +85,11 @@ TOKEN_ENCRYPTION_SECRET = os.getenv("TOKEN_ENCRYPTION_SECRET", "") or os.getenv(
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or os.getenv("AI_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
+# Phase 4 scan quotas (per user)
+SCAN_RATE_LIMIT = int(os.getenv("SCAN_RATE_LIMIT", "10"))
+SCAN_RATE_WINDOW_SECONDS = int(os.getenv("SCAN_RATE_WINDOW_SECONDS", "3600"))
+SCAN_CONCURRENT_LIMIT = int(os.getenv("SCAN_CONCURRENT_LIMIT", "2"))
+
 
 def github_client_id() -> str:
     reload_env()

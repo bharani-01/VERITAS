@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
-import { githubCommitUrl } from "../lib/githubLinks";
+import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
 import type { Finding, Scan } from "../lib/workspace";
 
@@ -18,6 +19,7 @@ export function SharedReportPage() {
   const [data, setData] = useState<SharedPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<ExportFormat>("md");
+  const [selected, setSelected] = useState<Finding | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -31,10 +33,21 @@ export function SharedReportPage() {
       .catch((err: Error) => setError(err.message));
   }, [token]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setSelected(null);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const sorted = useMemo(() => sortFindingsByRisk(data?.items || []), [data]);
   const repo = data?.project.github_repo_full_name;
   const headHref = data?.scan.commit_short
     ? githubCommitUrl(repo, data.scan.commit_sha || data.scan.commit_short)
+    : null;
+  const blobHref = selected
+    ? githubBlobUrl(repo, data?.scan.commit_sha || data?.scan.commit_short, selected.file_path, selected.line_start)
     : null;
 
   if (error) {
@@ -115,20 +128,78 @@ export function SharedReportPage() {
           <ul className="finding-list">
             {sorted.map((f) => (
               <li key={f.id}>
-                <div className="finding-head">
-                  <span className={`badge ${f.severity}`}>{f.severity}</span>
-                  <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
-                  <b>{f.title}</b>
-                </div>
-                <div className="muted small">
-                  {f.engine}
-                  {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
-                </div>
+                <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
+                  <div className="finding-head">
+                    <span className={`badge ${f.severity}`}>{f.severity}</span>
+                    <span className="badge muted">{f.status.replace(/_/g, " ")}</span>
+                    <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
+                    <b>{f.title}</b>
+                  </div>
+                  <div className="muted small">
+                    {f.engine}
+                    {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
+                  </div>
+                </button>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {selected
+        ? createPortal(
+            <div className="modal-root finding-drawer-root" role="presentation">
+              <button type="button" className="modal-backdrop" aria-label="Close finding" onClick={() => setSelected(null)} />
+              <aside className="finding-drawer" role="dialog" aria-modal="true" aria-labelledby="shared-finding-title">
+                <div className="modal-head">
+                  <div>
+                    <p className="modal-kicker">Finding</p>
+                    <h2 id="shared-finding-title">{selected.title}</h2>
+                  </div>
+                  <button type="button" className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>
+                    ×
+                  </button>
+                </div>
+                <div className="finding-drawer-body">
+                  <div className="finding-head">
+                    <span className={`badge ${selected.severity}`}>{selected.severity}</span>
+                    <span className="badge muted">{selected.status.replace(/_/g, " ")}</span>
+                    <span className="badge muted">risk {selected.risk_score.toFixed(1)}</span>
+                  </div>
+                  <p className="muted small">
+                    {selected.engine}
+                    {selected.rule_id ? ` · ${selected.rule_id}` : ""}
+                  </p>
+                  {selected.file_path ? (
+                    <p>
+                      {blobHref ? (
+                        <a href={blobHref} target="_blank" rel="noreferrer" className="scan-git-link">
+                          {selected.file_path}
+                          {selected.line_start ? `:${selected.line_start}` : ""}
+                        </a>
+                      ) : (
+                        <code>
+                          {selected.file_path}
+                          {selected.line_start ? `:${selected.line_start}` : ""}
+                        </code>
+                      )}
+                    </p>
+                  ) : null}
+                  {selected.message ? <p>{selected.message}</p> : null}
+                  {selected.snippet ? <pre className="finding-snippet">{selected.snippet}</pre> : null}
+                  {selected.ai_verdict ? (
+                    <p>
+                      <b>AI:</b> {selected.ai_verdict}
+                      {selected.ai_rationale ? ` — ${selected.ai_rationale}` : ""}
+                    </p>
+                  ) : null}
+                  <p className="muted small">Read-only shared view — sign in to change status or suppress.</p>
+                </div>
+              </aside>
+            </div>,
+            document.body,
+          )
+        : null}
     </main>
   );
 }

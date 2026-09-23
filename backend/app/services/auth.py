@@ -49,43 +49,61 @@ def ensure_schema() -> None:
 
     if "projects" in tables:
         project_cols = {column["name"] for column in inspector.get_columns("projects")}
+        project_alters = {
+            "security_level": "ALTER TABLE projects ADD COLUMN security_level VARCHAR(16) DEFAULT 'standard'",
+            "base_url": "ALTER TABLE projects ADD COLUMN base_url VARCHAR(512)",
+            "criticality": "ALTER TABLE projects ADD COLUMN criticality VARCHAR(16) DEFAULT 'medium'",
+            "scan_options_json": "ALTER TABLE projects ADD COLUMN scan_options_json TEXT",
+            "notify_email_default": "ALTER TABLE projects ADD COLUMN notify_email_default BOOLEAN DEFAULT 1",
+            "notify_in_app_default": "ALTER TABLE projects ADD COLUMN notify_in_app_default BOOLEAN DEFAULT 1",
+            "auto_scan_on_push": "ALTER TABLE projects ADD COLUMN auto_scan_on_push BOOLEAN DEFAULT 0",
+            "github_webhook_id": "ALTER TABLE projects ADD COLUMN github_webhook_id INTEGER",
+            "github_webhook_secret": "ALTER TABLE projects ADD COLUMN github_webhook_secret TEXT",
+        }
         with db.engine.begin() as connection:
-            alters = [
-                ("security_level", "VARCHAR(16) DEFAULT 'standard'"),
-                ("base_url", "VARCHAR(512)"),
-                ("criticality", "VARCHAR(16) DEFAULT 'medium'"),
-                ("scan_options_json", "TEXT"),
-                ("notify_email_default", "BOOLEAN DEFAULT 1"),
-                ("notify_in_app_default", "BOOLEAN DEFAULT 1"),
-            ]
-            for name, decl in alters:
+            for name, sql in project_alters.items():
                 if name not in project_cols:
-                    connection.execute(text(f"ALTER TABLE projects ADD COLUMN {name} {decl}"))
+                    connection.execute(text(sql))
 
     if "scans" in tables:
         scan_cols = {column["name"] for column in inspector.get_columns("scans")}
+        scan_alters = {
+            "security_level": "ALTER TABLE scans ADD COLUMN security_level VARCHAR(16) DEFAULT 'standard'",
+            "scan_mode": "ALTER TABLE scans ADD COLUMN scan_mode VARCHAR(32) DEFAULT 'rules_only'",
+            "scan_scope": "ALTER TABLE scans ADD COLUMN scan_scope VARCHAR(16) DEFAULT 'full'",
+            "ref": "ALTER TABLE scans ADD COLUMN ref VARCHAR(128)",
+            "commit_sha": "ALTER TABLE scans ADD COLUMN commit_sha VARCHAR(64)",
+            "commit_short": "ALTER TABLE scans ADD COLUMN commit_short VARCHAR(16)",
+            "commit_message": "ALTER TABLE scans ADD COLUMN commit_message VARCHAR(512)",
+            "commit_author": "ALTER TABLE scans ADD COLUMN commit_author VARCHAR(256)",
+            "git_history_json": "ALTER TABLE scans ADD COLUMN git_history_json TEXT",
+            "share_token": "ALTER TABLE scans ADD COLUMN share_token VARCHAR(64)",
+            "progress_json": "ALTER TABLE scans ADD COLUMN progress_json TEXT",
+            "eta_seconds": "ALTER TABLE scans ADD COLUMN eta_seconds INTEGER",
+            "error_message": "ALTER TABLE scans ADD COLUMN error_message TEXT",
+            "risk_summary_json": "ALTER TABLE scans ADD COLUMN risk_summary_json TEXT",
+            "notify_email": "ALTER TABLE scans ADD COLUMN notify_email BOOLEAN DEFAULT 1",
+            "notify_in_app": "ALTER TABLE scans ADD COLUMN notify_in_app BOOLEAN DEFAULT 1",
+            "cancel_requested": "ALTER TABLE scans ADD COLUMN cancel_requested BOOLEAN DEFAULT 0",
+        }
         with db.engine.begin() as connection:
-            alters = [
-                ("security_level", "VARCHAR(16) DEFAULT 'standard'"),
-                ("scan_mode", "VARCHAR(32) DEFAULT 'rules_only'"),
-                ("ref", "VARCHAR(128)"),
-                ("commit_sha", "VARCHAR(64)"),
-                ("commit_short", "VARCHAR(16)"),
-                ("commit_message", "VARCHAR(512)"),
-                ("commit_author", "VARCHAR(256)"),
-                ("git_history_json", "TEXT"),
-                ("share_token", "VARCHAR(64)"),
-                ("progress_json", "TEXT"),
-                ("eta_seconds", "INTEGER"),
-                ("error_message", "TEXT"),
-                ("risk_summary_json", "TEXT"),
-                ("notify_email", "BOOLEAN DEFAULT 1"),
-                ("notify_in_app", "BOOLEAN DEFAULT 1"),
-            ]
-            for name, decl in alters:
+            for name, sql in scan_alters.items():
                 if name not in scan_cols:
-                    connection.execute(text(f"ALTER TABLE scans ADD COLUMN {name} {decl}"))
+                    connection.execute(text(sql))
             connection.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_scans_share_token ON scans (share_token)"))
+
+    if "findings" in tables:
+        finding_cols = {column["name"] for column in inspector.get_columns("findings")}
+        with db.engine.begin() as connection:
+            if "fingerprint" not in finding_cols:
+                connection.execute(text("ALTER TABLE findings ADD COLUMN fingerprint VARCHAR(64)"))
+            connection.execute(text("CREATE INDEX IF NOT EXISTS ix_findings_fingerprint ON findings (fingerprint)"))
+
+    if "github_connections" in tables:
+        gh_cols = {column["name"] for column in inspector.get_columns("github_connections")}
+        with db.engine.begin() as connection:
+            if "needs_reauth" not in gh_cols:
+                connection.execute(text("ALTER TABLE github_connections ADD COLUMN needs_reauth BOOLEAN DEFAULT 0"))
 
 
 def active_admin_count(session: Session) -> int:

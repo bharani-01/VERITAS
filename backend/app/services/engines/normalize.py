@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -34,10 +35,40 @@ class NormalizedFinding:
         weight = {"low": 0.85, "medium": 1.0, "high": 1.15}.get((criticality or "medium").lower(), 1.0)
         return round(min(10.0, base * weight), 2)
 
+    def fingerprint(self) -> str:
+        return finding_fingerprint(
+            engine=self.engine,
+            rule_id=self.rule_id,
+            file_path=self.file_path,
+            line_start=self.line_start,
+            title=self.title,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data.pop("raw", None)
         return data
+
+
+def finding_fingerprint(
+    *,
+    engine: str | None,
+    rule_id: str | None,
+    file_path: str | None,
+    line_start: int | None,
+    title: str | None,
+) -> str:
+    path = (file_path or "").replace("\\", "/").lstrip("./").lower()
+    blob = "|".join(
+        [
+            (engine or "").lower(),
+            (rule_id or "").lower(),
+            path,
+            str(line_start or ""),
+            (title or "").strip().lower()[:200],
+        ]
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:40]
 
 
 def classify_family(rule_id: str | None, title: str, message: str | None = None) -> str:
@@ -85,7 +116,6 @@ def public_repo_path(path: str | None, *, repo_root: str | None = None) -> str |
     marker = "/veritas-scans/"
     if marker in text:
         after = text.split(marker, 1)[1]
-        # scan-id/repo/<relative>  or  scan-id/<relative>
         parts = after.split("/", 2)
         if len(parts) >= 3 and parts[1] == "repo":
             text = parts[2]

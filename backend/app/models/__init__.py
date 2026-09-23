@@ -2,7 +2,7 @@
 
 from app.models.base import Base
 from app.models.identity import AuditEvent, AuthSession, EmailDelivery, OneTimeToken, User
-from app.models.workspace import AppNotification, Finding, GitHubConnection, Project, Scan
+from app.models.workspace import AppNotification, Finding, FindingSuppression, GitHubConnection, Project, Scan
 
 __all__ = [
     "Base",
@@ -14,6 +14,7 @@ __all__ = [
     "Project",
     "Scan",
     "Finding",
+    "FindingSuppression",
     "AppNotification",
     "GitHubConnection",
 ]

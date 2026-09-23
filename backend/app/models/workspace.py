@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.time import utcnow
@@ -26,6 +26,9 @@ class Project(Base):
     scan_options_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     notify_email_default: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_in_app_default: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto_scan_on_push: Mapped[bool] = mapped_column(Boolean, default=False)
+    github_webhook_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    github_webhook_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -40,6 +43,7 @@ class Scan(Base):
     status: Mapped[str] = mapped_column(String(32), default="queued", index=True)
     security_level: Mapped[str] = mapped_column(String(16), default="standard")
     scan_mode: Mapped[str] = mapped_column(String(32), default="rules_only")
+    scan_scope: Mapped[str] = mapped_column(String(16), default="full")
     ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
     commit_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
     commit_short: Mapped[str | None] = mapped_column(String(16), nullable=True)
@@ -54,6 +58,7 @@ class Scan(Base):
     risk_summary_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     notify_email: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_in_app: Mapped[bool] = mapped_column(Boolean, default=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
@@ -77,10 +82,22 @@ class Finding(Base):
     snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
     risk_score: Mapped[float] = mapped_column(Float, default=0.0)
     status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     ai_verdict: Mapped[str | None] = mapped_column(String(32), nullable=True)
     ai_rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
     countermeasures_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FindingSuppression(Base):
+    __tablename__ = "finding_suppressions"
+    __table_args__ = (UniqueConstraint("project_id", "fingerprint", name="uq_project_fingerprint"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -104,5 +121,6 @@ class GitHubConnection(Base):
     avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     token_encrypted: Mapped[str] = mapped_column(Text)
     scopes: Mapped[str] = mapped_column(String(256), default="")
+    needs_reauth: Mapped[bool] = mapped_column(Boolean, default=False)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

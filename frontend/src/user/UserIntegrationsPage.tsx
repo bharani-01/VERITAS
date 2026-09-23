@@ -48,7 +48,10 @@ export function UserIntegrationsPage() {
         <div>
           <div className="eyebrow">Workspace</div>
           <h1>Integrations</h1>
-          <p>Link your GitHub account. Only repositories you own can be attached to projects.</p>
+          <p>
+            Link your GitHub account. Only repositories you own can be attached to projects. Reconnect only if you see an
+            authorization-expired banner — temporary GitHub rate limits do not require reconnecting.
+          </p>
         </div>
       </header>
 
@@ -107,11 +110,22 @@ export function UserIntegrationsPage() {
               ) : null}
               <div>
                 <h3>@{status.github_login}</h3>
-                <p>
-                  Connected
-                  {status.connected_at ? ` · ${new Date(status.connected_at).toLocaleString()}` : ""}
-                </p>
+                {status.needs_reauth ? (
+                  <div className="notice warning" role="status" style={{ marginBottom: 12 }}>
+                    Reconnect GitHub — authorization expired or missing repo scope.
+                  </div>
+                ) : (
+                  <p>
+                    Connected
+                    {status.connected_at ? ` · ${new Date(status.connected_at).toLocaleString()}` : ""}
+                  </p>
+                )}
                 <div className="profile-actions">
+                  {status.needs_reauth ? (
+                    <button type="button" className="btn" disabled={busy} onClick={connect}>
+                      Reconnect GitHub
+                    </button>
+                  ) : null}
                   <button type="button" className="btn secondary" disabled={busy} onClick={disconnect}>
                     Disconnect
                   </button>

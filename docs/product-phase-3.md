@@ -7,7 +7,9 @@ Replace Phase 2 stub scans with real linked-repo analysis: secrets (Gitleaks), S
 ## Scan modes
 
 - **rules_only** — deterministic engines only
-- **rules_plus_ai** — same engines + Groq second-pass fields (heuristic until `GROQ_API_KEY` is set for full triage)
+- **rules_plus_ai** — same engines + Groq second-pass (`ai_triage.py`; fail-open if key missing/errors)
+
+See also [product-phase-4.md](product-phase-4.md) for finding status, cancel, branch/diff scope, suppressions, compare, and quotas.
 
 ## Notifications
 

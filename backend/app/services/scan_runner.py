@@ -11,10 +11,18 @@ from sqlalchemy import select
 from app.core import database as db
 from app.core.config import PUBLIC_APP_URL
 from app.core.time import utcnow
-from app.models import AppNotification, Finding, Project, Scan, User
+from app.models import AppNotification, Finding, FindingSuppression, Project, Scan, User
+from app.services.ai_triage import triage_findings
 from app.services.engines import run_gitleaks, run_osv, run_semgrep
 from app.services.engines.normalize import public_repo_path
-from app.services.scan_clone import CloneError, cleanup_workdir, clone_project_repo, prepare_workdir, purge_all_scan_workdirs
+from app.services.scan_clone import (
+    CloneError,
+    cleanup_workdir,
+    clone_project_repo,
+    list_changed_files,
+    prepare_workdir,
+    purge_all_scan_workdirs,
+)
 
 _queue: Queue[str] = Queue()
 _worker_started = False
@@ -22,7 +30,6 @@ _lock = threading.Lock()
 
 
 def estimate_eta_seconds(*, security_level: str, scan_mode: str, has_github: bool) -> int:
-    # Deep Semgrep packs take longer than a thin CI run.
     base = 90 if has_github else 25
     level = {"basic": 0.75, "standard": 1.15, "strict": 1.75}.get((security_level or "standard").lower(), 1.15)
     ai = 35 if scan_mode == "rules_plus_ai" else 0
@@ -39,7 +46,12 @@ PHASE_LABELS = {
     "reporting": "Putting the report together…",
     "completed": "Done",
     "failed": "Something went wrong",
+    "cancelled": "Cancelled",
 }
+
+
+class ScanCancelled(Exception):
+    pass
 
 
 def _set_progress(session, scan: Scan, *, phase: str, percent: int, eta_remaining: int | None = None) -> None:
@@ -55,6 +67,12 @@ def _set_progress(session, scan: Scan, *, phase: str, percent: int, eta_remainin
         scan.eta_seconds = eta_remaining
     session.add(scan)
     session.commit()
+
+
+def _check_cancel(session, scan: Scan) -> None:
+    session.refresh(scan)
+    if scan.cancel_requested:
+        raise ScanCancelled()
 
 
 def _playbook_for(family: str, severity: str) -> list[dict]:
@@ -117,6 +135,16 @@ def run_scan_job(scan_id: str) -> None:
                 session.commit()
                 return
 
+            if scan.cancel_requested:
+                scan.status = "cancelled"
+                scan.finished_at = utcnow()
+                scan.progress_json = json.dumps(
+                    {"phase": "cancelled", "label": PHASE_LABELS["cancelled"], "percent": 100, "eta_remaining_seconds": 0}
+                )
+                session.add(scan)
+                session.commit()
+                return
+
             scan.status = "running"
             scan.started_at = utcnow()
             scan.error_message = None
@@ -127,8 +155,10 @@ def run_scan_job(scan_id: str) -> None:
             findings_out: list = []
             try:
                 _set_progress(session, scan, phase="cloning", percent=5, eta_remaining=scan.eta_seconds)
+                _check_cancel(session, scan)
                 workdir = prepare_workdir(scan.id)
                 repo_path: Path | None = None
+                changed_paths: list[str] | None = None
                 if scan.source == "github_repo" and project.github_repo_full_name:
                     repo_dir, git_meta = clone_project_repo(session, user, project, workdir, ref=scan.ref)
                     repo_path = Path(repo_dir)
@@ -139,28 +169,43 @@ def run_scan_job(scan_id: str) -> None:
                     scan.git_history_json = json.dumps(git_meta.get("history") or [])
                     session.add(scan)
                     session.commit()
+                    if (scan.scan_scope or "full") == "changed":
+                        base = project.github_default_branch or "main"
+                        changed_paths = list_changed_files(repo_path, base_branch=base)
+                        engine_meta.append({"engine": "diff", "changed_files": len(changed_paths), "base": base})
                 else:
-                    # Manual target: no clone — mark engines skipped unless path exists locally (server-side only).
                     engine_meta.append({"engine": "clone", "skipped": "manual target — no GitHub clone"})
                     repo_path = None
 
+                _check_cancel(session, scan)
                 if repo_path:
-                    _set_progress(session, scan, phase="secrets", percent=20, eta_remaining=max(10, (scan.eta_seconds or 60) // 2))
+                    _set_progress(
+                        session, scan, phase="secrets", percent=20, eta_remaining=max(10, (scan.eta_seconds or 60) // 2)
+                    )
                     g_findings, g_meta = run_gitleaks(repo_path)
                     engine_meta.append(g_meta)
                     findings_out.extend(g_findings)
 
-                    _set_progress(session, scan, phase="sca", percent=40, eta_remaining=max(8, (scan.eta_seconds or 60) // 3))
+                    _check_cancel(session, scan)
+                    _set_progress(
+                        session, scan, phase="sca", percent=40, eta_remaining=max(8, (scan.eta_seconds or 60) // 3)
+                    )
                     o_findings, o_meta = run_osv(repo_path)
                     engine_meta.append(o_meta)
                     findings_out.extend(o_findings)
 
-                    _set_progress(session, scan, phase="semgrep", percent=65, eta_remaining=max(5, (scan.eta_seconds or 60) // 4))
-                    s_findings, s_meta = run_semgrep(repo_path, security_level=scan.security_level)
+                    _check_cancel(session, scan)
+                    _set_progress(
+                        session, scan, phase="semgrep", percent=65, eta_remaining=max(5, (scan.eta_seconds or 60) // 4)
+                    )
+                    s_findings, s_meta = run_semgrep(
+                        repo_path,
+                        security_level=scan.security_level,
+                        include_paths=changed_paths,
+                    )
                     engine_meta.append(s_meta)
                     findings_out.extend(s_findings)
 
-                    # Never persist host workspace paths in reports.
                     root = str(repo_path)
                     for nf in findings_out:
                         nf.file_path = public_repo_path(nf.file_path, repo_root=root)
@@ -169,37 +214,38 @@ def run_scan_job(scan_id: str) -> None:
                     engine_meta.append({"engine": "gitleaks", "skipped": "no repository workspace"})
                     engine_meta.append({"engine": "osv", "skipped": "no repository workspace"})
 
-                # Drop the clone as soon as engines finish — before report/notify work.
                 cleanup_workdir(workdir)
                 workdir = None
 
+                suppressed = {
+                    row.fingerprint
+                    for row in session.scalars(
+                        select(FindingSuppression).where(FindingSuppression.project_id == project.id)
+                    ).all()
+                }
+
                 ai_status = "skipped"
                 if scan.scan_mode == "rules_plus_ai":
+                    _check_cancel(session, scan)
                     _set_progress(session, scan, phase="ai_triage", percent=85, eta_remaining=5)
-                    # Groq triage is optional; fail-open without key.
-                    from app.core.config import reload_env
-                    import os
+                    ai_meta = triage_findings(findings_out)
+                    ai_status = ai_meta.get("status") or "ok"
+                    engine_meta.append({"engine": "groq", **ai_meta})
 
-                    reload_env()
-                    if (os.getenv("GROQ_API_KEY") or os.getenv("AI_API_KEY") or "").strip():
-                        ai_status = "pending_provider"
-                        # Lightweight placeholder: mark high/critical as likely_true until full client lands.
-                        for f in findings_out:
-                            if f.severity in ("critical", "high"):
-                                f.raw = {**f.raw, "ai_verdict": "likely_true", "ai_rationale": "High severity from deterministic engine."}
-                        ai_status = "heuristic"
-                    else:
-                        ai_status = "skipped_no_key"
-
+                _check_cancel(session, scan)
                 _set_progress(session, scan, phase="reporting", percent=95, eta_remaining=2)
-                # Replace prior findings for this scan (re-runs)
                 for old in session.scalars(select(Finding).where(Finding.scan_id == scan.id)):
                     session.delete(old)
                 session.commit()
 
                 severity_counts: Counter[str] = Counter()
                 family_counts: Counter[str] = Counter()
+                suppressed_count = 0
                 for nf in findings_out:
+                    fp = nf.fingerprint()
+                    status = "false_positive" if fp in suppressed else "open"
+                    if status == "false_positive":
+                        suppressed_count += 1
                     severity_counts[nf.severity] += 1
                     family_counts[nf.vuln_family] += 1
                     ai_verdict = None
@@ -223,7 +269,8 @@ def run_scan_job(scan_id: str) -> None:
                             line_end=nf.line_end,
                             snippet=nf.snippet,
                             risk_score=nf.risk_score(criticality=project.criticality),
-                            status="open",
+                            status=status,
+                            fingerprint=fp,
                             ai_verdict=ai_verdict,
                             ai_rationale=ai_rationale,
                             countermeasures_json=json.dumps(_playbook_for(nf.vuln_family, nf.severity)),
@@ -231,24 +278,34 @@ def run_scan_job(scan_id: str) -> None:
                         )
                     )
 
-                max_risk = max((nf.risk_score(criticality=project.criticality) for nf in findings_out), default=0.0)
+                open_count = sum(1 for nf in findings_out if nf.fingerprint() not in suppressed)
+                max_risk = max(
+                    (
+                        nf.risk_score(criticality=project.criticality)
+                        for nf in findings_out
+                        if nf.fingerprint() not in suppressed
+                    ),
+                    default=0.0,
+                )
                 summary = {
                     "findings_count": len(findings_out),
+                    "open_count": open_count,
+                    "suppressed_count": suppressed_count,
                     "by_severity": dict(severity_counts),
                     "by_family": dict(family_counts),
                     "engines": engine_meta,
                     "scan_mode": scan.scan_mode,
+                    "scan_scope": scan.scan_scope or "full",
                     "security_level": scan.security_level,
                     "ai_status": ai_status,
                     "max_risk": max_risk,
                     "commit_short": scan.commit_short,
                     "commit_sha": scan.commit_sha,
                     "workspace_purged": True,
-                    "note": "Phase 3 engines — install gitleaks/osv-scanner/semgrep on the host for full coverage.",
                 }
                 scan.summary_json = json.dumps(summary)
                 scan.risk_summary_json = json.dumps(
-                    {"max_risk": max_risk, "open_findings": len(findings_out), "by_severity": dict(severity_counts)}
+                    {"max_risk": max_risk, "open_findings": open_count, "by_severity": dict(severity_counts)}
                 )
                 scan.status = "completed"
                 scan.finished_at = utcnow()
@@ -259,6 +316,17 @@ def run_scan_job(scan_id: str) -> None:
                 session.add(scan)
                 session.commit()
                 _notify(session, scan, project, user, summary)
+            except ScanCancelled:
+                scan.status = "cancelled"
+                scan.error_message = "Scan cancelled by user."
+                scan.finished_at = utcnow()
+                scan.progress_json = json.dumps(
+                    {"phase": "cancelled", "label": PHASE_LABELS["cancelled"], "percent": 100, "eta_remaining_seconds": 0}
+                )
+                scan.eta_seconds = 0
+                session.add(scan)
+                session.commit()
+                _notify(session, scan, project, user, {"findings_count": 0})
             except CloneError as exc:
                 scan.status = "failed"
                 scan.error_message = str(exc)[:1000]
@@ -280,7 +348,6 @@ def run_scan_job(scan_id: str) -> None:
                 session.commit()
                 _notify(session, scan, project, user, {"findings_count": 0})
     finally:
-        # Always wipe the cloned repo from disk when the job ends (success, fail, or crash).
         cleanup_workdir(workdir)
 
 
@@ -299,7 +366,6 @@ def _worker_loop() -> None:
 
 
 def _recover_orphaned_scans() -> None:
-    """Re-queue jobs left running/queued after a process restart (in-memory queue is empty)."""
     try:
         purge_all_scan_workdirs()
         with db.SessionLocal() as session:
@@ -307,7 +373,19 @@ def _recover_orphaned_scans() -> None:
                 select(Scan).where(Scan.status.in_(("queued", "running"))).order_by(Scan.created_at.asc())
             ).all()
             for scan in rows:
-                # Reset so UI doesn't look frozen mid-phase from a dead worker.
+                if scan.cancel_requested:
+                    scan.status = "cancelled"
+                    scan.finished_at = utcnow()
+                    scan.progress_json = json.dumps(
+                        {
+                            "phase": "cancelled",
+                            "label": PHASE_LABELS["cancelled"],
+                            "percent": 100,
+                            "eta_remaining_seconds": 0,
+                        }
+                    )
+                    session.add(scan)
+                    continue
                 scan.status = "queued"
                 scan.error_message = None
                 scan.finished_at = None
@@ -322,7 +400,8 @@ def _recover_orphaned_scans() -> None:
                 session.add(scan)
             session.commit()
             for scan in rows:
-                _queue.put(scan.id)
+                if scan.status == "queued":
+                    _queue.put(scan.id)
     except Exception:
         pass
 

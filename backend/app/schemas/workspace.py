@@ -8,6 +8,7 @@ class ProjectCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     github_repo_id: int | None = None
     security_level: str = "standard"
+    auto_scan_on_push: bool = False
 
 
 class ProjectUpdate(BaseModel):
@@ -20,12 +21,22 @@ class ProjectUpdate(BaseModel):
     criticality: str | None = None
     notify_email_default: bool | None = None
     notify_in_app_default: bool | None = None
+    auto_scan_on_push: bool | None = None
 
 
 class ScanCreate(BaseModel):
     target: str | None = Field(default=None, min_length=1, max_length=512)
     security_level: str | None = None
     scan_mode: str | None = None
+    scan_scope: str | None = None
     notify_email: bool | None = None
     notify_in_app: bool | None = None
     ref: str | None = Field(default=None, max_length=128)
+
+
+class FindingStatusUpdate(BaseModel):
+    status: str = Field(min_length=1, max_length=16)
+
+
+class FindingSuppressCreate(BaseModel):
+    reason: str | None = Field(default=None, max_length=512)

@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, select
 from app.api import admin as admin_api
 from app.api import auth as auth_api
 from app.api import public as public_api
+from app.api import webhooks as webhooks_api
 from app.api import workspace as workspace_api
 from app.core import database as database
 from app.core.config import reload_env
@@ -63,6 +64,7 @@ app.include_router(auth_api.router)
 app.include_router(admin_api.router)
 app.include_router(workspace_api.router)
 app.include_router(public_api.router)
+app.include_router(webhooks_api.router)
 app.include_router(web_router)
 
 __all__ = [

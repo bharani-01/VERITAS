@@ -49,7 +49,11 @@ In-memory limiter on signup, login, verify, reset, and profile update endpoints.
 - Bootstrap admin credentials required for empty production DB
 - Resend API key optional locally (emails stay `queued`)
 - GitHub OAuth client secret and access tokens never returned to the client; tokens encrypted at rest (`TOKEN_ENCRYPTION_SECRET`)
-- Optional `GROQ_API_KEY` for Phase 3 AI triage; scans fail-open (rules-only engines still complete) when unset
+- Optional `GROQ_API_KEY` for Phase 3/4 AI triage; scans fail-open (rules-only engines still complete) when unset or Groq errors
+- Scan create quotas: `SCAN_RATE_LIMIT` / `SCAN_CONCURRENT_LIMIT` (429 when exceeded)
+- Finding status/suppress and compare APIs enforce project ownership via scan→project
+- GitHub API **401** (or decrypt failure) marks connection `needs_reauth`; **403** rate limits do not
+- Push webhooks at `/webhooks/github` require valid `X-Hub-Signature-256` per project secret
 - Repo clones for scans use short-lived workdirs under a server temp path and are deleted after the job
 
 ## Agent rules

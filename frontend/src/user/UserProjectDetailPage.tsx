@@ -4,10 +4,11 @@ import { Link, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { ScanReportModal } from "../components/ScanReportModal";
 import { api } from "../lib/api";
-import type { Finding, Project, Scan } from "../lib/workspace";
+import type { Finding, GitRef, Project, Scan } from "../lib/workspace";
 import { formatStatus } from "../lib/avatars";
 import { scanProgressLabel } from "../lib/scanProgress";
 import { githubCommitUrl } from "../lib/githubLinks";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 /** Project-scoped scans with Mode A/B, ETA, and findings report. */
 export function UserProjectDetailPage() {
@@ -16,12 +17,17 @@ export function UserProjectDetailPage() {
   const [scans, setScans] = useState<Scan[]>([]);
   const [target, setTarget] = useState("");
   const [scanMode, setScanMode] = useState<"rules_only" | "rules_plus_ai">("rules_only");
+  const [scanScope, setScanScope] = useState<"full" | "changed">("full");
+  const [scanRef, setScanRef] = useState("");
+  const [gitRefs, setGitRefs] = useState<GitRef[]>([]);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyInApp, setNotifyInApp] = useState(true);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [advancedConfirmOpen, setAdvancedConfirmOpen] = useState(false);
   const [draftMode, setDraftMode] = useState<"rules_only" | "rules_plus_ai">("rules_only");
+  const [draftScope, setDraftScope] = useState<"full" | "changed">("full");
+  const [draftRef, setDraftRef] = useState("");
   const [draftTarget, setDraftTarget] = useState("");
   const [draftNotifyEmail, setDraftNotifyEmail] = useState(true);
   const [draftNotifyInApp, setDraftNotifyInApp] = useState(true);
@@ -31,17 +37,27 @@ export function UserProjectDetailPage() {
   const [findingsLoading, setFindingsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ghNeedsReauth, setGhNeedsReauth] = useState(false);
+  const [autoScanBusy, setAutoScanBusy] = useState(false);
 
   async function load() {
     if (!projectId) return;
-    const [proj, scanData] = await Promise.all([
+    const [proj, scanData, gh] = await Promise.all([
       api<{ project: Project }>(`/workspace/projects/${projectId}`),
       api<{ items: Scan[] }>(`/workspace/projects/${projectId}/scans`),
+      api<{ needs_reauth?: boolean; connected?: boolean }>("/workspace/github/status").catch(() => ({
+        needs_reauth: false,
+        connected: false,
+      })),
     ]);
     setProject(proj.project);
     setScans(scanData.items);
+    setGhNeedsReauth(!!gh.needs_reauth);
     if (proj.project.notify_email_default != null) setNotifyEmail(!!proj.project.notify_email_default);
     if (proj.project.notify_in_app_default != null) setNotifyInApp(!!proj.project.notify_in_app_default);
+    if (proj.project.github_default_branch && !scanRef) {
+      setScanRef(proj.project.github_default_branch);
+    }
   }
 
   useEffect(() => {
@@ -98,10 +114,12 @@ export function UserProjectDetailPage() {
     try {
       const body: Record<string, unknown> = {
         scan_mode: scanMode,
+        scan_scope: scanScope,
         notify_email: notifyEmail,
         notify_in_app: notifyInApp,
       };
       if (target.trim()) body.target = target.trim();
+      if (scanRef.trim()) body.ref = scanRef.trim();
       const res = await api<{ scan: Scan }>(`/workspace/projects/${projectId}/scans`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -116,6 +134,32 @@ export function UserProjectDetailPage() {
     }
   }
 
+  async function cancelScan(scanId: string) {
+    try {
+      await api(`/workspace/scans/${scanId}/cancel`, { method: "POST" });
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function toggleAutoScan(enabled: boolean) {
+    if (!projectId || !project) return;
+    setAutoScanBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ project: Project }>(`/workspace/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ auto_scan_on_push: enabled }),
+      });
+      setProject(res.project);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setAutoScanBusy(false);
+    }
+  }
+
   function onAskScan(e: FormEvent) {
     e.preventDefault();
     if (!projectId || busy) return;
@@ -124,10 +168,22 @@ export function UserProjectDetailPage() {
 
   function openAdvanced() {
     setDraftMode(scanMode);
+    setDraftScope(scanScope);
+    setDraftRef(scanRef || project?.github_default_branch || "");
     setDraftTarget(target);
     setDraftNotifyEmail(notifyEmail);
     setDraftNotifyInApp(notifyInApp);
     setShowAdvanced(true);
+    if (projectId && project?.github_repo_full_name) {
+      api<{ branches: GitRef[]; tags: GitRef[] }>(`/workspace/projects/${projectId}/git-refs`)
+        .then((data) => setGitRefs([...(data.branches || []), ...(data.tags || [])]))
+        .catch(() => setGitRefs([]));
+    }
+  }
+
+  function closeAdvanced() {
+    setAdvancedConfirmOpen(false);
+    setShowAdvanced(false);
   }
 
   function askSaveAdvanced() {
@@ -136,14 +192,11 @@ export function UserProjectDetailPage() {
 
   function saveAdvanced() {
     setScanMode(draftMode);
+    setScanScope(draftScope);
+    setScanRef(draftRef);
     setTarget(draftTarget);
     setNotifyEmail(draftNotifyEmail);
     setNotifyInApp(draftNotifyInApp);
-    setAdvancedConfirmOpen(false);
-    setShowAdvanced(false);
-  }
-
-  function closeAdvanced() {
     setAdvancedConfirmOpen(false);
     setShowAdvanced(false);
   }
@@ -171,14 +224,14 @@ export function UserProjectDetailPage() {
 
   return (
     <main className="admin-main">
-      <header className="admin-header">
+      <header className="admin-header project-detail-header">
         <div>
           <div className="eyebrow">
             <Link to="/user/projects">Projects</Link>
             <span aria-hidden="true"> / </span>
             Scans
           </div>
-          <h1>{project.name}</h1>
+          <h1>Scans</h1>
           <p>
             {project.description || "Security scans for this application."}
             {project.github_repo_full_name ? (
@@ -195,8 +248,27 @@ export function UserProjectDetailPage() {
               </>
             ) : null}
           </p>
+          {project.github_repo_full_name ? (
+            <label className="check auto-scan-toggle">
+              <input
+                type="checkbox"
+                checked={!!project.auto_scan_on_push}
+                disabled={autoScanBusy || ghNeedsReauth}
+                onChange={(e) => void toggleAutoScan(e.target.checked)}
+              />
+              Auto-scan on push to {project.github_default_branch || "default branch"}
+            </label>
+          ) : null}
         </div>
+        <ProjectSwitcher current={project} compact menuAlign="right" />
       </header>
+
+      {ghNeedsReauth ? (
+        <div className="notice warning" role="status">
+          Reconnect GitHub — authorization expired or missing repo scope.{" "}
+          <Link to="/user/integrations">Open integrations</Link>
+        </div>
+      ) : null}
 
       <section className="scan-start-panel">
         <div className="scan-start-main">
@@ -204,11 +276,15 @@ export function UserProjectDetailPage() {
           <p className="muted scan-start-summary">
             {scanMode === "rules_plus_ai" ? "Rules + AI" : "Rules only"}
             {" · "}
+            {scanScope === "changed" ? "Changed files" : "Full tree"}
+            {" · "}
+            {scanRef.trim() || project.github_default_branch || "default branch"}
+            {" · "}
             {target.trim() || project.github_repo_full_name || "No target set"}
           </p>
         </div>
         <form className="scan-actions" onSubmit={onAskScan}>
-          <button className="btn" type="submit" disabled={busy}>
+          <button className="btn" type="submit" disabled={busy || ghNeedsReauth}>
             {busy ? "Starting…" : "Scan now"}
           </button>
           <button
@@ -248,6 +324,28 @@ export function UserProjectDetailPage() {
                     <select value={draftMode} onChange={(e) => setDraftMode(e.target.value as "rules_only" | "rules_plus_ai")}>
                       <option value="rules_only">Rules only (Semgrep / Gitleaks / OSV)</option>
                       <option value="rules_plus_ai">Rules + AI review (Groq)</option>
+                    </select>
+                  </label>
+                  <label>
+                    Branch or tag
+                    <select value={draftRef} onChange={(e) => setDraftRef(e.target.value)}>
+                      <option value={project.github_default_branch || ""}>
+                        {project.github_default_branch || "default"} (default)
+                      </option>
+                      {gitRefs
+                        .filter((r) => r.name !== project.github_default_branch)
+                        .map((r) => (
+                          <option key={`${r.type}:${r.name}`} value={r.name}>
+                            {r.name} ({r.type})
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Scope
+                    <select value={draftScope} onChange={(e) => setDraftScope(e.target.value as "full" | "changed")}>
+                      <option value="full">Full repository</option>
+                      <option value="changed">Changed files only</option>
                     </select>
                   </label>
                   <label>
@@ -324,6 +422,10 @@ export function UserProjectDetailPage() {
                 <p className="modal-copy">
                   Apply {draftMode === "rules_plus_ai" ? "rules + AI" : "rules-only"}
                   {" · "}
+                  {draftScope === "changed" ? "changed files" : "full tree"}
+                  {" · "}
+                  <strong>{draftRef.trim() || project.github_default_branch || "default branch"}</strong>
+                  {" · "}
                   <strong>{draftTarget.trim() || project.github_repo_full_name || "default target"}</strong>
                   {" · notify "}
                   {[draftNotifyInApp ? "in-app" : null, draftNotifyEmail ? "email" : null].filter(Boolean).join(" + ") || "none"}
@@ -360,8 +462,16 @@ export function UserProjectDetailPage() {
                   </button>
                 </div>
                 <p className="modal-copy">
-                  Run {scanMode === "rules_plus_ai" ? "rules + AI" : "rules-only"} analysis on{" "}
-                  <strong>{target.trim() || project.github_repo_full_name || "the project target"}</strong>.
+                  Run {scanMode === "rules_plus_ai" ? "rules + AI" : "rules-only"}{" "}
+                  ({scanScope === "changed" ? "changed files" : "full tree"}) on{" "}
+                  <strong>{target.trim() || project.github_repo_full_name || "the project target"}</strong>
+                  {scanRef.trim() ? (
+                    <>
+                      {" "}
+                      at <strong>{scanRef.trim()}</strong>
+                    </>
+                  ) : null}
+                  .
                 </p>
                 <div className="modal-actions">
                   <button type="button" className="btn ghost" onClick={() => setConfirmOpen(false)} disabled={busy}>
@@ -389,6 +499,7 @@ export function UserProjectDetailPage() {
           Start a scan to run Semgrep / secrets / dependency checks on the linked repo.
         </div>
       ) : (
+        <>
         <div className="scan-table-wrap">
           <table className="scan-table">
             <colgroup>
@@ -445,7 +556,14 @@ export function UserProjectDetailPage() {
                         scan.commit_short || "—"
                       )}
                     </td>
-                    <td className="muted scan-mode">{(scan.scan_mode || "rules_only").replace(/_/g, " ")}</td>
+                    <td className="muted scan-mode">
+                      {(scan.scan_mode || "rules_only").replace(/_/g, " ")}
+                      {scan.source === "github_push" ? (
+                        <span className="badge muted" style={{ marginLeft: 6 }}>
+                          push
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="scan-status">
                       <div className="scan-status-stack">
                         <span className={`badge ${scan.status}`}>{formatStatus(scan.status)}</span>
@@ -478,16 +596,27 @@ export function UserProjectDetailPage() {
                     </td>
                     <td className="muted scan-started">{new Date(scan.created_at).toLocaleString()}</td>
                     <td className="scan-row-actions">
-                      <button
-                        type="button"
-                        className="btn ghost small"
-                        onClick={() => {
-                          setSelectedScanId(scan.id);
-                          setReportOpen(true);
-                        }}
-                      >
-                        Report
-                      </button>
+                      {scanning ? (
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          onClick={() => void cancelScan(scan.id)}
+                          disabled={!!scan.cancel_requested}
+                        >
+                          {scan.cancel_requested ? "Cancelling…" : "Cancel"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          onClick={() => {
+                            setSelectedScanId(scan.id);
+                            setReportOpen(true);
+                          }}
+                        >
+                          Report
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -495,6 +624,7 @@ export function UserProjectDetailPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {reportOpen && selected ? (
@@ -508,6 +638,7 @@ export function UserProjectDetailPage() {
           onShared={(updated) => {
             setScans((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
           }}
+          onFindingsChange={setFindings}
         />
       ) : null}
     </main>

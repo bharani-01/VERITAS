@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import type { GitHubRepo, GitHubStatus, Project, Scan } from "../lib/workspace";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
 export function UserProjectsPage() {
   const navigate = useNavigate();
@@ -12,6 +13,7 @@ export function UserProjectsPage() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [githubRepoId, setGithubRepoId] = useState("");
+  const [autoScanOnPush, setAutoScanOnPush] = useState(false);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [gh, setGh] = useState<GitHubStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +70,7 @@ export function UserProjectsPage() {
   function closeCreate() {
     setShowCreate(false);
     setFormError(null);
+    setAutoScanOnPush(false);
   }
 
   async function onCreate(e: FormEvent) {
@@ -75,9 +78,15 @@ export function UserProjectsPage() {
     setBusy(true);
     setFormError(null);
     try {
-      const body: { name: string; description: string; github_repo_id?: number } = {
+      const body: {
+        name: string;
+        description: string;
+        github_repo_id?: number;
+        auto_scan_on_push?: boolean;
+      } = {
         name: name.trim(),
         description: description.trim(),
+        auto_scan_on_push: autoScanOnPush && !!githubRepoId,
       };
       if (githubRepoId) body.github_repo_id = Number(githubRepoId);
       const created = await api<{ project: Project }>("/workspace/projects", {
@@ -87,6 +96,7 @@ export function UserProjectsPage() {
       setName("");
       setDescription("");
       setGithubRepoId("");
+      setAutoScanOnPush(false);
       closeCreate();
       navigate(`/user/projects/${created.project.id}`);
     } catch (err) {
@@ -156,6 +166,15 @@ export function UserProjectsPage() {
                 ))}
               </select>
             </label>
+            <label className="check" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={autoScanOnPush}
+                disabled={!githubRepoId}
+                onChange={(e) => setAutoScanOnPush(e.target.checked)}
+              />
+              Auto-scan on push (default branch)
+            </label>
             {!gh?.connected ? (
               <p className="modal-hint">
                 <Link to="/user/integrations" onClick={closeCreate}>
@@ -188,9 +207,20 @@ export function UserProjectsPage() {
           <h1>Projects</h1>
           <p>Open a project to run and review its scans.</p>
         </div>
-        <button type="button" className="btn" onClick={() => setShowCreate(true)}>
-          New project
-        </button>
+        <div className="project-header-actions">
+          {projects.length ? (
+            <ProjectSwitcher
+              projects={projects}
+              showAllLink={false}
+              onNewProject={() => setShowCreate(true)}
+              compact
+              menuAlign="right"
+            />
+          ) : null}
+          <button type="button" className="btn" onClick={() => setShowCreate(true)}>
+            New project
+          </button>
+        </div>
       </header>
 
       {error ? (
@@ -232,6 +262,12 @@ export function UserProjectsPage() {
                     <span>
                       {count} scan{count === 1 ? "" : "s"}
                     </span>
+                    {project.auto_scan_on_push ? (
+                      <>
+                        <span>·</span>
+                        <span>Auto-scan</span>
+                      </>
+                    ) : null}
                     <span>·</span>
                     <span>Updated {new Date(project.updated_at).toLocaleDateString()}</span>
                   </span>

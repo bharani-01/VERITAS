@@ -182,19 +182,35 @@ def semgrep_configs(security_level: str) -> list[str]:
     return ["p/default", "p/ci", "p/owasp-top-ten", "p/security-audit", "p/secrets"]
 
 
-def run_semgrep(workdir: Path, security_level: str = "standard") -> tuple[list[NormalizedFinding], dict]:
+def run_semgrep(
+    workdir: Path,
+    security_level: str = "standard",
+    *,
+    include_paths: list[str] | None = None,
+) -> tuple[list[NormalizedFinding], dict]:
     meta: dict = {"engine": "semgrep", "available": False, "configs": semgrep_configs(security_level)}
     cmd_prefix = _semgrep_cmd()
     if not cmd_prefix:
         meta["skipped"] = "semgrep not found (pip install semgrep)"
         return [], meta
 
+    if include_paths is not None and len(include_paths) == 0:
+        meta["available"] = True
+        meta["mode"] = "changed"
+        meta["skipped"] = "no changed files"
+        meta["findings"] = 0
+        return [], meta
+
     meta["available"] = True
     meta["invocation"] = " ".join(cmd_prefix)
-    meta["mode"] = "deep"
+    meta["mode"] = "changed" if include_paths else "deep"
     cmd = [*cmd_prefix, "scan", "--json", "--quiet", "--disable-version-check"]
     for cfg in meta["configs"]:
         cmd.extend(["--config", cfg])
+    if include_paths:
+        # Limit to changed paths (relative to workdir).
+        for rel in include_paths[:400]:
+            cmd.extend(["--include", rel.replace("\\", "/")])
     cmd.append(str(workdir))
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900, check=False)

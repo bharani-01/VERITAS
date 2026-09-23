@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
-
+import httpx
 from sqlalchemy.orm import Session
 
 from app.core.config import PUBLIC_APP_URL, RESEND_API_KEY, RESEND_FROM_EMAIL
 from app.models import EmailDelivery, User
 from app.services.tokens import issue_token
+
+RESEND_EMAILS_URL = "https://api.resend.com/emails"
 
 
 def send_email(db: Session, user: User, template: str, subject: str, html: str) -> None:
@@ -17,30 +16,27 @@ def send_email(db: Session, user: User, template: str, subject: str, html: str) 
     db.flush()
     if not RESEND_API_KEY:
         return
-    body = json.dumps(
-        {
-            "from": RESEND_FROM_EMAIL,
-            "to": [user.email],
-            "subject": subject,
-            "html": html,
-        }
-    ).encode()
-    request = urllib.request.Request(
-        "https://api.resend.com/emails",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {RESEND_API_KEY}",
-            "Content-Type": "application/json",
-            "User-Agent": "VERITAS/0.1",
-        },
-        method="POST",
-    )
+    payload = {
+        "from": RESEND_FROM_EMAIL,
+        "to": [user.email],
+        "subject": subject,
+        "html": html,
+    }
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            result = json.loads(response.read().decode())
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(
+                RESEND_EMAILS_URL,
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {RESEND_API_KEY}",
+                    "User-Agent": "VERITAS/0.1",
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
             delivery.delivery_status = "sent"
             delivery.provider_message_id = result.get("id")
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError):
+    except (httpx.HTTPError, ValueError, TypeError):
         delivery.delivery_status = "failed"
 
 

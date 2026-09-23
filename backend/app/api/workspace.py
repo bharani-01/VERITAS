@@ -8,7 +8,7 @@ from app.api.deps import get_current_user
 from app.core.config import PUBLIC_APP_URL
 from app.core.database import db_session
 from app.models import User
-from app.schemas.workspace import ProjectCreate, ProjectUpdate, ScanCreate
+from app.schemas.workspace import FindingStatusUpdate, FindingSuppressCreate, ProjectCreate, ProjectUpdate, ScanCreate
 from app.services import github as github_svc
 from app.services import projects as project_svc
 from app.services.audit import audit
@@ -50,6 +50,7 @@ def create_project(
             description=body.description,
             github_repo_id=body.github_repo_id,
             security_level=body.security_level,
+            auto_scan_on_push=body.auto_scan_on_push,
         )
     except HTTPException as exc:
         if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
@@ -102,6 +103,7 @@ def patch_project(
             criticality=body.criticality,
             notify_email_default=body.notify_email_default,
             notify_in_app_default=body.notify_in_app_default,
+            auto_scan_on_push=body.auto_scan_on_push,
         )
     except HTTPException as exc:
         if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):
@@ -161,6 +163,7 @@ def create_project_scan(
         target=body.target,
         security_level=body.security_level,
         scan_mode=body.scan_mode,
+        scan_scope=body.scan_scope,
         notify_email=body.notify_email,
         notify_in_app=body.notify_in_app,
         ref=body.ref,
@@ -201,6 +204,50 @@ def scan_findings(
     if project_id is not None:
         project_svc.get_owned_project(db, user, project_id)
     return {"items": [project_svc.public_finding(f) for f in items], "total": len(items)}
+
+
+@router.patch("/findings/{finding_id}")
+def patch_finding(
+    finding_id: str,
+    body: FindingStatusUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+):
+    finding = project_svc.update_finding_status(db, user, finding_id, status=body.status)
+    return {"finding": project_svc.public_finding(finding)}
+
+
+@router.post("/findings/{finding_id}/suppress")
+def suppress_finding(
+    finding_id: str,
+    body: FindingSuppressCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+):
+    finding = project_svc.suppress_finding(db, user, finding_id, reason=body.reason)
+    return {"finding": project_svc.public_finding(finding)}
+
+
+@router.post("/scans/{scan_id}/cancel")
+def cancel_scan(scan_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+    scan = project_svc.cancel_scan(db, user, scan_id)
+    return {"scan": project_svc.public_scan(scan)}
+
+
+@router.get("/projects/{project_id}/scans/compare")
+def compare_scans(
+    project_id: str,
+    a: str = Query(...),
+    b: str = Query(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(db_session),
+):
+    return project_svc.compare_scans(db, user, project_id, scan_a=a, scan_b=b)
+
+
+@router.get("/projects/{project_id}/git-refs")
+def project_git_refs(project_id: str, user: User = Depends(get_current_user), db: Session = Depends(db_session)):
+    return project_svc.list_project_git_refs(db, user, project_id)
 
 
 @router.get("/scans")
