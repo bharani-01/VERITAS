@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
@@ -36,12 +36,40 @@ type Overview = {
   server_time: string;
 };
 
+type TrafficResponse = {
+  items: HttpItem[];
+  total: number;
+};
+
+type Scope = "all" | "flagged";
+type ClassFilter = "" | "clean" | "sqli" | "xss" | "csrf" | "auth_anomaly";
+type SevFilter = "" | "info" | "low" | "medium" | "high" | "critical";
+
 const POLL_MS = 4000;
 
 const STATUS_LABEL: Record<Overview["status"], string> = {
   safe: "Safe",
   warning: "Warning",
   critical: "Critical",
+};
+
+const DEFAULT_TIPS: Record<string, string[]> = {
+  sqli: [
+    "Use parameterized queries — never concatenate user input into SQL.",
+    "Validate IDs and filters; reject unexpected characters.",
+  ],
+  xss: [
+    "Encode output for HTML/JS contexts; prefer framework auto-escaping.",
+    "Set a strict Content-Security-Policy.",
+  ],
+  csrf: [
+    "Verify Origin/Referer on state-changing cookie-authenticated requests.",
+    "Use SameSite cookies and anti-CSRF tokens for mutations.",
+  ],
+  auth_anomaly: [
+    "Rate-limit auth endpoints and review failed sign-in audit events.",
+    "Alert on bursts of 401/403/429 from a single IP.",
+  ],
 };
 
 function formatTime(iso: string) {
@@ -58,38 +86,82 @@ function classLabel(c: string) {
   return "Clean";
 }
 
+function statusTone(code: number): string {
+  if (code >= 200 && code < 300) return "ok";
+  if (code >= 400 && code < 500) return "client";
+  if (code >= 500) return "server";
+  return "muted";
+}
+
 /** Admin Security dashboard — live HTTP telemetry + ApexCharts. */
 export function AdminSecurityPage() {
   useDocumentTitle("Security");
   const [data, setData] = useState<Overview | null>(null);
+  const [traffic, setTraffic] = useState<HttpItem[]>([]);
+  const [trafficTotal, setTrafficTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [scope, setScope] = useState<Scope>("all");
+  const [classFilter, setClassFilter] = useState<ClassFilter>("");
+  const [sevFilter, setSevFilter] = useState<SevFilter>("");
+  const [pathQuery, setPathQuery] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      params.set("page_size", "50");
+      if (classFilter) params.set("classification", classFilter);
+      if (sevFilter) params.set("severity", sevFilter);
+
+      const [overview, feed] = await Promise.all([
+        api<Overview>("/admin/security-overview"),
+        api<TrafficResponse>(`/admin/http-requests?${params.toString()}`),
+      ]);
+
+      setData(overview);
+      setTraffic(feed.items);
+      setTrafficTotal(feed.total);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [classFilter, sevFilter]);
 
   useEffect(() => {
-    let cancelled = false;
-    let timer: number | null = null;
-
-    async function load() {
-      try {
-        const next = await api<Overview>("/admin/security-overview");
-        if (cancelled) return;
-        setData(next);
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setError((err as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
     void load();
-    timer = window.setInterval(() => void load(), POLL_MS);
-    return () => {
-      cancelled = true;
-      if (timer != null) window.clearInterval(timer);
-    };
-  }, []);
+  }, [load]);
+
+  useEffect(() => {
+    if (!autoRefresh) return;
+    const timer = window.setInterval(() => void load(), POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, load]);
+
+  const visibleTraffic = useMemo(() => {
+    let items = traffic;
+    if (scope === "flagged") {
+      items = items.filter((r) => r.classification !== "clean");
+    }
+    const q = pathQuery.trim().toLowerCase();
+    if (q) {
+      items = items.filter((r) => `${r.method} ${r.path}`.toLowerCase().includes(q));
+    }
+    return items;
+  }, [traffic, scope, pathQuery]);
+
+  const peak = useMemo(() => Math.max(0, ...(data?.volume_60m || []).map((b) => b.count)), [data?.volume_60m]);
+  const cleanPct = useMemo(() => {
+    const req = data?.totals_15m.requests || 0;
+    if (!req) return 100;
+    const clean = data?.totals_15m.by_classification.clean || 0;
+    return Math.round((clean / req) * 100);
+  }, [data]);
+
+  const classTotal = useMemo(() => classSeriesSum(data), [data]);
 
   const volumeOptions: ApexOptions = useMemo(
     () => ({
@@ -99,16 +171,20 @@ export function AdminSecurityPage() {
         animations: { enabled: true, speed: 350 },
         zoom: { enabled: false },
         fontFamily: "inherit",
-        sparkline: { enabled: false },
+        background: "transparent",
       },
       dataLabels: { enabled: false },
-      stroke: { curve: "smooth", width: 2 },
+      stroke: { curve: "smooth", width: 2.5 },
       fill: {
         type: "gradient",
-        gradient: { shadeIntensity: 1, opacityFrom: 0.28, opacityTo: 0.02, stops: [0, 90, 100] },
+        gradient: { shadeIntensity: 1, opacityFrom: 0.32, opacityTo: 0.04, stops: [0, 85, 100] },
       },
-      colors: ["#0f766e"],
-      grid: { borderColor: "#e8edf2", strokeDashArray: 0, padding: { left: 8, right: 8 } },
+      colors: ["#0d9488"],
+      grid: {
+        borderColor: "#e8edf2",
+        strokeDashArray: 3,
+        padding: { left: 4, right: 8, top: 8 },
+      },
       xaxis: {
         categories: (data?.volume_60m || []).map((b) => {
           const d = parseUtc(b.t) || new Date(b.t);
@@ -136,16 +212,34 @@ export function AdminSecurityPage() {
 
   const classOptions: ApexOptions = useMemo(
     () => ({
-      chart: { type: "donut", fontFamily: "inherit", animations: { enabled: true } },
+      chart: { type: "donut", fontFamily: "inherit", animations: { enabled: true }, background: "transparent" },
       labels: ["Clean", "SQLi", "XSS", "CSRF", "Auth"],
-      colors: ["#cbd5e1", "#dc2626", "#ea580c", "#ca8a04", "#0284c7"],
-      legend: { position: "bottom", fontSize: "11px", markers: { size: 6 } },
+      colors: ["#94a3b8", "#dc2626", "#ea580c", "#ca8a04", "#0284c7"],
+      legend: { position: "bottom", fontSize: "11px", markers: { size: 5 }, itemMargin: { horizontal: 6 } },
       dataLabels: { enabled: false },
-      plotOptions: { pie: { donut: { size: "72%", labels: { show: false } } } },
-      stroke: { width: 0 },
+      plotOptions: {
+        pie: {
+          donut: {
+            size: "74%",
+            labels: {
+              show: true,
+              name: { show: true, fontSize: "11px", color: "#64748b", offsetY: 12 },
+              value: { show: true, fontSize: "1.35rem", fontWeight: 700, color: "#0f172a", offsetY: -8 },
+              total: {
+                show: true,
+                label: "15m",
+                fontSize: "11px",
+                color: "#64748b",
+                formatter: () => String(classTotal),
+              },
+            },
+          },
+        },
+      },
+      stroke: { width: 2, colors: ["#fff"] },
       tooltip: { y: { formatter: (v) => `${v}` } },
     }),
-    []
+    [classTotal]
   );
 
   const classSeries = useMemo(() => {
@@ -155,12 +249,12 @@ export function AdminSecurityPage() {
 
   const sevOptions: ApexOptions = useMemo(
     () => ({
-      chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: true } },
-      plotOptions: { bar: { borderRadius: 3, columnWidth: "48%", distributed: true } },
-      colors: ["#cbd5e1", "#0284c7", "#ca8a04", "#ea580c", "#dc2626"],
+      chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: true }, background: "transparent" },
+      plotOptions: { bar: { borderRadius: 4, columnWidth: "52%", distributed: true } },
+      colors: ["#94a3b8", "#0284c7", "#ca8a04", "#ea580c", "#dc2626"],
       dataLabels: { enabled: false },
       legend: { show: false },
-      grid: { borderColor: "#e8edf2", strokeDashArray: 0 },
+      grid: { borderColor: "#e8edf2", strokeDashArray: 3, padding: { left: 0, right: 0 } },
       xaxis: {
         categories: ["Info", "Low", "Med", "High", "Crit"],
         labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
@@ -197,6 +291,7 @@ export function AdminSecurityPage() {
 
   const status = data?.status || "safe";
   const cmEntries = Object.entries(data?.countermeasures || {});
+  const tipEntries = cmEntries.length ? cmEntries : Object.entries(DEFAULT_TIPS).slice(0, 2);
 
   return (
     <main className="admin-main sec-dash">
@@ -210,6 +305,13 @@ export function AdminSecurityPage() {
             <span className="sec-live-dot" aria-hidden="true" />
             {STATUS_LABEL[status]}
           </span>
+          <label className="sec-auto">
+            <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+            Live
+          </label>
+          <button type="button" className="btn ghost" onClick={() => void load()} disabled={loading}>
+            Refresh
+          </button>
           <Link className="btn ghost" to="/admin/audit">
             Audit log
           </Link>
@@ -222,70 +324,150 @@ export function AdminSecurityPage() {
         </div>
       ) : null}
 
-      <p className="sec-status-line" aria-live="polite">
-        {data?.reason || "Collecting telemetry…"}
-        <span>
-          {data?.totals_15m.requests ?? 0} req · {data?.totals_15m.suspicious ?? 0} flagged · 15m
-        </span>
-      </p>
+      <section className="sec-metrics" aria-label="Key metrics">
+        <article>
+          <small>Status</small>
+          <b className={`sec-metric-status sec-metric-${status}`}>{STATUS_LABEL[status]}</b>
+          <span>{data?.reason || "—"}</span>
+        </article>
+        <article>
+          <small>Requests · 15m</small>
+          <b>{data?.totals_15m.requests ?? 0}</b>
+          <span>Peak {peak}/min · last hour</span>
+        </article>
+        <article>
+          <small>Flagged · 15m</small>
+          <b>{data?.totals_15m.suspicious ?? 0}</b>
+          <span>
+            SQLi {data?.totals_15m.by_classification.sqli ?? 0} · XSS {data?.totals_15m.by_classification.xss ?? 0} · CSRF{" "}
+            {data?.totals_15m.by_classification.csrf ?? 0}
+          </span>
+        </article>
+        <article>
+          <small>Clean rate</small>
+          <b>{cleanPct}%</b>
+          <span>{data?.totals_15m.by_classification.clean ?? 0} clean of {data?.totals_15m.requests ?? 0}</span>
+        </article>
+      </section>
 
       <section className="sec-charts">
-        <div className="sec-chart-card sec-chart-wide">
-          <h2>Request volume</h2>
-          <Chart options={volumeOptions} series={volumeSeries} type="area" height={220} />
+        <div className="sec-panel sec-chart-wide">
+          <div className="sec-panel-head">
+            <h2>Request volume</h2>
+            <span>Last 60 minutes</span>
+          </div>
+          <Chart options={volumeOptions} series={volumeSeries} type="area" height={228} />
         </div>
         <div className="sec-chart-side">
-          <div className="sec-chart-card">
-            <h2>Classification</h2>
-            <Chart options={classOptions} series={classSeries} type="donut" height={200} />
+          <div className="sec-panel">
+            <div className="sec-panel-head">
+              <h2>Classification</h2>
+              <span>15m</span>
+            </div>
+            <Chart options={classOptions} series={classSeries} type="donut" height={210} />
           </div>
-          <div className="sec-chart-card">
-            <h2>Severity</h2>
-            <Chart options={sevOptions} series={sevSeries} type="bar" height={180} />
+          <div className="sec-panel">
+            <div className="sec-panel-head">
+              <h2>Severity</h2>
+              <span>15m</span>
+            </div>
+            <Chart options={sevOptions} series={sevSeries} type="bar" height={188} />
           </div>
         </div>
       </section>
 
-      {cmEntries.length ? (
-        <section className="sec-countermeasures">
+      <section className="sec-countermeasures">
+        <div className="sec-panel-head">
           <h2>Countermeasures</h2>
-          <div className="sec-cm-grid">
-            {cmEntries.map(([family, tips]) => (
-              <article key={family}>
-                <b>{classLabel(family)}</b>
-                <ul>
-                  {tips.map((tip) => (
-                    <li key={tip}>{tip}</li>
-                  ))}
-                </ul>
-              </article>
-            ))}
-          </div>
-        </section>
-      ) : null}
+          <span>{cmEntries.length ? "Active families" : "Baseline playbooks"}</span>
+        </div>
+        <div className="sec-cm-grid">
+          {tipEntries.map(([family, tips]) => (
+            <article key={family} className="sec-cm-card">
+              <b>{classLabel(family)}</b>
+              <ul>
+                {tips.slice(0, 2).map((tip) => (
+                  <li key={tip}>{tip}</li>
+                ))}
+              </ul>
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="sec-traffic">
-        <div className="sec-traffic-head">
-          <h2>Suspicious traffic</h2>
+        <div className="sec-traffic-toolbar">
+          <div className="sec-panel-head">
+            <h2>HTTP traffic</h2>
+            <span>
+              {visibleTraffic.length} shown · {trafficTotal} total
+            </span>
+          </div>
+          <div className="sec-filters">
+            <div className="audit-seg" role="group" aria-label="Scope">
+              <button type="button" className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>
+                All
+              </button>
+              <button type="button" className={scope === "flagged" ? "active" : ""} onClick={() => setScope("flagged")}>
+                Flagged
+              </button>
+            </div>
+            <select
+              className="sec-select"
+              aria-label="Classification"
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value as ClassFilter)}
+            >
+              <option value="">Any class</option>
+              <option value="clean">Clean</option>
+              <option value="sqli">SQLi</option>
+              <option value="xss">XSS</option>
+              <option value="csrf">CSRF</option>
+              <option value="auth_anomaly">Auth anomaly</option>
+            </select>
+            <select
+              className="sec-select"
+              aria-label="Severity"
+              value={sevFilter}
+              onChange={(e) => setSevFilter(e.target.value as SevFilter)}
+            >
+              <option value="">Any severity</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+              <option value="info">Info</option>
+            </select>
+            <input
+              type="search"
+              className="sec-search"
+              placeholder="Filter path…"
+              value={pathQuery}
+              onChange={(e) => setPathQuery(e.target.value)}
+              aria-label="Filter path"
+            />
+          </div>
         </div>
-        {!data?.recent_suspicious.length ? (
-          <p className="sec-empty">No elevated HTTP signals in the last 15 minutes.</p>
+
+        {!visibleTraffic.length ? (
+          <p className="sec-empty">No requests match the current filters.</p>
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap sec-table-wrap">
             <table className="audit-table">
               <thead>
                 <tr>
                   <th>Time</th>
                   <th>Request</th>
                   <th>Code</th>
+                  <th>ms</th>
                   <th>Class</th>
                   <th>Severity</th>
                   <th>IP</th>
                 </tr>
               </thead>
               <tbody>
-                {data.recent_suspicious.map((row) => (
-                  <tr key={row.id}>
+                {visibleTraffic.map((row) => (
+                  <tr key={row.id} className={row.classification !== "clean" ? "sec-row-flag" : undefined}>
                     <td>
                       <span className="audit-time">
                         <b>{formatTime(row.created_at)}</b>
@@ -300,9 +482,14 @@ export function AdminSecurityPage() {
                       </span>
                     </td>
                     <td>
-                      <span className="audit-status">{row.status_code}</span>
+                      <span className={`audit-status status-${statusTone(row.status_code)}`}>{row.status_code}</span>
                     </td>
-                    <td>{classLabel(row.classification)}</td>
+                    <td>
+                      <span className="audit-mono">{row.duration_ms}</span>
+                    </td>
+                    <td>
+                      <span className={`sec-class sec-class-${row.classification}`}>{classLabel(row.classification)}</span>
+                    </td>
                     <td>
                       <span className={`audit-sev sev-${row.severity}`}>{row.severity.toUpperCase()}</span>
                     </td>
@@ -318,4 +505,9 @@ export function AdminSecurityPage() {
       </section>
     </main>
   );
+}
+
+function classSeriesSum(data: Overview | null) {
+  const c = data?.totals_15m.by_classification || {};
+  return (c.clean || 0) + (c.sqli || 0) + (c.xss || 0) + (c.csrf || 0) + (c.auth_anomaly || 0);
 }
