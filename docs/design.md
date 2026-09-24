@@ -31,11 +31,26 @@ No shared admin/user UI components. Shared `lib/` helpers OK.
 | `--accent` | `#4f8cff` | Primary actions + active nav |
 | `--ok` | `#3ecf8e` | Success / completed |
 
+## Brand assets
+
+Source lockup lives under `frontend/public/brand/`. Use the right crop for each surface:
+
+| Asset | Path | Use |
+|------|------|-----|
+| V mark | `/brand/veritas-mark.png` | Nav, compact headers (`BrandMark`) |
+| Full lockup | `/brand/veritas-lockup.png` | Auth pane / splash (`BrandLockup`) |
+| Splash stack | `/brand/veritas-splash.png` | Optional marketing / loading |
+| App icon | `/brand/veritas-app-icon.png` | Large square mark |
+| Favicon | `/favicon.png` | Browser tab |
+| Apple touch | `/apple-touch-icon.png` | iOS home screen |
+
+Do not redraw the mark as a generic triangle SVG.
+
 ## Rules
 
 1. Dark theme only (`applyTheme("dark")`).
 2. Prefer hairline separators and unified section frames over scattered bordered cards.
-3. No purple gradients, glow stacks, or decorative grid motifs — keep VERITAS blue.
+3. No purple gradients, glow stacks, or decorative grid motifs — keep VERITAS blue (accent aligned to the mark’s cyan tip).
 4. Active nav uses a **solid accent fill** (white text), not a faint tint.
 5. Uppercase micro-labels (eyebrows, table headers, panel titles) use muted ink + wide tracking.
 6. Resource names underline on hover; status uses compact pills (completed / running / failed).
@@ -43,4 +58,4 @@ No shared admin/user UI components. Shared `lib/` helpers OK.
 8. Typography: Inter Variable is self-hosted (not Google `@import`) so the face loads with the SPA and matches across browsers. Forms inherit body font.
 9. App shell pages use full content width (including New project `.np-flow`). Settings/profile forms use Render-style rows (`.rr-row`: title left, controls right; stacks under 760px). Auth marketing column stays as designed.
 10. Accessibility baseline: skip link to `#main-content`, visible `:focus-visible` rings, dark-theme `.notice` / `.badge` / audit tones, labeled collapsed nav, no nested interactive controls in scan history.
-11. Update this file when tokens change.
+11. Update this file when tokens or brand assets change.

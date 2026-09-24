@@ -129,6 +129,7 @@ export type GitHubRepo = {
   default_branch: string | null;
   html_url: string | null;
   description: string;
+  updated_at?: string | null;
 };
 
 export type GitRef = { name: string; type: "branch" | "tag" | string };

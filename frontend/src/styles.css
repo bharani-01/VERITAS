@@ -287,12 +287,37 @@ textarea {
   background: transparent;
   border: 0;
   color: var(--muted);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
-.brand-mark svg {
-  width: 16px;
-  height: 16px;
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
+}
+
+.brand-mark-sm {
+  width: 22px;
+  height: 22px;
+}
+
+.brand-mark-lg {
+  width: 40px;
+  height: 40px;
+}
+
+.brand-lockup-wrap {
+  display: block;
+  margin: 0;
+}
+
+.brand-lockup {
+  display: block;
+  width: min(220px, 100%);
+  height: auto;
+  object-fit: contain;
 }
 
 .brand-copy {
@@ -3046,6 +3071,275 @@ tbody tr:last-child td {
 
 .np-search {
   margin-bottom: 0.15rem;
+}
+
+/* Repo picker — search + credentials + compact list */
+.np-picker {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.np-picker-toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.np-picker-search {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex: 1 1 14rem;
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-deep);
+  color: var(--muted);
+  transition: border-color 0.12s var(--ease);
+}
+
+.np-picker-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+
+.np-picker-search svg {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+}
+
+.np-picker-search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.875rem;
+  outline: none;
+}
+
+.np-picker-search input::placeholder {
+  color: var(--muted);
+}
+
+.np-picker-creds {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.np-picker-creds-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.np-picker-creds-btn:hover,
+.np-picker-creds.open .np-picker-creds-btn {
+  background: var(--table-hover);
+  color: var(--ink);
+}
+
+.np-picker-creds-icons {
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink);
+}
+
+.np-picker-creds-icons svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.np-picker-chevron {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--muted);
+}
+
+.np-picker-creds-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 12rem;
+  padding: 4px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-menu);
+}
+
+.np-picker-creds-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.65rem 0.7rem;
+  color: var(--ink);
+}
+
+.np-picker-creds-head svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex-shrink: 0;
+}
+
+.np-picker-creds-head strong {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.np-picker-creds-head span {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.np-picker-creds-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.np-picker-creds-item:hover {
+  background: var(--nav-hover);
+  color: var(--ink);
+}
+
+.np-picker-creds-item.danger {
+  color: var(--danger);
+}
+
+.np-picker-creds-item.danger:hover {
+  background: var(--danger-soft);
+}
+
+.np-picker-list {
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem 0;
+  max-height: min(340px, 48vh);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-deep);
+}
+
+.np-picker-row {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.7rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.np-picker-row:hover,
+.np-picker-row:focus-visible {
+  outline: none;
+  background: var(--table-hover);
+}
+
+.np-picker-gh {
+  display: inline-grid;
+  place-items: center;
+  color: var(--ink-soft);
+}
+
+.np-picker-gh svg {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+
+.np-picker-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.875rem;
+  line-height: 1.3;
+}
+
+.np-picker-owner {
+  color: var(--muted);
+  font-weight: 450;
+}
+
+.np-picker-slash {
+  color: var(--muted);
+}
+
+.np-picker-repo {
+  color: var(--ink);
+  font-weight: 550;
+}
+
+.np-picker-time {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.np-picker-empty {
+  padding: 1.25rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-deep);
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.np-picker-empty p {
+  margin: 0;
+}
+
+.np-selected-repo .np-picker-gh {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--ink);
+}
+
+.np-selected-repo .np-picker-gh svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.np-selected-repo strong {
+  font-weight: 500;
 }
 
 .np-next-hint {

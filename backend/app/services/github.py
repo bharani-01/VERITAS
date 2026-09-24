@@ -258,6 +258,7 @@ def list_owned_repos(db: Session, user: User, *, page: int = 1, per_page: int = 
                 "default_branch": repo.get("default_branch"),
                 "html_url": repo.get("html_url"),
                 "description": repo.get("description") or "",
+                "updated_at": repo.get("pushed_at") or repo.get("updated_at"),
             }
         )
     return owned

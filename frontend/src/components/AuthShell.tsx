@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { BrandMark } from "./BrandMark";
+import { BrandLockup } from "./BrandMark";
 
 type AuthShellProps = {
   title: string;
@@ -12,9 +12,8 @@ export function AuthShell({ title, lede, eyebrow, children }: AuthShellProps) {
   return (
     <main className="auth-shell">
       <section className="brand-pane">
-        <div className="brand">
-          <BrandMark />
-          VERITAS
+        <div className="brand brand-lockup-wrap">
+          <BrandLockup />
         </div>
         <div className="brand-copy">
           <h1>Trusted access, before anything else.</h1>
