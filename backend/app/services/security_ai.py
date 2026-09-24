@@ -79,7 +79,7 @@ def analyze_http_security(context: dict[str, Any]) -> dict[str, Any]:
         "classification, severity, signals — no bodies or secrets). "
         "Return JSON only with shape: "
         '{"summary":"2-4 sentence situation assessment",'
-        '"suggestions":[{"title":"short title","family":"sqli|xss|csrf|auth_anomaly|general",'
+        '"suggestions":[{"title":"short title","family":"sqli|xss|cmd_inject|path_traversal|ssrf|ssti|open_redirect|header_abuse|csrf|scanner|auth_anomaly|weak_headers|general",'
         '"priority":"critical|high|medium|low","steps":["actionable step", "..."]}]} . '
         "Prioritize concrete, VERITAS-app-specific countermeasures. "
         "If traffic looks clean, still suggest 1-2 hardening steps. "

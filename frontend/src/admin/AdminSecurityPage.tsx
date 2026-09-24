@@ -59,11 +59,27 @@ type TrafficResponse = {
 };
 
 type Scope = "all" | "flagged";
-type ClassFilter = "" | "clean" | "sqli" | "xss" | "csrf" | "auth_anomaly";
+type ClassFilter = string;
 type SevFilter = "" | "info" | "low" | "medium" | "high" | "critical";
 
 const POLL_MS = 4000;
 const PAGE_SIZE = 40;
+
+const CLASS_META: { key: string; label: string; color: string }[] = [
+  { key: "clean", label: "Clean", color: "#94a3b8" },
+  { key: "sqli", label: "SQLi", color: "#dc2626" },
+  { key: "xss", label: "XSS", color: "#ea580c" },
+  { key: "cmd_inject", label: "Cmd", color: "#b91c1c" },
+  { key: "path_traversal", label: "LFI", color: "#c2410c" },
+  { key: "ssrf", label: "SSRF", color: "#a16207" },
+  { key: "ssti", label: "SSTI", color: "#854d0e" },
+  { key: "open_redirect", label: "Redirect", color: "#ca8a04" },
+  { key: "header_abuse", label: "Headers", color: "#7c3aed" },
+  { key: "csrf", label: "CSRF", color: "#d97706" },
+  { key: "scanner", label: "Scanner", color: "#0369a1" },
+  { key: "auth_anomaly", label: "Auth", color: "#0284c7" },
+  { key: "weak_headers", label: "Weak resp", color: "#64748b" },
+];
 
 const STATUS_LABEL: Record<Overview["status"], string> = {
   safe: "Safe",
@@ -78,12 +94,11 @@ function formatTime(iso: string) {
 }
 
 function classLabel(c: string) {
-  if (c === "sqli") return "SQLi";
-  if (c === "xss") return "XSS";
-  if (c === "csrf") return "CSRF";
-  if (c === "auth_anomaly") return "Auth anomaly";
+  const hit = CLASS_META.find((m) => m.key === c);
+  if (hit) return hit.label;
   if (c === "general") return "General";
-  return "Clean";
+  if (!c || c === "clean") return "Clean";
+  return c.replace(/_/g, " ");
 }
 
 function statusTone(code: number): string {
@@ -288,12 +303,15 @@ export function AdminSecurityPage() {
     [data?.volume_60m]
   );
 
-  const classOptions: ApexOptions = useMemo(
-    () => ({
+  const classOptions: ApexOptions = useMemo(() => {
+    const c = data?.totals_15m.by_classification || {};
+    const present = CLASS_META.filter((m) => (c[m.key] || 0) > 0);
+    const meta = present.length ? present : CLASS_META.slice(0, 5);
+    return {
       chart: { type: "donut", fontFamily: "inherit", animations: { enabled: true }, background: "transparent" },
-      labels: ["Clean", "SQLi", "XSS", "CSRF", "Auth"],
-      colors: ["#94a3b8", "#dc2626", "#ea580c", "#ca8a04", "#0284c7"],
-      legend: { position: "bottom", fontSize: "11px", markers: { size: 5 }, itemMargin: { horizontal: 6 } },
+      labels: meta.map((m) => m.label),
+      colors: meta.map((m) => m.color),
+      legend: { position: "bottom", fontSize: "10px", markers: { size: 4 }, itemMargin: { horizontal: 4 } },
       dataLabels: { enabled: false },
       plotOptions: {
         pie: {
@@ -318,13 +336,14 @@ export function AdminSecurityPage() {
       },
       stroke: { width: 2, colors: ["#fff"] },
       tooltip: { y: { formatter: (v) => `${v}` } },
-    }),
-    [classTotal]
-  );
+    };
+  }, [classTotal, data?.totals_15m.by_classification]);
 
   const classSeries = useMemo(() => {
     const c = data?.totals_15m.by_classification || {};
-    return [c.clean || 0, c.sqli || 0, c.xss || 0, c.csrf || 0, c.auth_anomaly || 0];
+    const present = CLASS_META.filter((m) => (c[m.key] || 0) > 0);
+    const meta = present.length ? present : CLASS_META.slice(0, 5);
+    return meta.map((m) => c[m.key] || 0);
   }, [data?.totals_15m.by_classification]);
 
   const sevOptions: ApexOptions = useMemo(
@@ -440,8 +459,10 @@ export function AdminSecurityPage() {
           <small>Flagged · 15m</small>
           <b>{data?.totals_15m.suspicious ?? 0}</b>
           <span>
-            SQLi {data?.totals_15m.by_classification.sqli ?? 0} · XSS {data?.totals_15m.by_classification.xss ?? 0} · CSRF{" "}
-            {data?.totals_15m.by_classification.csrf ?? 0}
+            {CLASS_META.filter((m) => m.key !== "clean" && (data?.totals_15m.by_classification?.[m.key] || 0) > 0)
+              .slice(0, 4)
+              .map((m) => `${m.label} ${data?.totals_15m.by_classification?.[m.key] ?? 0}`)
+              .join(" · ") || "No attack families yet"}
           </span>
         </article>
         <article>
@@ -549,11 +570,11 @@ export function AdminSecurityPage() {
               onChange={(e) => setClassFilter(e.target.value as ClassFilter)}
             >
               <option value="">Any class</option>
-              <option value="clean">Clean</option>
-              <option value="sqli">SQLi</option>
-              <option value="xss">XSS</option>
-              <option value="csrf">CSRF</option>
-              <option value="auth_anomaly">Auth anomaly</option>
+              {CLASS_META.map((m) => (
+                <option key={m.key} value={m.key}>
+                  {m.label}
+                </option>
+              ))}
             </select>
             <select
               className="sec-select"
@@ -642,5 +663,5 @@ export function AdminSecurityPage() {
 
 function classSeriesSum(data: Overview | null) {
   const c = data?.totals_15m.by_classification || {};
-  return (c.clean || 0) + (c.sqli || 0) + (c.xss || 0) + (c.csrf || 0) + (c.auth_anomaly || 0);
+  return CLASS_META.reduce((sum, m) => sum + (c[m.key] || 0), 0);
 }

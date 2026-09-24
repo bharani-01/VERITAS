@@ -42,7 +42,7 @@ Login is blocked unless status is `active`.
 ## HTTP telemetry (Security dashboard)
 
 - Separate `http_request_events` table for **metadata-only** live collection of application API routes (`/auth`, `/admin`, `/workspace`, `/webhooks`, `/health`)
-- Middleware classifies path/query heuristics for SQLi / XSS / CSRF / auth anomalies; never stores bodies, cookies, passwords, or tokens (query secret params redacted)
+- Middleware classifies path/query/header heuristics for SQLi, XSS, command injection, path traversal, SSRF, SSTI, open redirect, header abuse, CSRF, scanner UA, auth anomalies, and weak response headers; never stores bodies, cookies, passwords, or tokens (query secret params redacted)
 - Admin APIs: `GET /admin/http-requests`, `GET /admin/security-overview` (Safe / Warning / Critical + volume buckets)
 - `POST /admin/security-analyze` — AI agent (Groq preferred, OpenRouter fallback) reviews recent HTTP classifications and returns countermeasure suggestions (fail-open if no key)
 - Admin UI: `/admin/security` with ApexCharts live graphs + AI agent panel; retention capped (~7 days / 50k rows)

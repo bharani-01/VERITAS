@@ -14,6 +14,49 @@ from app.core import database as database
 from app.services.http_classifier import should_track
 from app.services.http_traffic import record_http_event
 
+# Headers inspected for abuse heuristics (names + values truncated; never cookies/auth).
+_WATCH_REQUEST_HEADERS = (
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-original-url",
+    "x-rewrite-url",
+    "x-real-ip",
+    "forwarded",
+    "host",
+    "content-type",
+    "accept",
+)
+
+_SECURITY_RESPONSE_HEADERS = (
+    "strict-transport-security",
+    "content-security-policy",
+    "x-content-type-options",
+    "x-frame-options",
+    "referrer-policy",
+    "permissions-policy",
+)
+
+
+def _header_blob(request: Request) -> str | None:
+    parts: list[str] = []
+    for name in _WATCH_REQUEST_HEADERS:
+        value = request.headers.get(name)
+        if value:
+            parts.append(f"{name}:{value[:120]}")
+    return "\n".join(parts)[:800] if parts else None
+
+
+def _security_response_headers(response: Response | None) -> dict[str, str] | None:
+    if response is None:
+        return None
+    out: dict[str, str] = {}
+    for name in _SECURITY_RESPONSE_HEADERS:
+        value = response.headers.get(name)
+        if value:
+            out[name] = value[:200]
+    return out or {}
+
 
 class HttpTelemetryMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
@@ -54,6 +97,8 @@ class HttpTelemetryMiddleware(BaseHTTPMiddleware):
                         origin=request.headers.get("origin"),
                         referer=request.headers.get("referer"),
                         request_host=request.headers.get("host"),
+                        header_blob=_header_blob(request),
+                        response_headers=_security_response_headers(response),
                     )
             except Exception:
                 # Fail-open: never break the request path for telemetry errors.

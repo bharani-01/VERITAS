@@ -18,6 +18,7 @@ from app.services.audit import audit, audit_severity, public_user, snapshot
 from app.services.auth import active_admin_count
 from app.services.email import send_account_status, send_token_email
 from app.services.http_traffic import serialize_http_event
+from app.services.http_classifier import ATTACK_FAMILIES
 from app.services.security_ai import analyze_http_security
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -513,11 +514,13 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
     critical_n = by_severity.get("critical", 0)
     high_n = by_severity.get("high", 0)
     medium_n = by_severity.get("medium", 0)
-    suspect_n = sum(by_class.get(k, 0) for k in ("sqli", "xss", "csrf", "auth_anomaly"))
+    # weak_headers alone should not flip the whole board to warning
+    hard_families = tuple(f for f in ATTACK_FAMILIES if f != "weak_headers")
+    suspect_n = sum(by_class.get(k, 0) for k in hard_families)
 
-    if critical_n > 0 or by_class.get("sqli", 0) > 0:
+    if critical_n > 0 or by_class.get("sqli", 0) > 0 or by_class.get("cmd_inject", 0) > 0:
         status = "critical"
-        reason = f"{critical_n or by_class.get('sqli', 0)} critical / SQLi signal(s) in the last 15 minutes"
+        reason = f"{critical_n or suspect_n} critical / exploit-class signal(s) in the last 15 minutes"
     elif high_n > 0 or medium_n > 0 or suspect_n > 0:
         status = "warning"
         reason = f"{suspect_n or high_n + medium_n} elevated request(s) in the last 15 minutes"
@@ -566,12 +569,16 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
             if len(suspicious) >= 20:
                 break
 
-    hit_families = [k for k in ("sqli", "xss", "csrf", "auth_anomaly") if by_class.get(k, 0) > 0]
+    hit_families = [k for k in ATTACK_FAMILIES if by_class.get(k, 0) > 0]
 
     user_count = db.scalar(select(func.count()).select_from(User)) or 0
     audit_15 = (
         db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= window_15)) or 0
     )
+
+    by_classification = {"clean": by_class.get("clean", 0)}
+    for fam in ATTACK_FAMILIES:
+        by_classification[fam] = by_class.get(fam, 0)
 
     return {
         "status": status,
@@ -587,13 +594,7 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
                 "high": by_severity.get("high", 0),
                 "critical": by_severity.get("critical", 0),
             },
-            "by_classification": {
-                "clean": by_class.get("clean", 0),
-                "sqli": by_class.get("sqli", 0),
-                "xss": by_class.get("xss", 0),
-                "csrf": by_class.get("csrf", 0),
-                "auth_anomaly": by_class.get("auth_anomaly", 0),
-            },
+            "by_classification": by_classification,
         },
         "volume_60m": buckets,
         "recent_suspicious": [serialize_http_event(e) for e in suspicious[:20]],

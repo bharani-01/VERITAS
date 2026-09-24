@@ -7471,6 +7471,42 @@ a.scan-git-link code {
   color: #0369a1;
 }
 
+.sec-class-cmd_inject {
+  color: #991b1b;
+}
+
+.sec-class-path_traversal {
+  color: #9a3412;
+}
+
+.sec-class-ssrf {
+  color: #854d0e;
+}
+
+.sec-class-ssti {
+  color: #713f12;
+}
+
+.sec-class-open_redirect {
+  color: #a16207;
+}
+
+.sec-class-header_abuse {
+  color: #6d28d9;
+}
+
+.sec-class-scanner {
+  color: #075985;
+}
+
+.sec-class-weak_headers {
+  color: #64748b;
+}
+
+.sec-class-general {
+  color: #475569;
+}
+
 .sec-class-clean {
   color: var(--muted);
 }

@@ -12,10 +12,13 @@ from app.core.time import utcnow
 from app.models import AuthSession, HttpRequestEvent
 from app.core.security import token_hash
 from app.services.http_classifier import (
+    ATTACK_FAMILIES,
     classify_request,
     sanitize_path,
     should_track,
 )
+
+__all__ = ("ATTACK_FAMILIES", "record_http_event", "serialize_http_event", "maybe_prune")
 
 RETENTION_DAYS = 7
 MAX_ROWS = 50_000
@@ -56,6 +59,8 @@ def record_http_event(
     origin: str | None,
     referer: str | None,
     request_host: str | None,
+    header_blob: str | None = None,
+    response_headers: dict[str, str] | None = None,
 ) -> None:
     if not should_track(path):
         return
@@ -70,6 +75,9 @@ def record_http_event(
         origin=origin,
         referer=referer,
         request_host=request_host,
+        user_agent=user_agent,
+        header_blob=header_blob,
+        response_headers=response_headers,
     )
     actor_id = resolve_actor_id(db, session_cookie)
     ua = (user_agent or "")[:512] or None
