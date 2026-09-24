@@ -33,11 +33,6 @@ type Overview = {
   volume_60m: { t: string; count: number }[];
   recent_suspicious: HttpItem[];
   countermeasures: Record<string, string[]>;
-  modules: {
-    user_system: { users: number; audit_events_15m: number };
-    http_collection: { requests_15m: number; requests_60m: number };
-    detection: { suspicious_15m: number };
-  };
   server_time: string;
 };
 
@@ -101,24 +96,25 @@ export function AdminSecurityPage() {
       chart: {
         type: "area",
         toolbar: { show: false },
-        animations: { enabled: true, speed: 400 },
+        animations: { enabled: true, speed: 350 },
         zoom: { enabled: false },
         fontFamily: "inherit",
+        sparkline: { enabled: false },
       },
       dataLabels: { enabled: false },
       stroke: { curve: "smooth", width: 2 },
       fill: {
         type: "gradient",
-        gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.05, stops: [0, 90, 100] },
+        gradient: { shadeIntensity: 1, opacityFrom: 0.28, opacityTo: 0.02, stops: [0, 90, 100] },
       },
       colors: ["#0f766e"],
-      grid: { borderColor: "#e2e8f0", strokeDashArray: 3 },
+      grid: { borderColor: "#e8edf2", strokeDashArray: 0, padding: { left: 8, right: 8 } },
       xaxis: {
         categories: (data?.volume_60m || []).map((b) => {
           const d = parseUtc(b.t) || new Date(b.t);
           return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
         }),
-        labels: { show: true, rotate: 0, hideOverlappingLabels: true, style: { colors: "#64748b", fontSize: "10px" } },
+        labels: { show: true, rotate: 0, hideOverlappingLabels: true, style: { colors: "#94a3b8", fontSize: "10px" } },
         axisBorder: { show: false },
         axisTicks: { show: false },
         tickAmount: 6,
@@ -126,7 +122,7 @@ export function AdminSecurityPage() {
       yaxis: {
         min: 0,
         forceNiceScale: true,
-        labels: { style: { colors: "#64748b", fontSize: "11px" } },
+        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
       },
       tooltip: { theme: "light", y: { formatter: (v) => `${v} req` } },
     }),
@@ -141,11 +137,11 @@ export function AdminSecurityPage() {
   const classOptions: ApexOptions = useMemo(
     () => ({
       chart: { type: "donut", fontFamily: "inherit", animations: { enabled: true } },
-      labels: ["Clean", "SQLi", "XSS", "CSRF", "Auth anomaly"],
-      colors: ["#94a3b8", "#dc2626", "#ea580c", "#ca8a04", "#0369a1"],
-      legend: { position: "bottom", fontSize: "12px" },
+      labels: ["Clean", "SQLi", "XSS", "CSRF", "Auth"],
+      colors: ["#cbd5e1", "#dc2626", "#ea580c", "#ca8a04", "#0284c7"],
+      legend: { position: "bottom", fontSize: "11px", markers: { size: 6 } },
       dataLabels: { enabled: false },
-      plotOptions: { pie: { donut: { size: "68%" } } },
+      plotOptions: { pie: { donut: { size: "72%", labels: { show: false } } } },
       stroke: { width: 0 },
       tooltip: { y: { formatter: (v) => `${v}` } },
     }),
@@ -160,21 +156,21 @@ export function AdminSecurityPage() {
   const sevOptions: ApexOptions = useMemo(
     () => ({
       chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", animations: { enabled: true } },
-      plotOptions: { bar: { borderRadius: 4, columnWidth: "55%", distributed: true } },
-      colors: ["#94a3b8", "#0369a1", "#ca8a04", "#ea580c", "#dc2626"],
+      plotOptions: { bar: { borderRadius: 3, columnWidth: "48%", distributed: true } },
+      colors: ["#cbd5e1", "#0284c7", "#ca8a04", "#ea580c", "#dc2626"],
       dataLabels: { enabled: false },
       legend: { show: false },
-      grid: { borderColor: "#e2e8f0", strokeDashArray: 3 },
+      grid: { borderColor: "#e8edf2", strokeDashArray: 0 },
       xaxis: {
-        categories: ["Info", "Low", "Medium", "High", "Critical"],
-        labels: { style: { colors: "#64748b", fontSize: "11px" } },
+        categories: ["Info", "Low", "Med", "High", "Crit"],
+        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
         axisBorder: { show: false },
         axisTicks: { show: false },
       },
       yaxis: {
         min: 0,
         forceNiceScale: true,
-        labels: { style: { colors: "#64748b", fontSize: "11px" } },
+        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
       },
       tooltip: { theme: "light" },
     }),
@@ -208,16 +204,14 @@ export function AdminSecurityPage() {
         <div>
           <div className="eyebrow">Monitoring</div>
           <h1>Security</h1>
-          <p className="sec-dash-lede">
-            Live HTTP collection, classification, and risk for VERITAS API traffic. Polls every {POLL_MS / 1000}s.
-          </p>
         </div>
         <div className="sec-dash-actions">
+          <span className={`sec-live-pill sec-live-${status}`}>
+            <span className="sec-live-dot" aria-hidden="true" />
+            {STATUS_LABEL[status]}
+          </span>
           <Link className="btn ghost" to="/admin/audit">
             Audit log
-          </Link>
-          <Link className="btn ghost" to="/admin/directory">
-            Users
           </Link>
         </div>
       </header>
@@ -228,66 +222,33 @@ export function AdminSecurityPage() {
         </div>
       ) : null}
 
-      <section className={`sec-status sec-status-${status}`} aria-live="polite">
-        <div className="sec-status-badge">{STATUS_LABEL[status]}</div>
-        <div className="sec-status-body">
-          <strong>Live status</strong>
-          <p>{data?.reason || "Collecting telemetry…"}</p>
-        </div>
-        <div className="sec-status-meta">
-          <span>{data?.totals_15m.requests ?? 0} requests · 15m</span>
-          <span>{data?.totals_15m.suspicious ?? 0} suspicious</span>
-        </div>
-      </section>
-
-      <section className="sec-modules" aria-label="Security modules">
-        <article>
-          <small>1. User &amp; system</small>
-          <b>{data?.modules.user_system.users ?? 0} users</b>
-          <span>{data?.modules.user_system.audit_events_15m ?? 0} audit events · 15m</span>
-          <Link to="/admin/directory">Directory →</Link>
-        </article>
-        <article>
-          <small>2. HTTP collection</small>
-          <b>{data?.modules.http_collection.requests_15m ?? 0} req · 15m</b>
-          <span>{data?.modules.http_collection.requests_60m ?? 0} in last hour</span>
-        </article>
-        <article>
-          <small>3–4. Detection / SQLi·XSS·CSRF</small>
-          <b>{data?.modules.detection.suspicious_15m ?? 0} flagged</b>
-          <span>
-            SQLi {data?.totals_15m.by_classification.sqli ?? 0} · XSS {data?.totals_15m.by_classification.xss ?? 0} · CSRF{" "}
-            {data?.totals_15m.by_classification.csrf ?? 0}
-          </span>
-        </article>
-        <article>
-          <small>5–6. Risk &amp; classification</small>
-          <b className={`sec-inline-status sec-inline-${status}`}>{STATUS_LABEL[status]}</b>
-          <span>
-            Crit {data?.totals_15m.by_severity.critical ?? 0} · High {data?.totals_15m.by_severity.high ?? 0} · Med{" "}
-            {data?.totals_15m.by_severity.medium ?? 0}
-          </span>
-        </article>
-      </section>
+      <p className="sec-status-line" aria-live="polite">
+        {data?.reason || "Collecting telemetry…"}
+        <span>
+          {data?.totals_15m.requests ?? 0} req · {data?.totals_15m.suspicious ?? 0} flagged · 15m
+        </span>
+      </p>
 
       <section className="sec-charts">
-        <div className="sec-chart-card">
-          <h2>Request volume · 60m</h2>
-          <Chart options={volumeOptions} series={volumeSeries} type="area" height={240} />
+        <div className="sec-chart-card sec-chart-wide">
+          <h2>Request volume</h2>
+          <Chart options={volumeOptions} series={volumeSeries} type="area" height={220} />
         </div>
-        <div className="sec-chart-card">
-          <h2>Classification · 15m</h2>
-          <Chart options={classOptions} series={classSeries} type="donut" height={240} />
-        </div>
-        <div className="sec-chart-card">
-          <h2>Severity · 15m</h2>
-          <Chart options={sevOptions} series={sevSeries} type="bar" height={240} />
+        <div className="sec-chart-side">
+          <div className="sec-chart-card">
+            <h2>Classification</h2>
+            <Chart options={classOptions} series={classSeries} type="donut" height={200} />
+          </div>
+          <div className="sec-chart-card">
+            <h2>Severity</h2>
+            <Chart options={sevOptions} series={sevSeries} type="bar" height={180} />
+          </div>
         </div>
       </section>
 
       {cmEntries.length ? (
         <section className="sec-countermeasures">
-          <h2>7. Countermeasure recommendations</h2>
+          <h2>Countermeasures</h2>
           <div className="sec-cm-grid">
             {cmEntries.map(([family, tips]) => (
               <article key={family}>
@@ -301,24 +262,14 @@ export function AdminSecurityPage() {
             ))}
           </div>
         </section>
-      ) : (
-        <section className="sec-countermeasures is-quiet">
-          <h2>7. Countermeasure recommendations</h2>
-          <p>No active threat families — playbooks appear when SQLi, XSS, CSRF, or auth anomalies are detected.</p>
-        </section>
-      )}
+      ) : null}
 
       <section className="sec-traffic">
         <div className="sec-traffic-head">
-          <h2>Recent suspicious traffic</h2>
-          <span className="sec-live-dot" aria-hidden="true" />
-          <span>Live</span>
+          <h2>Suspicious traffic</h2>
         </div>
         {!data?.recent_suspicious.length ? (
-          <div className="empty-state">
-            <strong>All clear</strong>
-            No elevated HTTP signals in the last 15 minutes.
-          </div>
+          <p className="sec-empty">No elevated HTTP signals in the last 15 minutes.</p>
         ) : (
           <div className="table-wrap">
             <table className="audit-table">
