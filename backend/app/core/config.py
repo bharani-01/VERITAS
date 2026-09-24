@@ -83,7 +83,7 @@ TOKEN_ENCRYPTION_SECRET = os.getenv("TOKEN_ENCRYPTION_SECRET", "") or os.getenv(
 
 # Optional Phase 3 AI (fail-open when unset).
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "") or os.getenv("AI_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 GROQ_REPORT_MODEL = os.getenv("GROQ_REPORT_MODEL", "") or GROQ_MODEL
 
 # OpenRouter — structured code review (Jev-style). Optional.

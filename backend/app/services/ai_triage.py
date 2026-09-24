@@ -29,7 +29,7 @@ def _model() -> str:
     reload_env()
     import os
 
-    return (os.getenv("GROQ_MODEL") or GROQ_MODEL or "llama-3.3-70b-versatile").strip()
+    return (os.getenv("GROQ_MODEL") or GROQ_MODEL or "openai/gpt-oss-120b").strip()
 
 
 def triage_findings(findings: list[NormalizedFinding]) -> dict[str, Any]:

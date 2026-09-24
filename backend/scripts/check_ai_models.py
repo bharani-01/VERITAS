@@ -77,7 +77,7 @@ def main() -> int:
     or_model = (vals.get("OPENROUTER_REVIEW_MODEL") or "openai/gpt-4o-mini").strip()
     groq_key = (vals.get("GROQ_API_KEY") or vals.get("AI_API_KEY") or os.getenv("GROQ_API_KEY") or "").strip()
     groq_model = (
-        vals.get("GROQ_REPORT_MODEL") or vals.get("GROQ_MODEL") or "llama-3.3-70b-versatile"
+        vals.get("GROQ_REPORT_MODEL") or vals.get("GROQ_MODEL") or "openai/gpt-oss-120b"
     ).strip()
 
     ping(

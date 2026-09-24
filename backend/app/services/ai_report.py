@@ -26,7 +26,7 @@ def _api_key() -> str:
 
 def _model() -> str:
     reload_env()
-    return (os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "llama-3.3-70b-versatile").strip()
+    return (os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "openai/gpt-oss-120b").strip()
 
 
 def generate_final_report(

@@ -33,7 +33,7 @@ def _provider() -> tuple[str, str, str, dict[str, str]] | None:
     groq = _groq_key()
     if groq:
         model = (
-            os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "llama-3.3-70b-versatile"
+            os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "openai/gpt-oss-120b"
         ).strip()
         return (
             "groq",
