@@ -32,8 +32,22 @@ type Overview = {
   };
   volume_60m: { t: string; count: number }[];
   recent_suspicious: HttpItem[];
-  countermeasures: Record<string, string[]>;
   server_time: string;
+};
+
+type AiSuggestion = {
+  title: string;
+  family: string;
+  priority: string;
+  steps: string[];
+};
+
+type AiAnalyze = {
+  status: string;
+  summary: string;
+  suggestions: AiSuggestion[];
+  model?: string;
+  sample_size?: number;
 };
 
 type TrafficResponse = {
@@ -51,25 +65,6 @@ const STATUS_LABEL: Record<Overview["status"], string> = {
   safe: "Safe",
   warning: "Warning",
   critical: "Critical",
-};
-
-const DEFAULT_TIPS: Record<string, string[]> = {
-  sqli: [
-    "Use parameterized queries — never concatenate user input into SQL.",
-    "Validate IDs and filters; reject unexpected characters.",
-  ],
-  xss: [
-    "Encode output for HTML/JS contexts; prefer framework auto-escaping.",
-    "Set a strict Content-Security-Policy.",
-  ],
-  csrf: [
-    "Verify Origin/Referer on state-changing cookie-authenticated requests.",
-    "Use SameSite cookies and anti-CSRF tokens for mutations.",
-  ],
-  auth_anomaly: [
-    "Rate-limit auth endpoints and review failed sign-in audit events.",
-    "Alert on bursts of 401/403/429 from a single IP.",
-  ],
 };
 
 function formatTime(iso: string) {
@@ -106,6 +101,9 @@ export function AdminSecurityPage() {
   const [classFilter, setClassFilter] = useState<ClassFilter>("");
   const [sevFilter, setSevFilter] = useState<SevFilter>("");
   const [pathQuery, setPathQuery] = useState("");
+  const [ai, setAi] = useState<AiAnalyze | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -163,8 +161,9 @@ export function AdminSecurityPage() {
 
   const classTotal = useMemo(() => classSeriesSum(data), [data]);
 
-  const volumeOptions: ApexOptions = useMemo(
-    () => ({
+  const volumeOptions: ApexOptions = useMemo(() => {
+    const max = Math.max(1, ...(data?.volume_60m || []).map((b) => b.count));
+    return {
       chart: {
         type: "area",
         toolbar: { show: false },
@@ -175,15 +174,22 @@ export function AdminSecurityPage() {
       },
       dataLabels: { enabled: false },
       stroke: { curve: "smooth", width: 2.5 },
+      markers: {
+        size: max <= 3 ? 3 : 0,
+        colors: ["#0d9488"],
+        strokeColors: "#fff",
+        strokeWidth: 2,
+        hover: { size: 5 },
+      },
       fill: {
         type: "gradient",
-        gradient: { shadeIntensity: 1, opacityFrom: 0.32, opacityTo: 0.04, stops: [0, 85, 100] },
+        gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05, stops: [0, 85, 100] },
       },
       colors: ["#0d9488"],
       grid: {
         borderColor: "#e8edf2",
         strokeDashArray: 3,
-        padding: { left: 4, right: 8, top: 8 },
+        padding: { left: 4, right: 8, top: 12, bottom: 0 },
       },
       xaxis: {
         categories: (data?.volume_60m || []).map((b) => {
@@ -197,13 +203,17 @@ export function AdminSecurityPage() {
       },
       yaxis: {
         min: 0,
+        max: Math.max(4, Math.ceil(max * 1.25)),
         forceNiceScale: true,
-        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
+        tickAmount: 4,
+        labels: {
+          style: { colors: "#94a3b8", fontSize: "10px" },
+          formatter: (v) => String(Math.round(v)),
+        },
       },
       tooltip: { theme: "light", y: { formatter: (v) => `${v} req` } },
-    }),
-    [data?.volume_60m]
-  );
+    };
+  }, [data?.volume_60m]);
 
   const volumeSeries = useMemo(
     () => [{ name: "Requests / min", data: (data?.volume_60m || []).map((b) => b.count) }],
@@ -283,6 +293,31 @@ export function AdminSecurityPage() {
     ];
   }, [data?.totals_15m.by_severity]);
 
+  const runAi = useCallback(async () => {
+    setAiLoading(true);
+    setAiError(null);
+    try {
+      const result = await api<AiAnalyze>("/admin/security-analyze", { method: "POST", body: "{}" });
+      setAi(result);
+      if (result.status === "skipped_no_key") {
+        setAiError(result.summary);
+      }
+    } catch (err) {
+      setAiError((err as Error).message);
+    } finally {
+      setAiLoading(false);
+    }
+  }, []);
+
+  const status = data?.status || "safe";
+  // auto-run once when overview first shows elevated traffic
+  useEffect(() => {
+    if (!data || ai || aiLoading) return;
+    if ((data.totals_15m.suspicious || 0) > 0) {
+      void runAi();
+    }
+  }, [data, ai, aiLoading, runAi]);
+
   if (loading && !data) {
     return (
       <main className="admin-main sec-dash">
@@ -290,10 +325,6 @@ export function AdminSecurityPage() {
       </main>
     );
   }
-
-  const status = data?.status || "safe";
-  const cmEntries = Object.entries(data?.countermeasures || {});
-  const tipEntries = cmEntries.length ? cmEntries : Object.entries(DEFAULT_TIPS).slice(0, 2);
 
   return (
     <main className="admin-main sec-dash">
@@ -356,7 +387,9 @@ export function AdminSecurityPage() {
         <div className="sec-panel sec-chart-wide">
           <div className="sec-panel-head">
             <h2>Request volume</h2>
-            <span>Last 60 minutes</span>
+            <span>
+              {peak}/min peak · last 60m
+            </span>
           </div>
           <Chart options={volumeOptions} series={volumeSeries} type="area" height={228} />
         </div>
@@ -378,23 +411,53 @@ export function AdminSecurityPage() {
         </div>
       </section>
 
-      <section className="sec-countermeasures">
-        <div className="sec-panel-head">
-          <h2>Countermeasures</h2>
-          <span>{cmEntries.length ? "Active families" : "Baseline playbooks"}</span>
+      <section className="sec-ai">
+        <div className="sec-ai-head">
+          <div>
+            <h2>AI security agent</h2>
+            <p>Analyzes live HTTP classifications and suggests countermeasures.</p>
+          </div>
+          <button type="button" className="btn primary" onClick={() => void runAi()} disabled={aiLoading}>
+            {aiLoading ? "Analyzing…" : ai ? "Re-analyze" : "Analyze traffic"}
+          </button>
         </div>
-        <div className="sec-cm-grid">
-          {tipEntries.map(([family, tips]) => (
-            <article key={family} className="sec-cm-card">
-              <b>{classLabel(family)}</b>
-              <ul>
-                {tips.slice(0, 2).map((tip) => (
-                  <li key={tip}>{tip}</li>
+
+        {aiError && !ai?.suggestions?.length ? (
+          <p className="sec-ai-msg">{aiError}</p>
+        ) : null}
+
+        {aiLoading && !ai ? <p className="sec-ai-msg">Agent is reviewing the last 15 minutes of traffic…</p> : null}
+
+        {ai && ai.status !== "skipped_no_key" ? (
+          <div className="sec-ai-body">
+            <p className="sec-ai-summary">{ai.summary}</p>
+            {ai.model ? <span className="sec-ai-meta">Model · {ai.model}</span> : null}
+            {ai.suggestions?.length ? (
+              <div className="sec-cm-grid">
+                {ai.suggestions.map((s) => (
+                  <article key={`${s.title}-${s.family}`} className="sec-cm-card">
+                    <div className="sec-ai-card-top">
+                      <b>{s.title}</b>
+                      <span className={`audit-sev sev-${s.priority}`}>{s.priority.toUpperCase()}</span>
+                    </div>
+                    <small className={`sec-class sec-class-${s.family}`}>{classLabel(s.family)}</small>
+                    <ul>
+                      {s.steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ul>
+                  </article>
                 ))}
-              </ul>
-            </article>
-          ))}
-        </div>
+              </div>
+            ) : (
+              <p className="sec-ai-msg">No specific countermeasures returned. Try again after more traffic.</p>
+            )}
+          </div>
+        ) : null}
+
+        {!ai && !aiLoading && !aiError ? (
+          <p className="sec-ai-msg">Run the agent to get tailored countermeasures for current traffic.</p>
+        ) : null}
       </section>
 
       <section className="sec-traffic">

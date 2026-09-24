@@ -43,8 +43,9 @@ Login is blocked unless status is `active`.
 
 - Separate `http_request_events` table for **metadata-only** live collection of application API routes (`/auth`, `/admin`, `/workspace`, `/webhooks`, `/health`)
 - Middleware classifies path/query heuristics for SQLi / XSS / CSRF / auth anomalies; never stores bodies, cookies, passwords, or tokens (query secret params redacted)
-- Admin APIs: `GET /admin/http-requests`, `GET /admin/security-overview` (Safe / Warning / Critical + volume buckets + countermeasure tips)
-- Admin UI: `/admin/security` with ApexCharts live graphs; retention capped (~7 days / 50k rows)
+- Admin APIs: `GET /admin/http-requests`, `GET /admin/security-overview` (Safe / Warning / Critical + volume buckets)
+- `POST /admin/security-analyze` — Groq AI agent reviews recent HTTP classifications and returns countermeasure suggestions (fail-open if key missing)
+- Admin UI: `/admin/security` with ApexCharts live graphs + AI agent panel; retention capped (~7 days / 50k rows)
 - Detection only — does not block requests (not a WAF)
 
 ## Rate limiting

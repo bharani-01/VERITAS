@@ -11,16 +11,22 @@ from sqlalchemy.orm import Session
 from app.api.deps import require_admin
 from app.core.database import db_session
 from app.core.security import normalize_email
-from app.core.time import utcnow
+from app.core.time import ensure_utc, utcnow
 from app.models import AuditEvent, AuthSession, GitHubConnection, HttpRequestEvent, Project, Scan, User
 from app.schemas import UserPatch
 from app.services.audit import audit, audit_severity, public_user, snapshot
 from app.services.auth import active_admin_count
 from app.services.email import send_account_status, send_token_email
-from app.services.http_classifier import COUNTERMEASURES
 from app.services.http_traffic import serialize_http_event
+from app.services.security_ai import analyze_http_security
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+def _minute_key(dt: datetime) -> str:
+    """Stable UTC minute bucket key (avoids naive vs aware isoformat mismatches)."""
+    u = ensure_utc(dt).replace(second=0, microsecond=0)
+    return u.strftime("%Y-%m-%dT%H:%M:00Z")
 
 
 @router.get("/dashboard")
@@ -511,15 +517,15 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
         status = "safe"
         reason = "No suspicious HTTP patterns in the last 15 minutes"
 
-    # 1-minute buckets for the last hour
+    # 1-minute buckets for the last hour (UTC-normalized keys)
     counts_by_minute: dict[str, int] = defaultdict(int)
     for event in recent_60:
-        key = event.created_at.replace(second=0, microsecond=0).isoformat()
-        counts_by_minute[key] += 1
+        counts_by_minute[_minute_key(event.created_at)] += 1
     buckets = []
+    base = ensure_utc(window_60).replace(second=0, microsecond=0)
     for i in range(60):
-        start = (window_60 + timedelta(minutes=i)).replace(second=0, microsecond=0)
-        key = start.isoformat()
+        start = base + timedelta(minutes=i)
+        key = _minute_key(start)
         buckets.append({"t": key, "count": counts_by_minute.get(key, 0)})
 
     suspicious = list(
@@ -553,7 +559,6 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
                 break
 
     hit_families = [k for k in ("sqli", "xss", "csrf", "auth_anomaly") if by_class.get(k, 0) > 0]
-    countermeasures = {k: COUNTERMEASURES[k] for k in hit_families if k in COUNTERMEASURES}
 
     user_count = db.scalar(select(func.count()).select_from(User)) or 0
     audit_15 = (
@@ -584,7 +589,7 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
         },
         "volume_60m": buckets,
         "recent_suspicious": [serialize_http_event(e) for e in suspicious[:20]],
-        "countermeasures": countermeasures,
+        "hit_families": hit_families,
         "modules": {
             "user_system": {"users": user_count, "audit_events_15m": audit_15},
             "http_collection": {"requests_15m": len(recent_15), "requests_60m": len(recent_60)},
@@ -592,3 +597,49 @@ def security_overview(_: User = Depends(require_admin), db: Session = Depends(db
         },
         "server_time": now,
     }
+
+
+@router.post("/security-analyze")
+def security_analyze(_: User = Depends(require_admin), db: Session = Depends(db_session)):
+    """AI agent: analyze recent HTTP telemetry and suggest countermeasures (Groq, fail-open)."""
+    now = utcnow()
+    window_15 = now - timedelta(minutes=15)
+    recent = list(
+        db.scalars(
+            select(HttpRequestEvent)
+            .where(HttpRequestEvent.created_at >= window_15)
+            .order_by(HttpRequestEvent.created_at.desc())
+            .limit(80)
+        )
+    )
+    by_severity: dict[str, int] = defaultdict(int)
+    by_class: dict[str, int] = defaultdict(int)
+    for event in recent:
+        by_severity[event.severity] += 1
+        by_class[event.classification] += 1
+
+    sample = []
+    for event in recent[:40]:
+        sample.append(
+            {
+                "method": event.method,
+                "path": (event.path or "")[:200],
+                "status_code": event.status_code,
+                "classification": event.classification,
+                "severity": event.severity,
+                "signals": (event.signals or "")[:300],
+                "ip": event.ip_address,
+            }
+        )
+
+    context = {
+        "window": "last_15_minutes",
+        "request_count": len(recent),
+        "by_classification": dict(by_class),
+        "by_severity": dict(by_severity),
+        "sample_requests": sample,
+    }
+    result = analyze_http_security(context)
+    result["analyzed_at"] = now
+    result["sample_size"] = len(sample)
+    return result
