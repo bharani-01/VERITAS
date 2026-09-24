@@ -20,6 +20,8 @@ type Props = {
   emptyTitle?: string;
   emptyBody?: string;
   showProjectName?: boolean;
+  /** Scan ids that just appeared — play enter animation */
+  enteringIds?: string[];
   onCancel?: (scanId: string) => void;
 };
 
@@ -65,9 +67,11 @@ export function ScanHistoryList({
   emptyTitle = "No scans yet",
   emptyBody = "Start a scan or enable auto-scan on push to see history here.",
   showProjectName = false,
+  enteringIds = [],
   onCancel,
 }: Props) {
   const navigate = useNavigate();
+  const entering = new Set(enteringIds);
 
   return (
     <section className="scan-hist" aria-label={title}>
@@ -99,7 +103,7 @@ export function ScanHistoryList({
             const findings = findingsCountLabel(scan);
             const headline = scanHeadline(scan);
             return (
-              <li key={scan.id}>
+              <li key={scan.id} className={entering.has(scan.id) ? "scan-hist-enter" : undefined}>
                 <div className="scan-hist-grid scan-hist-row">
                   <Link className="scan-hist-stretch" to={href} aria-label={`Open scan: ${headline}`} />
                   <span className="scan-hist-main">

@@ -4475,6 +4475,34 @@ tbody tr:last-child td {
   padding: 0;
 }
 
+.scan-hist-list > li.scan-hist-enter {
+  animation: scan-hist-enter 0.55s var(--ease) both;
+}
+
+.scan-hist-list > li.scan-hist-enter .scan-hist-row {
+  animation: scan-hist-enter-glow 0.9s var(--ease) both;
+}
+
+@keyframes scan-hist-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scan-hist-enter-glow {
+  0% {
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 .scan-hist-row {
   position: relative;
   width: 100%;

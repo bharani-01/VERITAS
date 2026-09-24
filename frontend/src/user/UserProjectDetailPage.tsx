@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
@@ -14,6 +14,7 @@ export function UserProjectDetailPage() {
   const navigate = useNavigate();
   const [project, setProject] = useState<Project | null>(null);
   const [scans, setScans] = useState<Scan[]>([]);
+  const [enteringScanIds, setEnteringScanIds] = useState<string[]>([]);
   const [target, setTarget] = useState("");
   const [scanMode, setScanMode] = useState<"rules_only" | "rules_plus_ai">("rules_only");
   const [scanScope, setScanScope] = useState<"full" | "changed">("full");
@@ -35,6 +36,9 @@ export function UserProjectDetailPage() {
   const [advancedBusy, setAdvancedBusy] = useState(false);
   const [advancedSaved, setAdvancedSaved] = useState(false);
   const [refsLoading, setRefsLoading] = useState(false);
+  const knownScanIdsRef = useRef<Set<string>>(new Set());
+  const initialScansLoadedRef = useRef(false);
+  const enterTimersRef = useRef<number[]>([]);
 
   useDocumentTitle(project ? `${project.name} · Scans` : "Scans");
 
@@ -49,7 +53,23 @@ export function UserProjectDetailPage() {
       })),
     ]);
     setProject(proj.project);
-    setScans(scanData.items);
+    const items = scanData.items;
+    if (!initialScansLoadedRef.current) {
+      knownScanIdsRef.current = new Set(items.map((s) => s.id));
+      initialScansLoadedRef.current = true;
+      setScans(items);
+    } else {
+      const fresh = items.filter((s) => !knownScanIdsRef.current.has(s.id)).map((s) => s.id);
+      knownScanIdsRef.current = new Set(items.map((s) => s.id));
+      setScans(items);
+      if (fresh.length) {
+        setEnteringScanIds((prev) => [...new Set([...fresh, ...prev])]);
+        const timer = window.setTimeout(() => {
+          setEnteringScanIds((prev) => prev.filter((id) => !fresh.includes(id)));
+        }, 700);
+        enterTimersRef.current.push(timer);
+      }
+    }
     setGhNeedsReauth(!!gh.needs_reauth);
     if (proj.project.notify_email_default != null) setNotifyEmail(!!proj.project.notify_email_default);
     if (proj.project.notify_in_app_default != null) setNotifyInApp(!!proj.project.notify_in_app_default);
@@ -66,15 +86,26 @@ export function UserProjectDetailPage() {
   }
 
   useEffect(() => {
+    initialScansLoadedRef.current = false;
+    knownScanIdsRef.current = new Set();
+    setEnteringScanIds([]);
+    setScans([]);
+    setProject(null);
     load().catch((err: Error) => setError(err.message));
+    return () => {
+      enterTimersRef.current.forEach((t) => window.clearTimeout(t));
+      enterTimersRef.current = [];
+    };
   }, [projectId]);
 
   useEffect(() => {
+    if (!projectId) return;
     const active = scans.some((s) => s.status === "queued" || s.status === "running");
-    if (!active) return;
+    const ms = active ? 1200 : 3000;
     const id = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
       load().catch(() => undefined);
-    }, 1200);
+    }, ms);
     return () => window.clearInterval(id);
   }, [scans, projectId]);
 
@@ -658,6 +689,7 @@ export function UserProjectDetailPage() {
         <ScanHistoryList
           scans={scans}
           projectId={projectId}
+          enteringIds={enteringScanIds}
           onCancel={(id) => void cancelScan(id)}
         />
       </div>
