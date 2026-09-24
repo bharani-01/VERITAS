@@ -117,6 +117,7 @@ def login_page():
 @router.get("/admin/")
 @router.get("/admin/directory")
 @router.get("/admin/audit")
+@router.get("/admin/security")
 @router.get("/admin/profile")
 @router.get("/admin/settings")
 def admin_spa():
