@@ -613,22 +613,21 @@ def security_analyze(_: User = Depends(require_admin), db: Session = Depends(db_
     """AI agent: analyze recent HTTP telemetry and suggest countermeasures (Groq, fail-open)."""
     now = utcnow()
     window_15 = now - timedelta(minutes=15)
-    recent = list(
-        db.scalars(
-            select(HttpRequestEvent)
-            .where(HttpRequestEvent.created_at >= window_15)
-            .order_by(HttpRequestEvent.created_at.desc())
-            .limit(80)
-        )
+
+    # Full-window aggregates (same scope as the Security dashboard 15m totals)
+    all_15 = list(
+        db.scalars(select(HttpRequestEvent).where(HttpRequestEvent.created_at >= window_15))
     )
     by_severity: dict[str, int] = defaultdict(int)
     by_class: dict[str, int] = defaultdict(int)
-    for event in recent:
+    for event in all_15:
         by_severity[event.severity] += 1
         by_class[event.classification] += 1
 
+    # Newest subset only — keeps the Groq prompt small
+    sample_rows = sorted(all_15, key=lambda e: e.created_at or now, reverse=True)[:40]
     sample = []
-    for event in recent[:40]:
+    for event in sample_rows:
         sample.append(
             {
                 "method": event.method,
@@ -641,14 +640,20 @@ def security_analyze(_: User = Depends(require_admin), db: Session = Depends(db_
             }
         )
 
+    hard_families = tuple(f for f in ATTACK_FAMILIES if f != "weak_headers")
+    suspicious = sum(by_class.get(k, 0) for k in hard_families)
+
     context = {
         "window": "last_15_minutes",
-        "request_count": len(recent),
+        "request_count": len(all_15),
+        "suspicious_count": suspicious,
         "by_classification": dict(by_class),
         "by_severity": dict(by_severity),
         "sample_requests": sample,
+        "sample_note": f"Showing {len(sample)} newest of {len(all_15)} requests in window",
     }
     result = analyze_http_security(context)
     result["analyzed_at"] = now
     result["sample_size"] = len(sample)
+    result["request_count"] = len(all_15)
     return result
