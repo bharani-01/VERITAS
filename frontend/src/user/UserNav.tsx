@@ -67,15 +67,11 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
           aria-expanded={!collapsed}
           onClick={onToggle}
         >
-          <svg className="icon icon-collapse" viewBox="0 0 24 24">
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-            <path d="M9 4v16" />
-            <path d="M14 9l-3 3 3 3" />
+          <svg className="icon icon-collapse" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15 6 9 12l6 6" />
           </svg>
-          <svg className="icon icon-expand" viewBox="0 0 24 24">
-            <rect x="3" y="4" width="18" height="16" rx="2" />
-            <path d="M9 4v16" />
-            <path d="M12 9l3 3-3 3" />
+          <svg className="icon icon-expand" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M9 6l6 6-6 6" />
           </svg>
         </button>
       </div>

@@ -981,26 +981,33 @@ html.nav-pref-collapsed .app-frame {
 .nav-toggle {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   flex-shrink: 0;
   background: transparent;
   color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
 }
 
 .nav-toggle:hover {
   background: var(--nav-hover);
   color: var(--ink);
-  border-color: var(--line-strong);
+}
+
+.nav-toggle:active {
+  background: var(--bg-deep);
+  color: var(--ink);
 }
 
 .nav-toggle .icon {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   display: block;
+  stroke-width: 1.85;
 }
 
 .app-frame.nav-collapsed .nav-toggle .icon-collapse {
