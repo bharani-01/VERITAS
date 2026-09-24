@@ -3,20 +3,105 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="VERITAS — vulnerability scanner for verified identity and secure account access." />
-    <meta name="theme-color" content="#000000" />
-    <link rel="icon" type="image/jpeg" href="/favicon.jpg" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.jpg" />
-    <title>VERITAS</title>
+
+    <!-- Primary SEO -->
+    <title>VERITAS — Vulnerability Scanner</title>
+    <meta
+      name="description"
+      content="VERITAS is a vulnerability scanner for GitHub repositories: secrets, SCA, and SAST with verified identity, admin approval, and shareable security reports."
+    />
+    <meta
+      name="keywords"
+      content="VERITAS, vulnerability scanner, SAST, SCA, secrets scanning, GitHub security, Semgrep, Gitleaks, infosec, code security"
+    />
+    <meta name="author" content="VERITAS" />
+    <meta name="application-name" content="VERITAS" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="googlebot" content="index,follow" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="msapplication-TileColor" content="#2563eb" />
+    <link rel="canonical" href="https://veritas.trackifyapp.co.in/" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="VERITAS" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://veritas.trackifyapp.co.in/" />
+    <meta property="og:title" content="VERITAS — Vulnerability Scanner" />
+    <meta
+      property="og:description"
+      content="Scan GitHub repos for secrets, vulnerable dependencies, and code issues. Verified identity, governed approval, and shareable reports."
+    />
+    <meta property="og:image" content="https://veritas.trackifyapp.co.in/brand/veritas-lockup.png" />
+    <meta property="og:image:alt" content="VERITAS vulnerability scanner logo" />
+    <meta property="og:image:type" content="image/png" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="VERITAS — Vulnerability Scanner" />
+    <meta
+      name="twitter:description"
+      content="Scan GitHub repos for secrets, vulnerable dependencies, and code issues. Verified identity and shareable security reports."
+    />
+    <meta name="twitter:image" content="https://veritas.trackifyapp.co.in/brand/veritas-lockup.png" />
+    <meta name="twitter:image:alt" content="VERITAS vulnerability scanner logo" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/png" href="/brand/veritas-mark.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Structured data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://veritas.trackifyapp.co.in/#organization",
+            "name": "VERITAS",
+            "url": "https://veritas.trackifyapp.co.in/",
+            "logo": "https://veritas.trackifyapp.co.in/brand/veritas-mark.png",
+            "description": "Vulnerability scanner for verified identity and secure repository analysis."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://veritas.trackifyapp.co.in/#website",
+            "url": "https://veritas.trackifyapp.co.in/",
+            "name": "VERITAS",
+            "description": "VERITAS vulnerability scanner — secrets, SCA, and SAST for GitHub repositories.",
+            "publisher": { "@id": "https://veritas.trackifyapp.co.in/#organization" },
+            "inLanguage": "en"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://veritas.trackifyapp.co.in/#app",
+            "name": "VERITAS",
+            "applicationCategory": "SecurityApplication",
+            "operatingSystem": "Web",
+            "url": "https://veritas.trackifyapp.co.in/",
+            "description": "Web vulnerability scanner for GitHub repositories with secrets detection, dependency (SCA), and SAST analysis.",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "publisher": { "@id": "https://veritas.trackifyapp.co.in/#organization" }
+          }
+        ]
+      }
+    </script>
+
     <script>
       try {
         var path = location.pathname || "";
         var key = path.indexOf("/admin") === 0 ? "veritas.admin.navCollapsed" : "veritas.user.navCollapsed";
         if (localStorage.getItem(key) === "1") document.documentElement.classList.add("nav-pref-collapsed");
-        var theme = localStorage.getItem("veritas.theme");
-        document.documentElement.setAttribute("data-theme", "dark");
-        document.documentElement.style.colorScheme = "dark";
-        void theme;
+        document.documentElement.setAttribute("data-theme", "light");
+        document.documentElement.style.colorScheme = "light";
+        localStorage.setItem("veritas.theme", "light");
       } catch (e) {}
     </script>
   </head>

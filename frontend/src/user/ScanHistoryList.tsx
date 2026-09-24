@@ -9,6 +9,7 @@ import {
   scanTriggerLabel,
   shortCommit,
 } from "../lib/scanDisplay";
+import { scanProgressLabel } from "../lib/scanProgress";
 import type { Scan } from "../lib/workspace";
 
 type Props = {
@@ -105,6 +106,19 @@ export function ScanHistoryList({
                     <StatusIcon status={scan.status} />
                     <span className="scan-hist-copy">
                       <span className="scan-hist-msg">{headline}</span>
+                      {scanning ? (
+                        <span className="scan-hist-live">
+                          <span className="scan-hist-live-bar" aria-hidden>
+                            <span
+                              className="scan-hist-live-fill"
+                              style={{ width: `${Math.max(2, Math.min(100, Number(scan.progress?.percent ?? 2)))}%` }}
+                            />
+                          </span>
+                          <span className="scan-hist-live-label">
+                            {scanProgressLabel(scan.progress, scan.status) || "Scanning…"}
+                          </span>
+                        </span>
+                      ) : null}
                       <span className="scan-hist-meta">
                         {showProjectName && scan.project_name ? (
                           <>

@@ -97,55 +97,59 @@ export function AdminDashboardPage() {
             <h2>Approval queue</h2>
             <Link to="/admin/directory?status=pending_approval">View all</Link>
           </div>
-          {!data.pending_approval.length ? (
-            <div className="empty-state compact">
-              <strong>Queue clear</strong>
-              No accounts are waiting for approval.
-            </div>
-          ) : (
-            <ul className="dash-list">
-              {data.pending_approval.map((user) => (
-                <li key={user.id}>
-                  <span className="user-avatar">
-                    <img className="avatar-art" src={avatarUrl(user.avatar)} alt="" width={40} height={40} />
-                  </span>
-                  <span>
-                    <b>{user.display_name}</b>
-                    <small>
-                      @{user.username || "—"} · {user.email}
-                    </small>
-                  </span>
-                  <span className={`badge ${user.status}`}>{formatStatus(user.status)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="dash-panel-body">
+            {!data.pending_approval.length ? (
+              <div className="empty-state compact">
+                <strong>Queue clear</strong>
+                No accounts are waiting for approval.
+              </div>
+            ) : (
+              <ul className="dash-list">
+                {data.pending_approval.map((user) => (
+                  <li className="dash-list-row" key={user.id}>
+                    <span className="user-avatar">
+                      <img className="avatar-art" src={avatarUrl(user.avatar)} alt="" width={40} height={40} />
+                    </span>
+                    <span className="dash-list-main">
+                      <b>{user.display_name}</b>
+                      <small>
+                        @{user.username || "—"} · {user.email}
+                      </small>
+                    </span>
+                    <span className={`badge ${user.status}`}>{formatStatus(user.status)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
 
         <div className="dash-panel">
           <div className="dash-panel-head">
             <h2>Recent activity</h2>
-            <Link className="btn ghost small" to="/admin/audit">
-              Full audit log
-            </Link>
+            <Link to="/admin/audit">Full audit log</Link>
           </div>
-          {!data.recent_events.length ? (
-            <div className="empty-state compact">
-              <strong>No events yet</strong>
-              Audit activity will appear here.
-            </div>
-          ) : (
-            <ul className="dash-list activity">
-              {data.recent_events.map((event) => (
-                <li key={event.id}>
-                  <span>
-                    <b>{formatAction(event.action)}</b>
-                    <small>{formatLocalDateTime(event.created_at)}</small>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <div className="dash-panel-body">
+            {!data.recent_events.length ? (
+              <div className="empty-state compact">
+                <strong>No events yet</strong>
+                Audit activity will appear here.
+              </div>
+            ) : (
+              <ul className="dash-list">
+                {data.recent_events.map((event) => (
+                  <li key={event.id}>
+                    <div className="dash-list-main">
+                      <div className="dash-list-top">
+                        <b>{formatAction(event.action)}</b>
+                      </div>
+                      <small>{formatLocalDateTime(event.created_at)}</small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </section>
 

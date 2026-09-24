@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LoadingMark } from "./LoadingMark";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
-import { shortCommit } from "../lib/scanDisplay";
-import type { Finding, FindingStatus, Scan } from "../lib/workspace";
+import { formatScanDuration, shortCommit } from "../lib/scanDisplay";
+import { scanProgressLabel } from "../lib/scanProgress";
+import type { Finding, Scan } from "../lib/workspace";
 
 type Props = {
   scan: Scan;
@@ -17,9 +18,58 @@ type Props = {
   onShared?: (scan: Scan) => void;
   onFindingsChange?: (items: Finding[]) => void;
   variant?: "modal" | "page";
+  onCancelScan?: () => void;
+  cancelBusy?: boolean;
 };
 
-const STATUSES: FindingStatus[] = ["open", "triage", "fixed", "false_positive"];
+const EXPORT_OPTIONS: { value: ExportFormat; label: string }[] = [
+  { value: "md", label: "Markdown (.md)" },
+  { value: "json", label: "JSON (.json)" },
+  { value: "csv", label: "CSV (.csv)" },
+  { value: "html", label: "HTML (.html)" },
+  { value: "sarif", label: "SARIF (.sarif)" },
+];
+
+function IconExport() {
+  return (
+    <svg className="report-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M12 3v10m0 0l3.5-3.5M12 13L8.5 9.5M5 15v3a2 2 0 002 2h10a2 2 0 002-2v-3"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconBack() {
+  return (
+    <svg className="finding-back-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M15 6l-6 6 6 6"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconShare() {
+  return (
+    <svg className="report-action-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="18" cy="5" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="6" cy="12" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="18" cy="19" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.75" />
+      <path d="M8.4 10.8l7.2-4.6M8.4 13.2l7.2 4.6" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function shareCaption(scan: Scan, projectName?: string) {
   const name = projectName || scan.project_name || scan.target;
@@ -54,10 +104,11 @@ export function ScanReportModal({
   githubRepoFullName,
   onClose,
   onShared,
-  onFindingsChange,
+  onFindingsChange: _onFindingsChange,
   variant = "modal",
+  onCancelScan,
+  cancelBusy = false,
 }: Props) {
-  const [exportFormat, setExportFormat] = useState<ExportFormat>("md");
   const [shareUrl, setShareUrl] = useState<string | null>(
     scan.share_token ? `${window.location.origin}/report/${scan.share_token}` : null,
   );
@@ -65,22 +116,29 @@ export function ScanReportModal({
   const [shareBusy, setShareBusy] = useState(false);
   const [shareError, setShareError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPos, setExportPos] = useState<{ top: number; left: number } | null>(null);
   const [selected, setSelected] = useState<Finding | null>(null);
-  const [statusBusy, setStatusBusy] = useState(false);
+  const exportWrapRef = useRef<HTMLDivElement>(null);
+  const exportBtnRef = useRef<HTMLButtonElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const liveLogRef = useRef<HTMLDivElement>(null);
 
   const sorted = useMemo(() => sortFindingsByRisk(findings), [findings]);
-  const filtered = useMemo(
-    () => (statusFilter === "all" ? sorted : sorted.filter((f) => f.status === statusFilter)),
-    [sorted, statusFilter],
-  );
   const caption = shareCaption(scan, projectName);
+  const scanning = scan.status === "queued" || scan.status === "running";
+  const progressPct = Math.max(0, Math.min(100, Number(scan.progress?.percent ?? (scanning ? 2 : 100))));
+  const progressLabel = scanProgressLabel(scan.progress, scan.status);
+  const liveLogs = scan.progress?.logs || [];
+  const findingsSoFar = scan.progress?.findings_so_far ?? 0;
 
-  const bySeverity = scan.summary?.by_severity || scan.risk_summary?.by_severity || {};
-  const byFamily = scan.summary?.by_family || {};
-  const enginesMeta = (scan.summary?.engines || []) as Array<Record<string, unknown>>;
   const aiReport = scan.summary?.ai_report?.trim() || null;
-  const severityTotal = Object.values(bySeverity).reduce((a, b) => a + (Number(b) || 0), 0);
+
+  useEffect(() => {
+    const el = liveLogRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [liveLogs.length, scanning]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -93,12 +151,57 @@ export function ScanReportModal({
         setShareOpen(false);
         return;
       }
+      if (exportOpen) {
+        setExportOpen(false);
+        return;
+      }
       if (variant === "page") return;
       onClose();
     }
+    function onDoc(e: MouseEvent) {
+      const t = e.target as Node;
+      if (exportWrapRef.current?.contains(t) || exportMenuRef.current?.contains(t)) return;
+      setExportOpen(false);
+    }
+    function placeMenu() {
+      const btn = exportBtnRef.current;
+      if (!btn || !exportOpen) return;
+      const r = btn.getBoundingClientRect();
+      const width = 208;
+      const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8);
+      setExportPos({ top: r.bottom + 6, left });
+    }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [shareOpen, onClose, selected, variant]);
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
+    placeMenu();
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
+    };
+  }, [shareOpen, exportOpen, onClose, selected, variant]);
+
+  function toggleExport() {
+    setExportOpen((open) => {
+      if (open) return false;
+      const btn = exportBtnRef.current;
+      if (btn) {
+        const r = btn.getBoundingClientRect();
+        const width = 208;
+        const left = Math.min(Math.max(8, r.right - width), window.innerWidth - width - 8);
+        setExportPos({ top: r.bottom + 6, left });
+      }
+      return true;
+    });
+  }
+
+  function runExport(format: ExportFormat) {
+    setExportOpen(false);
+    exportScanReport(format, scan, sorted, projectName);
+  }
 
   async function openShare() {
     setShareOpen(true);
@@ -130,40 +233,6 @@ export function ScanReportModal({
     }
   }
 
-  async function setFindingStatus(finding: Finding, status: FindingStatus) {
-    setStatusBusy(true);
-    try {
-      const res = await api<{ finding: Finding }>(`/workspace/findings/${finding.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      const next = findings.map((f) => (f.id === finding.id ? res.finding : f));
-      onFindingsChange?.(next);
-      setSelected(res.finding);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setStatusBusy(false);
-    }
-  }
-
-  async function suppressFinding(finding: Finding) {
-    setStatusBusy(true);
-    try {
-      const res = await api<{ finding: Finding }>(`/workspace/findings/${finding.id}/suppress`, {
-        method: "POST",
-        body: JSON.stringify({ reason: "Suppressed from report" }),
-      });
-      const next = findings.map((f) => (f.id === finding.id ? res.finding : f));
-      onFindingsChange?.(next);
-      setSelected(res.finding);
-    } catch (err) {
-      alert((err as Error).message);
-    } finally {
-      setStatusBusy(false);
-    }
-  }
-
   const blobHref = selected
     ? githubBlobUrl(githubRepoFullName, scan.commit_sha || scan.commit_short, selected.file_path, selected.line_start)
     : null;
@@ -172,163 +241,138 @@ export function ScanReportModal({
 
   const reportBody = (
     <>
-      <div className="modal-head">
-        <div>
+      <div className="report-chrome modal-body-pad">
+        <div className="report-topbar">
+          {variant === "page" ? (
+            <button type="button" className="report-back-link" onClick={onClose}>
+              Back to scans
+            </button>
+          ) : (
+            <button type="button" className="report-back-link" onClick={onClose}>
+              Close
+            </button>
+          )}
+          <div className="report-top-actions">
+            <div className="report-export-menu" ref={exportWrapRef}>
+              <button
+                type="button"
+                ref={exportBtnRef}
+                className="btn ghost report-action-btn"
+                aria-haspopup="menu"
+                aria-expanded={exportOpen}
+                disabled={findingsLoading}
+                onClick={toggleExport}
+              >
+                <IconExport />
+                Export
+                <span className="report-action-caret" aria-hidden>
+                  ▾
+                </span>
+              </button>
+            </div>
+            <button type="button" className="btn ghost report-action-btn" onClick={() => void openShare()}>
+              <IconShare />
+              Share
+            </button>
+          </div>
+        </div>
+
+        <header className="report-title-block">
           <p className="modal-kicker">Report</p>
           <h2 id="scan-report-title">{projectName || scan.project_name || "Scan report"}</h2>
-        </div>
-        {variant === "modal" ? (
-          <span className="muted small">Esc to close</span>
-        ) : (
-          <button type="button" className="btn ghost" onClick={onClose}>
-            Back to scans
-          </button>
-        )}
-      </div>
+        </header>
 
-      <div className="report-meta modal-body-pad">
-        <div>
-          <span className="muted">Target</span>
+        <div className="report-meta">
           <div>
-            <b>{scan.target}</b>
+            <span className="muted">Target</span>
+            <div>
+              <b>{scan.target}</b>
+            </div>
+          </div>
+          <div>
+            <span className="muted">Git version</span>
+            <div>
+              {commitDisplay ? (
+                <>
+                  <CommitLink short={commitDisplay} sha={scan.commit_sha} repo={githubRepoFullName} />
+                  {scan.commit_message ? <span className="muted"> — {scan.commit_message}</span> : null}
+                </>
+              ) : (
+                <span className="muted">Not available</span>
+              )}
+            </div>
+            {scan.commit_author ? <div className="muted small">{scan.commit_author}</div> : null}
+          </div>
+          <div>
+            <span className="muted">Risk</span>
+            <div>
+              <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
+              <span className="muted">
+                {" "}
+                ·{" "}
+                {findingsLoading
+                  ? `${scan.summary?.findings_count ?? "…"} findings`
+                  : `${sorted.length} findings`}
+              </span>
+            </div>
+            {scan.summary?.policy_failed ? (
+              <div className="muted small">Policy failed (≥ {scan.summary.fail_severity})</div>
+            ) : null}
           </div>
         </div>
-        <div>
-          <span className="muted">Git version</span>
-          <div>
-            {commitDisplay ? (
-              <>
-                <CommitLink short={commitDisplay} sha={scan.commit_sha} repo={githubRepoFullName} />
-                {scan.commit_message ? <span className="muted"> — {scan.commit_message}</span> : null}
-              </>
+      </div>
+
+      {scanning ? (
+        <section className="scan-live modal-body-pad" aria-live="polite" aria-busy="true">
+          <div className="scan-live-head">
+            <div>
+              <p className="modal-kicker">Scanning</p>
+              <h3 className="scan-live-title">{progressLabel || "Working…"}</h3>
+              <p className="muted small">
+                {formatScanDuration(scan)}
+                {findingsSoFar > 0 ? ` · ${findingsSoFar} finding${findingsSoFar === 1 ? "" : "s"} so far` : ""}
+              </p>
+            </div>
+            {onCancelScan ? (
+              <button
+                type="button"
+                className="btn ghost report-tool-btn"
+                disabled={cancelBusy || !!scan.cancel_requested}
+                onClick={onCancelScan}
+              >
+                {scan.cancel_requested || cancelBusy ? "Cancelling…" : "Cancel scan"}
+              </button>
+            ) : null}
+          </div>
+          <div className="scan-live-bar" role="progressbar" aria-valuenow={progressPct} aria-valuemin={0} aria-valuemax={100}>
+            <div className="scan-live-bar-fill" style={{ width: `${progressPct}%` }} />
+          </div>
+          <div className="scan-live-pct muted small">{progressPct}%</div>
+          <div className="scan-live-log" ref={liveLogRef}>
+            {!liveLogs.length ? (
+              <p className="muted small">Waiting for scanner output…</p>
             ) : (
-              <span className="muted">Not available</span>
+              <ul>
+                {liveLogs.map((row, i) => (
+                  <li key={`${row.t || "log"}-${i}`}>
+                    <span className="scan-live-log-msg">{row.msg}</span>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
-          {scan.commit_author ? <div className="muted small">{scan.commit_author}</div> : null}
-        </div>
-        <div>
-          <span className="muted">Risk</span>
-          <div>
-            <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
-            <span className="muted">
-              {" "}
-              ·{" "}
-              {findingsLoading
-                ? `${scan.summary?.findings_count ?? "…"} findings`
-                : `${sorted.length} findings`}
-            </span>
-          </div>
-          {scan.summary?.policy_failed ? (
-            <div className="muted small">Policy failed (≥ {scan.summary.fail_severity})</div>
-          ) : null}
-        </div>
-      </div>
+        </section>
+      ) : null}
 
-      {(severityTotal > 0 || enginesMeta.length > 0) && (
-        <div className="report-coverage modal-body-pad">
-          <h3 className="report-section-title">Coverage</h3>
-          {severityTotal > 0 ? (
-            <div className="coverage-block">
-              <span className="muted small">By severity</span>
-              <div className="coverage-bars" role="list">
-                {(["critical", "high", "medium", "low", "info"] as const).map((sev) => {
-                  const n = Number(bySeverity[sev] || 0);
-                  if (!n) return null;
-                  const pct = Math.max(4, Math.round((n / severityTotal) * 100));
-                  return (
-                    <div key={sev} className="coverage-row" role="listitem">
-                      <span className={`badge ${sev}`}>{sev}</span>
-                      <div className="coverage-track" aria-hidden>
-                        <div className={`coverage-fill sev-${sev}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="muted small">{n}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-          {Object.keys(byFamily).length ? (
-            <div className="coverage-block">
-              <span className="muted small">By family</span>
-              <div className="coverage-chips">
-                {Object.entries(byFamily).map(([fam, n]) => (
-                  <span key={fam} className="badge muted">
-                    {fam}: {Number(n)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {enginesMeta.length ? (
-            <div className="coverage-block">
-              <span className="muted small">Engines</span>
-              <div className="coverage-chips">
-                {enginesMeta.map((e, i) => {
-                  const name = String(e.engine || e.name || `engine-${i}`);
-                  const skipped = e.skipped ? `skipped (${e.skipped})` : e.available === false ? "unavailable" : "ran";
-                  return (
-                    <span key={`${name}-${i}`} className="badge muted">
-                      {name}: {skipped}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {aiReport ? (
+      {aiReport && !scanning ? (
         <div className="report-ai modal-body-pad">
           <h3 className="report-section-title">AI final report</h3>
           <pre className="ai-report-body">{aiReport}</pre>
         </div>
       ) : null}
 
-      <div className="report-toolbar modal-body-pad">
-        <label className="report-export">
-          Status
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} disabled={findingsLoading}>
-            <option value="all">All</option>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="report-export">
-          Export
-          <select
-            value={exportFormat}
-            onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
-            disabled={findingsLoading}
-          >
-            <option value="md">Markdown (.md)</option>
-            <option value="json">JSON (.json)</option>
-            <option value="csv">CSV (.csv)</option>
-            <option value="html">HTML (.html)</option>
-            <option value="sarif">SARIF (.sarif)</option>
-          </select>
-        </label>
-        <button
-          type="button"
-          className="btn secondary report-tool-btn"
-          disabled={findingsLoading}
-          onClick={() => exportScanReport(exportFormat, scan, sorted, projectName)}
-        >
-          Download
-        </button>
-        <button type="button" className="btn ghost report-tool-btn" onClick={() => void openShare()}>
-          Share report
-        </button>
-      </div>
-
       <div className="report-findings modal-body-pad">
-        <h3>Findings (highest risk first)</h3>
-        {findingsLoading ? (
+        {scanning ? null : findingsLoading ? (
           <div className="report-findings-loading">
             <LoadingMark
               size="sm"
@@ -339,11 +383,11 @@ export function ScanReportModal({
               }
             />
           </div>
-        ) : !filtered.length ? (
-          <div className="empty-state compact">No findings for this filter.</div>
+        ) : !sorted.length ? (
+          <div className="empty-state compact">No findings.</div>
         ) : (
           <ul className="finding-list">
-            {filtered.map((f) => (
+            {sorted.map((f) => (
               <li key={f.id}>
                 <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
                   <div className="finding-head">
@@ -368,19 +412,45 @@ export function ScanReportModal({
 
   const drawers = (
     <>
+      {exportOpen && exportPos
+        ? createPortal(
+            <div
+              ref={exportMenuRef}
+              className="report-export-dropdown portal"
+              role="menu"
+              style={{ top: exportPos.top, left: exportPos.left, width: 208 }}
+            >
+              <p className="report-export-label">Export as</p>
+              {EXPORT_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="menuitem"
+                  className="report-export-item"
+                  onClick={() => runExport(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>,
+            document.body,
+          )
+        : null}
+
       {selected
         ? createPortal(
             <div className="modal-root finding-drawer-root" role="presentation">
               <button type="button" className="modal-backdrop" aria-label="Close finding" onClick={() => setSelected(null)} />
               <aside className="finding-drawer" role="dialog" aria-modal="true" aria-labelledby="finding-drawer-title">
-                <div className="modal-head">
-                  <div>
-                    <p className="modal-kicker">Finding</p>
-                    <h2 id="finding-drawer-title">{selected.title}</h2>
-                  </div>
-                  <button type="button" className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>
-                    ×
+                <div className="finding-drawer-top">
+                  <button type="button" className="finding-back-btn" aria-label="Back to findings" onClick={() => setSelected(null)}>
+                    <IconBack />
+                    <span>Back</span>
                   </button>
+                </div>
+                <div className="finding-drawer-head">
+                  <p className="modal-kicker">Finding</p>
+                  <h2 id="finding-drawer-title">{selected.title}</h2>
                 </div>
                 <div className="finding-drawer-body">
                   <div className="finding-head">
@@ -416,38 +486,6 @@ export function ScanReportModal({
                       {selected.ai_rationale ? ` — ${selected.ai_rationale}` : ""}
                     </p>
                   ) : null}
-                  {selected.countermeasures?.[0]?.steps?.length ? (
-                    <div className="finding-remediation">
-                      <b>{selected.countermeasures[0].title || "How to fix"}</b>
-                      <ul>
-                        {selected.countermeasures[0].steps.map((step, i) => (
-                          <li key={i}>{step}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                  <label>
-                    Status
-                    <select
-                      value={selected.status}
-                      disabled={statusBusy}
-                      onChange={(e) => void setFindingStatus(selected, e.target.value as FindingStatus)}
-                    >
-                      {STATUSES.map((s) => (
-                        <option key={s} value={s}>
-                          {s.replace(/_/g, " ")}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button
-                    type="button"
-                    className="btn ghost"
-                    disabled={statusBusy}
-                    onClick={() => void suppressFinding(selected)}
-                  >
-                    Suppress in future scans
-                  </button>
                 </div>
               </aside>
             </div>,

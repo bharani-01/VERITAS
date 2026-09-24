@@ -6,7 +6,7 @@ import App from "./App";
 import { applyTheme } from "./lib/theme";
 import "./styles.css";
 
-applyTheme("dark");
+applyTheme("light");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

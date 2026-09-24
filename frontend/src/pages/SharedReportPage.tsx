@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
@@ -14,13 +14,22 @@ type SharedPayload = {
   total: number;
 };
 
+const EXPORT_OPTIONS: { value: ExportFormat; label: string }[] = [
+  { value: "md", label: "Markdown (.md)" },
+  { value: "json", label: "JSON (.json)" },
+  { value: "csv", label: "CSV (.csv)" },
+  { value: "html", label: "HTML (.html)" },
+  { value: "sarif", label: "SARIF (.sarif)" },
+];
+
 /** Public shared scan report — no login required. */
 export function SharedReportPage() {
   const { token } = useParams();
   const [data, setData] = useState<SharedPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>("md");
+  const [exportOpen, setExportOpen] = useState(false);
   const [selected, setSelected] = useState<Finding | null>(null);
+  const exportWrapRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -36,10 +45,20 @@ export function SharedReportPage() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setSelected(null);
+      if (e.key === "Escape") {
+        setSelected(null);
+        setExportOpen(false);
+      }
+    }
+    function onDoc(e: MouseEvent) {
+      if (!exportWrapRef.current?.contains(e.target as Node)) setExportOpen(false);
     }
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
+    };
   }, []);
 
   const sorted = useMemo(() => sortFindingsByRisk(data?.items || []), [data]);
@@ -102,24 +121,40 @@ export function SharedReportPage() {
             ) : null}
           </p>
         </div>
-        <div className="scan-actions">
-          <label className="report-export">
-            Export
-            <select value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)}>
-              <option value="md">Markdown (.md)</option>
-              <option value="json">JSON (.json)</option>
-              <option value="csv">CSV (.csv)</option>
-              <option value="html">HTML (.html)</option>
-              <option value="sarif">SARIF (.sarif)</option>
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => exportScanReport(exportFormat, scan, sorted, project.name)}
-          >
-            Download
-          </button>
+        <div className="report-top-actions">
+          <div className="report-export-menu" ref={exportWrapRef}>
+            <button
+              type="button"
+              className="btn ghost report-action-btn"
+              aria-haspopup="menu"
+              aria-expanded={exportOpen}
+              onClick={() => setExportOpen((o) => !o)}
+            >
+              Export
+              <span className="report-action-caret" aria-hidden>
+                ▾
+              </span>
+            </button>
+            {exportOpen ? (
+              <div className="report-export-dropdown" role="menu">
+                <p className="report-export-label">Export as</p>
+                {EXPORT_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    role="menuitem"
+                    className="report-export-item"
+                    onClick={() => {
+                      setExportOpen(false);
+                      exportScanReport(opt.value, scan, sorted, project.name);
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -160,14 +195,24 @@ export function SharedReportPage() {
             <div className="modal-root finding-drawer-root" role="presentation">
               <button type="button" className="modal-backdrop" aria-label="Close finding" onClick={() => setSelected(null)} />
               <aside className="finding-drawer" role="dialog" aria-modal="true" aria-labelledby="shared-finding-title">
-                <div className="modal-head">
-                  <div>
-                    <p className="modal-kicker">Finding</p>
-                    <h2 id="shared-finding-title">{selected.title}</h2>
-                  </div>
-                  <button type="button" className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>
-                    ×
+                <div className="finding-drawer-top">
+                  <button type="button" className="finding-back-btn" aria-label="Back to findings" onClick={() => setSelected(null)}>
+                    <svg className="finding-back-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M15 6l-6 6 6 6"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span>Back</span>
                   </button>
+                </div>
+                <div className="finding-drawer-head">
+                  <p className="modal-kicker">Finding</p>
+                  <h2 id="shared-finding-title">{selected.title}</h2>
                 </div>
                 <div className="finding-drawer-body">
                   <div className="finding-head">

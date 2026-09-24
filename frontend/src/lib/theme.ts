@@ -1,27 +1,27 @@
-export type ThemeId = "dark";
+export type ThemeId = "light";
 
 const KEY = "veritas.theme";
 
-/** VERITAS is dark-only (Render-style). Legacy localStorage values are ignored. */
+/** VERITAS is light-only — one shared palette for auth, admin, and user. */
 export function readTheme(): ThemeId {
-  return "dark";
+  return "light";
 }
 
 export function applyTheme(_theme?: ThemeId) {
-  document.documentElement.setAttribute("data-theme", "dark");
-  document.documentElement.style.colorScheme = "dark";
+  document.documentElement.setAttribute("data-theme", "light");
+  document.documentElement.style.colorScheme = "light";
   try {
-    localStorage.setItem(KEY, "dark");
+    localStorage.setItem(KEY, "light");
   } catch {
     /* ignore */
   }
 }
 
 export function cycleTheme(_current?: ThemeId): ThemeId {
-  applyTheme("dark");
-  return "dark";
+  applyTheme("light");
+  return "light";
 }
 
 export function themeLabel(_theme?: ThemeId): string {
-  return "Dark";
+  return "Light";
 }

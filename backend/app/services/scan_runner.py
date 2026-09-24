@@ -94,19 +94,100 @@ class ScanCancelled(Exception):
     pass
 
 
-def _set_progress(session, scan: Scan, *, phase: str, percent: int, eta_remaining: int | None = None) -> None:
+def _read_progress(scan: Scan) -> dict:
+    if not scan.progress_json:
+        return {}
+    try:
+        data = json.loads(scan.progress_json)
+        return data if isinstance(data, dict) else {}
+    except json.JSONDecodeError:
+        return {}
+
+
+def _set_progress(
+    session,
+    scan: Scan,
+    *,
+    phase: str,
+    percent: int,
+    eta_remaining: int | None = None,
+    log: str | None = None,
+    clear_logs: bool = False,
+) -> None:
+    prev = _read_progress(scan)
+    logs = [] if clear_logs else list(prev.get("logs") or [])
+    if log:
+        logs.append({"t": utcnow().isoformat(), "msg": log[:240]})
+    # Cap so progress_json stays small
+    logs = logs[-100:]
     scan.progress_json = json.dumps(
         {
             "phase": phase,
             "label": PHASE_LABELS.get(phase, "Working…"),
-            "percent": percent,
+            "percent": max(0, min(100, int(percent))),
             "eta_remaining_seconds": eta_remaining,
+            "logs": logs,
+            "findings_so_far": int(prev.get("findings_so_far") or 0),
         }
     )
     if eta_remaining is not None:
         scan.eta_seconds = eta_remaining
     session.add(scan)
     session.commit()
+
+
+def _bump_findings_so_far(session, scan: Scan, count: int) -> None:
+    prev = _read_progress(scan)
+    total = int(prev.get("findings_so_far") or 0) + max(0, count)
+    prev["findings_so_far"] = total
+    prev["logs"] = list(prev.get("logs") or [])
+    scan.progress_json = json.dumps(prev)
+    session.add(scan)
+    session.commit()
+
+
+def _log_engine_results(
+    session,
+    scan: Scan,
+    *,
+    phase: str,
+    percent: int,
+    eta_remaining: int | None,
+    started_msg: str,
+    empty_msg: str,
+    found_msg: str,
+    findings: list,
+) -> None:
+    _set_progress(session, scan, phase=phase, percent=percent, eta_remaining=eta_remaining, log=started_msg)
+    n = len(findings)
+    if n == 0:
+        _set_progress(session, scan, phase=phase, percent=percent, eta_remaining=eta_remaining, log=empty_msg)
+        return
+    _set_progress(
+        session,
+        scan,
+        phase=phase,
+        percent=percent,
+        eta_remaining=eta_remaining,
+        log=found_msg.format(n=n),
+    )
+    _bump_findings_so_far(session, scan, n)
+    for nf in findings[:8]:
+        loc = ""
+        if getattr(nf, "file_path", None):
+            loc = f" · {nf.file_path}"
+            if getattr(nf, "line_start", None):
+                loc += f":{nf.line_start}"
+        sev = (getattr(nf, "severity", None) or "info").lower()
+        title = (getattr(nf, "title", None) or "Issue")[:120]
+        _set_progress(
+            session,
+            scan,
+            phase=phase,
+            percent=percent,
+            eta_remaining=eta_remaining,
+            log=f"[{sev}] {title}{loc}",
+        )
 
 
 def _check_cancel(session, scan: Scan) -> None:
@@ -181,11 +262,16 @@ def run_scan_job(scan_id: str) -> None:
             if scan.cancel_requested:
                 scan.status = "cancelled"
                 scan.finished_at = utcnow()
-                scan.progress_json = json.dumps(
-                    {"phase": "cancelled", "label": PHASE_LABELS["cancelled"], "percent": 100, "eta_remaining_seconds": 0}
-                )
                 session.add(scan)
                 session.commit()
+                _set_progress(
+                    session,
+                    scan,
+                    phase="cancelled",
+                    percent=100,
+                    eta_remaining=0,
+                    log="Scan cancelled",
+                )
                 return
 
             scan.status = "running"
@@ -197,7 +283,15 @@ def run_scan_job(scan_id: str) -> None:
             engine_meta: list[dict] = []
             findings_out: list = []
             try:
-                _set_progress(session, scan, phase="cloning", percent=5, eta_remaining=scan.eta_seconds)
+                _set_progress(
+                    session,
+                    scan,
+                    phase="cloning",
+                    percent=5,
+                    eta_remaining=scan.eta_seconds,
+                    log="Pulling your repository…",
+                    clear_logs=False,
+                )
                 _check_cancel(session, scan)
                 workdir = prepare_workdir(scan.id)
                 repo_path: Path | None = None
@@ -212,13 +306,38 @@ def run_scan_job(scan_id: str) -> None:
                     scan.git_history_json = json.dumps(git_meta.get("history") or [])
                     session.add(scan)
                     session.commit()
+                    short = scan.commit_short or (scan.commit_sha or "")[:7]
+                    _set_progress(
+                        session,
+                        scan,
+                        phase="cloning",
+                        percent=12,
+                        eta_remaining=max(8, (scan.eta_seconds or 60) - 5),
+                        log=f"Repository ready{f' @ {short}' if short else ''}",
+                    )
                     if (scan.scan_scope or "full") == "changed":
                         base = project.github_default_branch or "main"
                         changed_paths = list_changed_files(repo_path, base_branch=base)
                         engine_meta.append({"engine": "diff", "changed_files": len(changed_paths), "base": base})
+                        _set_progress(
+                            session,
+                            scan,
+                            phase="cloning",
+                            percent=15,
+                            eta_remaining=max(8, (scan.eta_seconds or 60) // 2),
+                            log=f"Scoped to {len(changed_paths)} changed file(s) vs {base}",
+                        )
                 else:
                     engine_meta.append({"engine": "clone", "skipped": "manual target — no GitHub clone"})
                     repo_path = None
+                    _set_progress(
+                        session,
+                        scan,
+                        phase="cloning",
+                        percent=15,
+                        eta_remaining=scan.eta_seconds,
+                        log="No GitHub workspace — engines will be skipped",
+                    )
 
                 _check_cancel(session, scan)
                 options = _parse_options(scan)
@@ -228,30 +347,55 @@ def run_scan_job(scan_id: str) -> None:
 
                 if repo_path:
                     if "gitleaks" in enabled:
+                        eta = max(10, (scan.eta_seconds or 60) // 2)
                         _set_progress(
-                            session, scan, phase="secrets", percent=20, eta_remaining=max(10, (scan.eta_seconds or 60) // 2)
+                            session, scan, phase="secrets", percent=20, eta_remaining=eta, log="Looking for exposed secrets…"
                         )
                         g_findings, g_meta = run_gitleaks(repo_path)
                         engine_meta.append(g_meta)
                         findings_out.extend(g_findings)
+                        _log_engine_results(
+                            session,
+                            scan,
+                            phase="secrets",
+                            percent=28,
+                            eta_remaining=eta,
+                            started_msg="Secret scan finished",
+                            empty_msg="No exposed secrets found",
+                            found_msg="Found {n} potential secret exposure(s)",
+                            findings=g_findings,
+                        )
                     else:
                         engine_meta.append({"engine": "gitleaks", "skipped": "disabled"})
 
                     _check_cancel(session, scan)
                     if "osv" in enabled:
+                        eta = max(8, (scan.eta_seconds or 60) // 3)
                         _set_progress(
-                            session, scan, phase="sca", percent=40, eta_remaining=max(8, (scan.eta_seconds or 60) // 3)
+                            session, scan, phase="sca", percent=40, eta_remaining=eta, log="Checking dependencies…"
                         )
                         o_findings, o_meta = run_osv(repo_path)
                         engine_meta.append(o_meta)
                         findings_out.extend(o_findings)
+                        _log_engine_results(
+                            session,
+                            scan,
+                            phase="sca",
+                            percent=48,
+                            eta_remaining=eta,
+                            started_msg="Dependency check finished",
+                            empty_msg="No known vulnerable dependencies found",
+                            found_msg="Found {n} dependency issue(s)",
+                            findings=o_findings,
+                        )
                     else:
                         engine_meta.append({"engine": "osv", "skipped": "disabled"})
 
                     _check_cancel(session, scan)
                     if "semgrep" in enabled:
+                        eta = max(5, (scan.eta_seconds or 60) // 4)
                         _set_progress(
-                            session, scan, phase="semgrep", percent=60, eta_remaining=max(5, (scan.eta_seconds or 60) // 4)
+                            session, scan, phase="semgrep", percent=60, eta_remaining=eta, log="Reading through the code…"
                         )
                         s_findings, s_meta = run_semgrep(
                             repo_path,
@@ -261,13 +405,30 @@ def run_scan_job(scan_id: str) -> None:
                         )
                         engine_meta.append(s_meta)
                         findings_out.extend(s_findings)
+                        _log_engine_results(
+                            session,
+                            scan,
+                            phase="semgrep",
+                            percent=72,
+                            eta_remaining=eta,
+                            started_msg="Code analysis finished",
+                            empty_msg="No code issues found in this pass",
+                            found_msg="Found {n} code issue(s)",
+                            findings=s_findings,
+                        )
                     else:
                         engine_meta.append({"engine": "semgrep", "skipped": "disabled"})
 
                     if want_review:
                         _check_cancel(session, scan)
+                        eta = max(4, (scan.eta_seconds or 40) // 5)
                         _set_progress(
-                            session, scan, phase="code_review", percent=78, eta_remaining=max(4, (scan.eta_seconds or 40) // 5)
+                            session,
+                            scan,
+                            phase="code_review",
+                            percent=78,
+                            eta_remaining=eta,
+                            log="AI code review in progress…",
                         )
                         r_findings, r_meta = review_repository(
                             repo_path,
@@ -276,6 +437,17 @@ def run_scan_job(scan_id: str) -> None:
                         )
                         engine_meta.append(r_meta)
                         findings_out.extend(r_findings)
+                        _log_engine_results(
+                            session,
+                            scan,
+                            phase="code_review",
+                            percent=88,
+                            eta_remaining=eta,
+                            started_msg="AI review finished",
+                            empty_msg="AI review added no extra findings",
+                            found_msg="AI review flagged {n} issue(s)",
+                            findings=r_findings,
+                        )
                     else:
                         engine_meta.append({"engine": "openrouter_review", "skipped": "disabled"})
 
@@ -300,7 +472,14 @@ def run_scan_job(scan_id: str) -> None:
                 ai_report = None
                 if scan.scan_mode == "rules_plus_ai" or want_review:
                     _check_cancel(session, scan)
-                    _set_progress(session, scan, phase="reporting", percent=90, eta_remaining=5)
+                    _set_progress(
+                        session,
+                        scan,
+                        phase="reporting",
+                        percent=90,
+                        eta_remaining=5,
+                        log="Writing the security report…",
+                    )
                     report_meta = generate_final_report(
                         findings_out,
                         project_name=project.name,
@@ -316,9 +495,24 @@ def run_scan_job(scan_id: str) -> None:
                             "findings_in_report": report_meta.get("findings_in_report"),
                         }
                     )
+                    _set_progress(
+                        session,
+                        scan,
+                        phase="reporting",
+                        percent=93,
+                        eta_remaining=3,
+                        log="Report draft ready",
+                    )
 
                 _check_cancel(session, scan)
-                _set_progress(session, scan, phase="reporting", percent=95, eta_remaining=2)
+                _set_progress(
+                    session,
+                    scan,
+                    phase="reporting",
+                    percent=95,
+                    eta_remaining=2,
+                    log=f"Saving {len(findings_out)} finding(s)…",
+                )
                 for old in session.scalars(select(Finding).where(Finding.scan_id == scan.id)):
                     session.delete(old)
                 session.commit()
@@ -414,13 +608,19 @@ def run_scan_job(scan_id: str) -> None:
                     scan.status = "completed"
                     scan.error_message = None
                 scan.finished_at = utcnow()
-                scan.progress_json = json.dumps(
-                    {
-                        "phase": "completed" if not policy_failed else "failed",
-                        "label": PHASE_LABELS["failed" if policy_failed else "completed"],
-                        "percent": 100,
-                        "eta_remaining_seconds": 0,
-                    }
+                session.add(scan)
+                session.commit()
+                _set_progress(
+                    session,
+                    scan,
+                    phase="failed" if policy_failed else "completed",
+                    percent=100,
+                    eta_remaining=0,
+                    log=(
+                        f"Policy failed — {open_count} open finding(s)"
+                        if policy_failed
+                        else f"Scan complete — {len(findings_out)} finding(s)"
+                    ),
                 )
                 scan.eta_seconds = 0
                 session.add(scan)
@@ -430,8 +630,15 @@ def run_scan_job(scan_id: str) -> None:
                 scan.status = "cancelled"
                 scan.error_message = "Scan cancelled by user."
                 scan.finished_at = utcnow()
-                scan.progress_json = json.dumps(
-                    {"phase": "cancelled", "label": PHASE_LABELS["cancelled"], "percent": 100, "eta_remaining_seconds": 0}
+                session.add(scan)
+                session.commit()
+                _set_progress(
+                    session,
+                    scan,
+                    phase="cancelled",
+                    percent=100,
+                    eta_remaining=0,
+                    log="Scan cancelled",
                 )
                 scan.eta_seconds = 0
                 session.add(scan)
@@ -441,8 +648,15 @@ def run_scan_job(scan_id: str) -> None:
                 scan.status = "failed"
                 scan.error_message = str(exc)[:1000]
                 scan.finished_at = utcnow()
-                scan.progress_json = json.dumps(
-                    {"phase": "failed", "label": PHASE_LABELS["failed"], "percent": 100, "eta_remaining_seconds": 0}
+                session.add(scan)
+                session.commit()
+                _set_progress(
+                    session,
+                    scan,
+                    phase="failed",
+                    percent=100,
+                    eta_remaining=0,
+                    log=f"Clone failed: {str(exc)[:160]}",
                 )
                 session.add(scan)
                 session.commit()
@@ -451,8 +665,15 @@ def run_scan_job(scan_id: str) -> None:
                 scan.status = "failed"
                 scan.error_message = str(exc)[:1000]
                 scan.finished_at = utcnow()
-                scan.progress_json = json.dumps(
-                    {"phase": "failed", "label": PHASE_LABELS["failed"], "percent": 100, "eta_remaining_seconds": 0}
+                session.add(scan)
+                session.commit()
+                _set_progress(
+                    session,
+                    scan,
+                    phase="failed",
+                    percent=100,
+                    eta_remaining=0,
+                    log=f"Scan failed: {str(exc)[:160]}",
                 )
                 session.add(scan)
                 session.commit()

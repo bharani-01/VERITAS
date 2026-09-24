@@ -576,7 +576,14 @@ def create_scan(
         cancel_requested=False,
         options_json=json.dumps(options),
         progress_json=json.dumps(
-            {"phase": "queued", "label": "Getting ready…", "percent": 0, "eta_remaining_seconds": eta}
+            {
+                "phase": "queued",
+                "label": "Getting ready…",
+                "percent": 0,
+                "eta_remaining_seconds": eta,
+                "logs": [{"t": utcnow().isoformat(), "msg": "Scan queued…"}],
+                "findings_so_far": 0,
+            }
         ),
         notify_email=project.notify_email_default if notify_email is None else notify_email,
         notify_in_app=project.notify_in_app_default if notify_in_app is None else notify_in_app,

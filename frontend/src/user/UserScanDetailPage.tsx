@@ -6,6 +6,10 @@ import { api } from "../lib/api";
 import { useDocumentTitle } from "../lib/documentTitle";
 import type { Finding, Project, Scan } from "../lib/workspace";
 
+function isActive(status: string) {
+  return status === "queued" || status === "running";
+}
+
 /** Full-page scan details (Render-style row click target). */
 export function UserScanDetailPage() {
   const { projectId, scanId } = useParams();
@@ -15,30 +19,18 @@ export function UserScanDetailPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [findingsLoading, setFindingsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
 
   const short = (scan?.commit_short || scan?.commit_sha || "").slice(0, 7);
-  useDocumentTitle(
-    project
-      ? `${short || "Scan"} · ${project.name}`
-      : "Scan details",
-  );
+  useDocumentTitle(project ? `${short || "Scan"} · ${project.name}` : "Scan details");
 
   useEffect(() => {
     if (!projectId || !scanId) return;
     let cancelled = false;
     setError(null);
-    Promise.all([
-      api<{ project: Project }>(`/workspace/projects/${projectId}`),
-      api<{ scan: Scan }>(`/workspace/scans/${scanId}`),
-    ])
-      .then(([proj, scanRes]) => {
-        if (cancelled) return;
-        if (scanRes.scan.project_id !== projectId) {
-          setError("Scan not found in this project.");
-          return;
-        }
-        setProject(proj.project);
-        setScan(scanRes.scan);
+    api<{ project: Project }>(`/workspace/projects/${projectId}`)
+      .then((proj) => {
+        if (!cancelled) setProject(proj.project);
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);
@@ -46,15 +38,50 @@ export function UserScanDetailPage() {
     return () => {
       cancelled = true;
     };
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || !scanId) return;
+    let cancelled = false;
+
+    async function refresh() {
+      try {
+        const scanRes = await api<{ scan: Scan }>(`/workspace/scans/${scanId}`);
+        if (cancelled) return;
+        if (scanRes.scan.project_id !== projectId) {
+          setError("Scan not found in this project.");
+          return;
+        }
+        setScan(scanRes.scan);
+      } catch (err) {
+        if (!cancelled) setError((err as Error).message);
+      }
+    }
+
+    void refresh();
+    const id = window.setInterval(() => {
+      void refresh();
+    }, 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [projectId, scanId]);
 
   useEffect(() => {
     if (!scanId || !scan) return;
+    const active = isActive(scan.status);
+    if (active) {
+      setFindings([]);
+      setFindingsLoading(false);
+      return;
+    }
     if (scan.status !== "completed" && scan.status !== "failed") {
       setFindings([]);
       setFindingsLoading(false);
       return;
     }
+
     let cancelled = false;
     setFindingsLoading(true);
     api<{ items: Finding[] }>(`/workspace/scans/${scanId}/findings`)
@@ -70,9 +97,23 @@ export function UserScanDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [scanId, scan?.status]);
+  }, [scanId, scan?.status, scan?.id]);
 
-  if (error) {
+  async function cancelScan() {
+    if (!scanId || cancelBusy) return;
+    setCancelBusy(true);
+    try {
+      await api(`/workspace/scans/${scanId}/cancel`, { method: "POST" });
+      const scanRes = await api<{ scan: Scan }>(`/workspace/scans/${scanId}`);
+      setScan(scanRes.scan);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
+  if (error && !scan) {
     return (
       <main className="admin-main">
         <div className="notice error" role="alert">
@@ -102,6 +143,8 @@ export function UserScanDetailPage() {
       onClose={() => navigate(`/user/projects/${projectId}`)}
       onShared={(updated) => setScan((prev) => (prev ? { ...prev, ...updated } : updated))}
       onFindingsChange={setFindings}
+      onCancelScan={isActive(scan.status) ? () => void cancelScan() : undefined}
+      cancelBusy={cancelBusy}
     />
   );
 }

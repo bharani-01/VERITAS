@@ -1,5 +1,4 @@
 type BrandMarkProps = {
-  /** Visual size variant */
   size?: "sm" | "md" | "lg";
   className?: string;
 };
@@ -10,25 +9,32 @@ const SIZE = {
   lg: 40,
 } as const;
 
-/** VERITAS V mark — used in nav, auth, and compact headers. */
+/** Compact V mark cropped from the stacked brand lockup. */
 export function BrandMark({ size = "md", className = "" }: BrandMarkProps) {
   const px = SIZE[size];
   return (
     <span className={`brand-mark brand-mark-${size} ${className}`.trim()} aria-hidden="true">
-      <img src="/brand/veritas-mark.jpg" alt="" width={px} height={px} decoding="async" />
+      <img
+        src="/brand/veritas-mark.png"
+        alt=""
+        width={px}
+        height={px}
+        decoding="async"
+        className="brand-mark-img"
+      />
     </span>
   );
 }
 
-/** Full stacked lockup: mark + VERITAS + tagline (auth / splash). */
+/** Stacked lockup: V + VERITAS + Vulnerability Scanner (auth / splash). */
 export function BrandLockup({ className = "" }: { className?: string }) {
   return (
     <img
       className={`brand-lockup ${className}`.trim()}
-      src="/brand/veritas-lockup.jpg"
+      src="/brand/veritas-lockup.png"
       alt="VERITAS — Vulnerability Scanner"
-      width={280}
-      height={280}
+      width={320}
+      height={213}
       decoding="async"
     />
   );

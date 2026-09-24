@@ -17,11 +17,18 @@ export type Project = {
   updated_at: string;
 };
 
+export type ScanProgressLog = {
+  t?: string;
+  msg: string;
+};
+
 export type ScanProgress = {
   phase?: string;
   label?: string;
   percent?: number;
   eta_remaining_seconds?: number | null;
+  logs?: ScanProgressLog[];
+  findings_so_far?: number;
 };
 
 export type GitCommit = {

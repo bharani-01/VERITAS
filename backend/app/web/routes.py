@@ -74,6 +74,30 @@ def favicon():
     raise HTTPException(status_code=404, detail="Favicon not found.")
 
 
+@router.get("/robots.txt")
+def robots_txt():
+    path = SPA_DIR / "robots.txt"
+    if path.exists():
+        return FileResponse(path, media_type="text/plain; charset=utf-8")
+    raise HTTPException(status_code=404, detail="robots.txt not found.")
+
+
+@router.get("/sitemap.xml")
+def sitemap_xml():
+    path = SPA_DIR / "sitemap.xml"
+    if path.exists():
+        return FileResponse(path, media_type="application/xml")
+    raise HTTPException(status_code=404, detail="sitemap.xml not found.")
+
+
+@router.get("/site.webmanifest")
+def web_manifest():
+    path = SPA_DIR / "site.webmanifest"
+    if path.exists():
+        return FileResponse(path, media_type="application/manifest+json")
+    raise HTTPException(status_code=404, detail="Web manifest not found.")
+
+
 @router.get("/apple-touch-icon.png")
 @router.get("/apple-touch-icon.jpg")
 def apple_touch_icon():

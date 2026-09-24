@@ -74,7 +74,7 @@ export function UserProjectDetailPage() {
     if (!active) return;
     const id = window.setInterval(() => {
       load().catch(() => undefined);
-    }, 2500);
+    }, 1200);
     return () => window.clearInterval(id);
   }, [scans, projectId]);
 

@@ -14,9 +14,7 @@ type Props = {
 
 function BrandMark() {
   return (
-    <span className="brand-mark" aria-hidden="true">
-      <img src="/brand/veritas-mark.jpg" alt="" width={28} height={28} decoding="async" />
-    </span>
+    <img className="brand-nav-logo" src="/brand/veritas-mark.png" alt="" height={28} width={28} decoding="async" />
   );
 }
 
@@ -33,7 +31,7 @@ export function UserNav({ user, collapsed, onToggle, onLogout }: Props) {
   const roleLabel = user.role === "admin" ? "Admin" : "User";
 
   useEffect(() => {
-    applyTheme("dark");
+    applyTheme("light");
   }, []);
 
   useEffect(() => {

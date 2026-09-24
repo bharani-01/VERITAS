@@ -1,10 +1,16 @@
+import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
-import { useDocumentTitle } from "../lib/documentTitle";
+import { applyRouteSeo } from "../lib/seo";
 
-/** Maps the active route to a browser tab title. */
+/** Maps the active route to browser title + SEO meta tags. */
 export function RouteTitle() {
   const { pathname } = useLocation();
-  useDocumentTitle(titleForPath(pathname));
+  const title = titleForPath(pathname);
+
+  useEffect(() => {
+    applyRouteSeo(pathname, title === "VERITAS" ? "" : title);
+  }, [pathname, title]);
+
   return null;
 }
 
