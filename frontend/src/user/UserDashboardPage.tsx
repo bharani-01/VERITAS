@@ -184,55 +184,29 @@ export function UserDashboardPage() {
                 </div>
               </div>
             ) : (
-              <>
-                <ul className="dash-list">
-                  {projects.map((project) => (
-                    <li key={project.id}>
-                      <div className="dash-list-main">
-                        <div className="dash-list-top">
-                          <b>
-                            <Link to={`/user/projects/${project.id}`}>{project.name}</Link>
-                          </b>
-                          <Link className="dash-list-action" to={`/user/projects/${project.id}`}>
-                            Open
-                          </Link>
-                        </div>
-                        <small>
-                          {project.github_repo_full_name || "No repo linked"}
-                          {project.auto_scan_on_push ? " · Auto-scan on" : ""}
-                        </small>
+              <ul className="dash-list">
+                {projects.map((project) => (
+                  <li key={project.id}>
+                    <div className="dash-list-main">
+                      <div className="dash-list-top">
+                        <b>
+                          <Link to={`/user/projects/${project.id}`}>{project.name}</Link>
+                        </b>
+                        <Link className="dash-list-action" to={`/user/projects/${project.id}`}>
+                          Open
+                        </Link>
                       </div>
-                    </li>
-                  ))}
-                </ul>
-                <div className="dash-side-meta">
-                  <p>
-                    {data.github.connected
-                      ? `GitHub connected as @${data.github.github_login}`
-                      : data.github.configured
-                        ? "GitHub is not connected yet"
-                        : "GitHub OAuth is not configured"}
-                  </p>
-                  <div className="dash-side-links">
-                    <Link to="/user/projects/new">New project</Link>
-                    <Link to="/user/scans">All scans</Link>
-                    {needsGithub ? <Link to="/user/projects/new">Connect GitHub</Link> : null}
-                  </div>
-                </div>
-              </>
+                      <small>
+                        {project.github_repo_full_name || "No repo linked"}
+                        {project.auto_scan_on_push ? " · Auto-scan on" : ""}
+                      </small>
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         </div>
-      </section>
-
-      <section className="dash-footnote">
-        <span>
-          Signed in as {user.display_name}
-          {user.username ? ` · @${user.username}` : ""} · {user.email} ·{" "}
-          <Link to="/user/profile">Profile</Link>
-          {" · "}
-          <Link to="/user/settings">Settings</Link>
-        </span>
       </section>
     </main>
   );
