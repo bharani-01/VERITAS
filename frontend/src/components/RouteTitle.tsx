@@ -24,6 +24,7 @@ function titleForPath(pathname: string): string {
 
   if (pathname.startsWith("/admin/directory")) return "Directory";
   if (pathname.startsWith("/admin/audit")) return "Audit";
+  if (pathname.startsWith("/admin/security")) return "Security";
   if (pathname.startsWith("/admin/profile")) return "Profile";
   if (pathname.startsWith("/admin/settings")) return "Settings";
   if (pathname === "/admin" || pathname === "/admin/") return "Admin";

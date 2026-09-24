@@ -1,5 +1,7 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { RouteTitle } from "./components/RouteTitle";
+import { LoadingMark } from "./components/LoadingMark";
 import { AdminAuditPage } from "./admin/AdminAuditPage";
 import { AdminDashboardPage } from "./admin/AdminDashboardPage";
 import { AdminProfilePage } from "./admin/AdminProfilePage";
@@ -23,6 +25,10 @@ import { UserScansPage } from "./user/UserScansPage";
 import { UserSettingsPage } from "./user/UserSettingsPage";
 import { UserShell } from "./user/UserShell";
 
+const AdminSecurityPage = lazy(() =>
+  import("./admin/AdminSecurityPage").then((m) => ({ default: m.AdminSecurityPage }))
+);
+
 export default function App() {
   return (
     <>
@@ -40,6 +46,14 @@ export default function App() {
         <Route path="/admin/" element={<AdminDashboardPage />} />
         <Route path="/admin/directory" element={<AdminUsersPage />} />
         <Route path="/admin/audit" element={<AdminAuditPage />} />
+        <Route
+          path="/admin/security"
+          element={
+            <Suspense fallback={<LoadingMark label="Loading security…" />}>
+              <AdminSecurityPage />
+            </Suspense>
+          }
+        />
         <Route path="/admin/profile" element={<AdminProfilePage />} />
         <Route path="/admin/settings" element={<AdminSettingsPage />} />
       </Route>

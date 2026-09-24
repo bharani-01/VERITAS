@@ -33,11 +33,19 @@ Login is blocked unless status is `active`.
 - Server-side `audit_events` table; append-only (no update/delete API)
 - Written after security-relevant actions: auth (login success/fail/block, logout, signup, verify, reset), **admin lifecycle** (approve/reject/deactivate/profile), workspace (project CRUD, scan start, GitHub connect/disconnect/failures, foreign-repo reject)
 - Each event stores a rich `context_json` answering who / what / when / where / how (including HTTP `status_code` such as 200 / 401 / 429)
+- API derives a display `severity` (`info`–`critical`) from action + status for the admin Audit UI
 - Where: IP + multi-provider geolocation consensus (`ip-api`, `ipwho.is`, `ipapi.co`), cached per process; private/localhost IPs skipped
 - Rate-limit blocks (`429`) are audited as `rate_limited`
-- Does **not** log every HTTP request or every SQL query (noise, PII risk, performance)
-- Admin UI: `/admin/audit` via `GET /admin/audit-events` (filters, infinite scroll, response status column)
-- Never stores passwords or raw tokens
+- Does **not** log every HTTP request or every SQL query into `audit_events` (noise, PII risk, performance)
+- Admin UI: `/admin/audit` via `GET /admin/audit-events` (filters including severity, infinite scroll, response code column)
+
+## HTTP telemetry (Security dashboard)
+
+- Separate `http_request_events` table for **metadata-only** live collection of application API routes (`/auth`, `/admin`, `/workspace`, `/webhooks`, `/health`)
+- Middleware classifies path/query heuristics for SQLi / XSS / CSRF / auth anomalies; never stores bodies, cookies, passwords, or tokens (query secret params redacted)
+- Admin APIs: `GET /admin/http-requests`, `GET /admin/security-overview` (Safe / Warning / Critical + volume buckets + countermeasure tips)
+- Admin UI: `/admin/security` with ApexCharts live graphs; retention capped (~7 days / 50k rows)
+- Detection only — does not block requests (not a WAF)
 
 ## Rate limiting
 

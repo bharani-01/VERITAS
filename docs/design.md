@@ -9,7 +9,7 @@
 | Area | Path | Ownership |
 |------|------|-----------|
 | Auth | `/`, `/signup`, `/forgot`, `/reset`, `/verify` | Public |
-| Admin | `/admin/`, `/admin/directory`, `/admin/profile` | `frontend/src/admin/` |
+| Admin | `/admin/`, `/admin/directory`, `/admin/audit`, `/admin/security`, `/admin/profile` | `frontend/src/admin/` |
 | User | `/user/`, `/user/projects`, `/user/projects/new`, `/user/scans`, `/user/profile` | `frontend/src/user/` |
 
 No shared admin/user UI components. Shared `lib/` helpers OK.

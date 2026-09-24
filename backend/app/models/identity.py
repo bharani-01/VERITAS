@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.time import utcnow
@@ -65,6 +65,24 @@ class AuditEvent(Base):
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
     context_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class HttpRequestEvent(Base):
+    """Metadata-only HTTP telemetry for the admin Security dashboard (no bodies/secrets)."""
+
+    __tablename__ = "http_request_events"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    method: Mapped[str] = mapped_column(String(16), index=True)
+    path: Mapped[str] = mapped_column(String(512), index=True)
+    status_code: Mapped[int] = mapped_column(Integer, index=True)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    user_agent: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    classification: Mapped[str] = mapped_column(String(32), default="clean", index=True)
+    severity: Mapped[str] = mapped_column(String(16), default="info", index=True)
+    signals: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 

@@ -19,6 +19,7 @@ from app.core.time import to_iso_utc
 from app.models import Base, User
 from app.services.auth import bootstrap_admin, ensure_schema
 from app.services.github import github_config_report
+from app.services.http_middleware import HttpTelemetryMiddleware
 from app.services.scan_runner import ensure_scan_worker
 from app.services.tokens import issue_token
 from app.web.routes import mount_static, router as web_router
@@ -43,6 +44,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="VERITAS Identity API", version="0.2.0", lifespan=lifespan)
+app.add_middleware(HttpTelemetryMiddleware)
 mount_static(app)
 
 

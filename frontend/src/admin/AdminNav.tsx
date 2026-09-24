@@ -23,6 +23,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
   const dashActive = pathname === "/admin" || pathname === "/admin/";
   const usersActive = pathname.startsWith("/admin/directory");
   const auditActive = pathname.startsWith("/admin/audit");
+  const securityActive = pathname.startsWith("/admin/security");
   const [menuOpen, setMenuOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<number | null>(null);
@@ -114,6 +115,18 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
           <path d="M5 20h7" />
         </svg>
         <span className="nav-link-text">Audit</span>
+      </Link>
+      <Link
+        className={`nav-link ${securityActive ? "active" : ""}`}
+        to="/admin/security"
+        aria-label="Security"
+        aria-current={securityActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6l-8-3z" />
+          <path d="M9.5 12.2 11.2 14l3.5-4" />
+        </svg>
+        <span className="nav-link-text">Security</span>
       </Link>
 
       <div className={`nav-account ${menuOpen ? "open" : ""}`} ref={wrapRef}>

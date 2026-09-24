@@ -34,7 +34,7 @@ VERITAS-Infosec/
 ## Single-server request flow
 
 1. Browser hits FastAPI on one origin (e.g. `:8000`).
-2. Page routes (`/`, `/admin/`, `/admin/directory`, `/admin/audit`, `/user/projects`, …) return the React `index.html`.
+2. Page routes (`/`, `/admin/`, `/admin/directory`, `/admin/audit`, `/admin/security`, `/user/projects`, …) return the React `index.html`.
 3. JS/CSS load from `/assets/*` (Vite build hashed files).
 4. React calls `/auth/*`, `/admin/*`, and `/workspace/*` JSON APIs with same-origin cookies.
    - New project Advanced loads branches via `GET /workspace/github/repos/{repo_id}/refs` (ownership re-checked server-side before listing refs).
@@ -54,6 +54,7 @@ Transactional HTML lives in `backend/app/services/email_templates.py` (shared la
 | `auth_sessions` | Hashed session tokens |
 | `one_time_tokens` | Email verify / password reset (hashed) |
 | `audit_events` | Admin/user action trail |
+| `http_request_events` | Metadata-only HTTP telemetry (method/path/status/classification/severity; no bodies) |
 | `email_deliveries` | Outbound email status |
 | `projects` | User-owned workspace projects (Phase 2) + auto_scan_on_push / auto_scan_branch / webhook fields (Phase 5) |
 | `scans` | Scan records + Phase 3/4 async engines (progress, ETA, scope, cancel) |

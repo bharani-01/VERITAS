@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func, select
@@ -11,11 +12,13 @@ from app.api.deps import require_admin
 from app.core.database import db_session
 from app.core.security import normalize_email
 from app.core.time import utcnow
-from app.models import AuditEvent, AuthSession, GitHubConnection, Project, Scan, User
+from app.models import AuditEvent, AuthSession, GitHubConnection, HttpRequestEvent, Project, Scan, User
 from app.schemas import UserPatch
-from app.services.audit import audit, public_user, snapshot
+from app.services.audit import audit, audit_severity, public_user, snapshot
 from app.services.auth import active_admin_count
 from app.services.email import send_account_status, send_token_email
+from app.services.http_classifier import COUNTERMEASURES
+from app.services.http_traffic import serialize_http_event
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -284,6 +287,7 @@ def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
         location_label = geo.get("label")
         if not location_label and geo.get("skipped"):
             location_label = "Local network" if geo.get("reason") == "private_or_local" else "Unavailable"
+    severity = audit_severity(event.action, status_code if isinstance(status_code, int) else None)
     return {
         "id": event.id,
         "actor_user_id": event.actor_user_id,
@@ -293,6 +297,7 @@ def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
         "action": event.action,
         "summary": summary or event.action.replace("_", " "),
         "status_code": status_code,
+        "severity": severity,
         "before_state": event.before_state,
         "after_state": event.after_state,
         "ip_address": event.ip_address,
@@ -332,6 +337,7 @@ def list_audit_events(
     target_id: str | None = None,
     action: str | None = None,
     category: str | None = None,
+    severity: str | None = None,
     page: int = 1,
     page_size: int = 50,
     since: str | None = None,
@@ -391,6 +397,26 @@ def list_audit_events(
 
     limit = min(max(page_size, 1), 100)
     page = max(page, 1)
+    # Severity is derived at serialize time; when filtering, over-fetch then filter in Python.
+    if severity:
+        events_all = list(db.scalars(query.order_by(AuditEvent.created_at.desc()).limit(500)))
+        user_ids = {uid for event in events_all for uid in (event.actor_user_id, event.target_user_id) if uid}
+        users: dict[str, User] = {}
+        if user_ids:
+            users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(list(user_ids)))).all()}
+        serialized = [_serialize_audit_event(event, users) for event in events_all]
+        filtered = [item for item in serialized if item.get("severity") == severity]
+        total = len(filtered)
+        start = (page - 1) * limit
+        items = filtered[start : start + limit]
+        return {
+            "items": items,
+            "page": page,
+            "page_size": limit,
+            "total": total,
+            "server_time": utcnow(),
+        }
+
     total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
     events = list(db.scalars(query.order_by(AuditEvent.created_at.desc()).offset((page - 1) * limit).limit(limit)))
 
@@ -408,5 +434,161 @@ def list_audit_events(
     }
 
 
+@router.get("/http-requests")
+def list_http_requests(
+    severity: str | None = None,
+    classification: str | None = None,
+    page: int = 1,
+    page_size: int = 50,
+    since: str | None = None,
+    _: User = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    """Live HTTP telemetry feed (metadata only)."""
+    query = select(HttpRequestEvent)
+    if severity:
+        query = query.where(HttpRequestEvent.severity == severity)
+    if classification:
+        query = query.where(HttpRequestEvent.classification == classification)
+    if since:
+        try:
+            since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid since timestamp.") from None
+        query = query.where(HttpRequestEvent.created_at > since_dt)
 
-#
+    limit = min(max(page_size, 1), 100)
+    page = max(page, 1)
+    total = db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0
+    events = list(
+        db.scalars(query.order_by(HttpRequestEvent.created_at.desc()).offset((page - 1) * limit).limit(limit))
+    )
+    return {
+        "items": [serialize_http_event(event) for event in events],
+        "page": page,
+        "page_size": limit,
+        "total": total,
+        "server_time": utcnow(),
+    }
+
+
+@router.get("/security-overview")
+def security_overview(_: User = Depends(require_admin), db: Session = Depends(db_session)):
+    """Aggregates for the admin Security dashboard (live Safe/Warning/Critical)."""
+    now = utcnow()
+    window_15 = now - timedelta(minutes=15)
+    window_60 = now - timedelta(minutes=60)
+
+    recent_15 = list(
+        db.scalars(select(HttpRequestEvent).where(HttpRequestEvent.created_at >= window_15))
+    )
+    recent_60 = list(
+        db.scalars(
+            select(HttpRequestEvent)
+            .where(HttpRequestEvent.created_at >= window_60)
+            .order_by(HttpRequestEvent.created_at.asc())
+        )
+    )
+
+    by_severity: dict[str, int] = defaultdict(int)
+    by_class: dict[str, int] = defaultdict(int)
+    for event in recent_15:
+        by_severity[event.severity] += 1
+        by_class[event.classification] += 1
+
+    critical_n = by_severity.get("critical", 0)
+    high_n = by_severity.get("high", 0)
+    medium_n = by_severity.get("medium", 0)
+    suspect_n = sum(by_class.get(k, 0) for k in ("sqli", "xss", "csrf", "auth_anomaly"))
+
+    if critical_n > 0 or by_class.get("sqli", 0) > 0:
+        status = "critical"
+        reason = f"{critical_n or by_class.get('sqli', 0)} critical / SQLi signal(s) in the last 15 minutes"
+    elif high_n > 0 or medium_n > 0 or suspect_n > 0:
+        status = "warning"
+        reason = f"{suspect_n or high_n + medium_n} elevated request(s) in the last 15 minutes"
+    else:
+        status = "safe"
+        reason = "No suspicious HTTP patterns in the last 15 minutes"
+
+    # 1-minute buckets for the last hour
+    counts_by_minute: dict[str, int] = defaultdict(int)
+    for event in recent_60:
+        key = event.created_at.replace(second=0, microsecond=0).isoformat()
+        counts_by_minute[key] += 1
+    buckets = []
+    for i in range(60):
+        start = (window_60 + timedelta(minutes=i)).replace(second=0, microsecond=0)
+        key = start.isoformat()
+        buckets.append({"t": key, "count": counts_by_minute.get(key, 0)})
+
+    suspicious = list(
+        db.scalars(
+            select(HttpRequestEvent)
+            .where(
+                HttpRequestEvent.created_at >= window_15,
+                HttpRequestEvent.classification != "clean",
+            )
+            .order_by(HttpRequestEvent.created_at.desc())
+            .limit(20)
+        )
+    )
+    if len(suspicious) < 20:
+        extra = list(
+            db.scalars(
+                select(HttpRequestEvent)
+                .where(
+                    HttpRequestEvent.created_at >= window_15,
+                    HttpRequestEvent.severity.in_(["critical", "high", "medium"]),
+                )
+                .order_by(HttpRequestEvent.created_at.desc())
+                .limit(20)
+            )
+        )
+        seen = {e.id for e in suspicious}
+        for e in extra:
+            if e.id not in seen:
+                suspicious.append(e)
+            if len(suspicious) >= 20:
+                break
+
+    hit_families = [k for k in ("sqli", "xss", "csrf", "auth_anomaly") if by_class.get(k, 0) > 0]
+    countermeasures = {k: COUNTERMEASURES[k] for k in hit_families if k in COUNTERMEASURES}
+
+    user_count = db.scalar(select(func.count()).select_from(User)) or 0
+    audit_15 = (
+        db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= window_15)) or 0
+    )
+
+    return {
+        "status": status,
+        "reason": reason,
+        "window_minutes": 15,
+        "totals_15m": {
+            "requests": len(recent_15),
+            "suspicious": suspect_n,
+            "by_severity": {
+                "info": by_severity.get("info", 0),
+                "low": by_severity.get("low", 0),
+                "medium": by_severity.get("medium", 0),
+                "high": by_severity.get("high", 0),
+                "critical": by_severity.get("critical", 0),
+            },
+            "by_classification": {
+                "clean": by_class.get("clean", 0),
+                "sqli": by_class.get("sqli", 0),
+                "xss": by_class.get("xss", 0),
+                "csrf": by_class.get("csrf", 0),
+                "auth_anomaly": by_class.get("auth_anomaly", 0),
+            },
+        },
+        "volume_60m": buckets,
+        "recent_suspicious": [serialize_http_event(e) for e in suspicious[:20]],
+        "countermeasures": countermeasures,
+        "modules": {
+            "user_system": {"users": user_count, "audit_events_15m": audit_15},
+            "http_collection": {"requests_15m": len(recent_15), "requests_60m": len(recent_60)},
+            "detection": {"suspicious_15m": suspect_n},
+        },
+        "server_time": now,
+    }

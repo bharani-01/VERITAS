@@ -37,6 +37,7 @@ export type AuditEvent = {
   action: string;
   summary: string;
   status_code: number | null;
+  severity?: string | null;
   before_state: string | null;
   after_state: string | null;
   ip_address: string | null;
@@ -57,6 +58,7 @@ type AuditResponse = {
 };
 
 type Category = "" | "auth" | "auth_failures" | "admin" | "workspace";
+type SeverityFilter = "" | "info" | "low" | "medium" | "high" | "critical";
 
 const PAGE_SIZE = 40;
 
@@ -66,6 +68,15 @@ const FILTERS = [
   ["auth", "Auth"],
   ["admin", "Admin"],
   ["workspace", "Workspace"],
+] as const;
+
+const SEVERITY_FILTERS = [
+  ["", "Any severity"],
+  ["critical", "Critical"],
+  ["high", "High"],
+  ["medium", "Medium"],
+  ["low", "Low"],
+  ["info", "Info"],
 ] as const;
 
 function displayName(person: AuditUser | null | undefined, fallbackId: string | null) {
@@ -108,6 +119,14 @@ function statusTone(code: number | null | undefined): "ok" | "redirect" | "clien
   return "muted";
 }
 
+function severityTone(sev: string | null | undefined): string {
+  const s = (sev || "info").toLowerCase();
+  if (s === "critical" || s === "high") return s;
+  if (s === "medium" || s === "warn") return "medium";
+  if (s === "low") return "low";
+  return "info";
+}
+
 function formatTime(iso: string) {
   const d = parseUtc(iso) || new Date(NaN);
   return {
@@ -125,6 +144,7 @@ export function AdminAuditPage() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [category, setCategory] = useState<Category>("");
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("");
   const [actionFilter, setActionFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -134,10 +154,12 @@ export function AdminAuditPage() {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const categoryRef = useRef(category);
+  const severityRef = useRef(severityFilter);
   const actionRef = useRef(actionFilter);
   const loadingMoreRef = useRef(false);
 
   categoryRef.current = category;
+  severityRef.current = severityFilter;
   actionRef.current = actionFilter;
 
   const hasMore = items.length < total;
@@ -147,6 +169,7 @@ export function AdminAuditPage() {
     params.set("page", String(pageNum));
     params.set("page_size", String(PAGE_SIZE));
     if (categoryRef.current) params.set("category", categoryRef.current);
+    if (severityRef.current) params.set("severity", severityRef.current);
     if (actionRef.current.trim()) params.set("action", actionRef.current.trim());
     return `/admin/audit-events?${params.toString()}`;
   }, []);
@@ -171,7 +194,7 @@ export function AdminAuditPage() {
 
   useEffect(() => {
     void resetAndLoad();
-  }, [category, actionFilter, resetAndLoad]);
+  }, [category, severityFilter, actionFilter, resetAndLoad]);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading || !hasMore) return;
@@ -234,6 +257,9 @@ export function AdminAuditPage() {
               <h2 id="audit-detail-title">{selected.summary || selected.action.replace(/_/g, " ")}</h2>
               <p className="audit-modal-sub">
                 <span className={`audit-tone tone-${actionTone(selected.action)}`}>{selected.action}</span>
+                <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
+                  {(selected.severity || "info").toUpperCase()}
+                </span>
                 <span className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
                   {selected.status_code ?? selected.how?.status_code ?? "—"}
                 </span>
@@ -247,6 +273,24 @@ export function AdminAuditPage() {
 
           <div className="audit-modal-body">
             <div className="audit-detail-rows">
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Severity</div>
+                <div className="audit-detail-value">
+                  <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
+                    {(selected.severity || "info").toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Response code</div>
+                <div className="audit-detail-value">
+                  <b className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
+                    {selected.status_code ?? selected.how?.status_code ?? "—"}
+                  </b>
+                </div>
+              </div>
+
               <div className="audit-detail-row">
                 <div className="audit-detail-label">Actor</div>
                 <div className="audit-detail-value">
@@ -368,6 +412,19 @@ export function AdminAuditPage() {
             </button>
           ))}
         </div>
+        <div className="audit-seg" role="group" aria-label="Severity">
+          {SEVERITY_FILTERS.map(([id, label]) => (
+            <button
+              key={id || "sev-all"}
+              type="button"
+              aria-pressed={severityFilter === id}
+              className={severityFilter === id ? "active" : ""}
+              onClick={() => setSeverityFilter(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="audit-console-toolbar-right">
           <input
             type="search"
@@ -405,7 +462,8 @@ export function AdminAuditPage() {
                   <th>Time</th>
                   <th>Actor</th>
                   <th>Action</th>
-                  <th>Status</th>
+                  <th>Severity</th>
+                  <th>Code</th>
                   <th>Target</th>
                   <th>Location</th>
                   <th>Client</th>
@@ -441,6 +499,11 @@ export function AdminAuditPage() {
                         <span className="audit-action-cell">
                           <span className={`audit-tone tone-${tone}`}>{event.summary}</span>
                           <code>{event.action}</code>
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`audit-sev sev-${severityTone(event.severity)}`}>
+                          {(event.severity || "info").toUpperCase()}
                         </span>
                       </td>
                       <td>

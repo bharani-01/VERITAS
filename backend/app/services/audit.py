@@ -70,6 +70,34 @@ def action_summary(action: str) -> str:
     return _ACTION_SUMMARIES.get(action, action.replace("_", " ").capitalize())
 
 
+def audit_severity(action: str, status_code: int | None = None) -> str:
+    """Derive display severity for audit events (identity trail, not HTTP corpus)."""
+    if action in ("login_failed", "login_blocked_status", "github_oauth_failed", "github_repo_rejected"):
+        return "high"
+    if action == "rate_limited":
+        return "medium"
+    if action in ("user_rejected", "user_deactivated"):
+        return "medium"
+    if action in ("logout", "project_deleted", "github_disconnected"):
+        return "low"
+    if status_code is not None:
+        if status_code >= 500:
+            return "medium"
+        if status_code >= 400:
+            return "low"
+    if action in (
+        "login_succeeded",
+        "user_approved",
+        "user_reactivated",
+        "github_connected",
+        "project_created",
+        "scan_started",
+        "email_verified",
+    ):
+        return "info"
+    return "info"
+
+
 def _client_ip(request: Request | None) -> tuple[str | None, str | None]:
     if not request:
         return None, None
