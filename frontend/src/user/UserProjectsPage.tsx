@@ -1,10 +1,89 @@
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import { findingsCountLabel, relativeTime, shortCommit } from "../lib/scanDisplay";
 import type { Project, Scan } from "../lib/workspace";
 import { ScanHistoryList } from "./ScanHistoryList";
+
+function ProjectRowMenu({
+  projectName,
+  onOpen,
+  onDelete,
+}: {
+  projectName: string;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className={`project-menu ${open ? "open" : ""}`} ref={wrapRef}>
+      <button
+        type="button"
+        className="project-menu-trigger"
+        aria-label={`Actions for ${projectName}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="5" r="1.6" fill="currentColor" />
+          <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+          <circle cx="12" cy="19" r="1.6" fill="currentColor" />
+        </svg>
+      </button>
+      {open ? (
+        <div className="project-menu-panel" role="menu" aria-label={`Actions for ${projectName}`}>
+          <button
+            type="button"
+            className="project-menu-item"
+            role="menuitem"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+              onOpen();
+            }}
+          >
+            Open
+          </button>
+          <button
+            type="button"
+            className="project-menu-item danger"
+            role="menuitem"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(false);
+              onDelete();
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 /** Flat Render-style projects index — same language as New project. */
 export function UserProjectsPage() {
@@ -39,9 +118,7 @@ export function UserProjectsPage() {
     return () => window.clearInterval(id);
   }, [recentScans]);
 
-  async function onDelete(id: string, e: MouseEvent) {
-    e.stopPropagation();
-    e.preventDefault();
+  async function onDelete(id: string) {
     if (!confirm("Delete this project and its scans?")) return;
     try {
       await api(`/workspace/projects/${id}`, { method: "DELETE" });
@@ -182,20 +259,17 @@ export function UserProjectsPage() {
                               ) : (
                                 <>
                                   <span aria-hidden="true">·</span>
-                                  <span>No scans yet — open to run one</span>
+                                  <span>No scans yet</span>
                                 </>
                               )}
                             </span>
                           </span>
-                          <span className="project-item-open">Open</span>
                         </button>
-                        <button
-                          type="button"
-                          className="np-text-btn project-item-delete"
-                          onClick={(e) => onDelete(project.id, e)}
-                        >
-                          Delete
-                        </button>
+                        <ProjectRowMenu
+                          projectName={project.name}
+                          onOpen={() => navigate(`/user/projects/${project.id}`)}
+                          onDelete={() => void onDelete(project.id)}
+                        />
                       </li>
                     );
                   })}

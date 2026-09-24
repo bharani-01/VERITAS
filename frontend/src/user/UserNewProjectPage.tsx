@@ -1,18 +1,19 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import type { GitHubRepo, GitHubStatus, GitRef, Project } from "../lib/workspace";
 
 /**
- * Create-from-GitHub flow (Vercel / Semgrep style):
+ * Create-from-GitHub flow:
  * 1) Connect GitHub if needed
- * 2) Search + pick an owned repo
- * 3) Name the project → Create (advanced collapsed)
+ * 2) Search + pick an owned repo (list collapses once selected)
+ * 3) Name the project → Create (optional settings collapsed)
  */
 export function UserNewProjectPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [gh, setGh] = useState<GitHubStatus | null>(null);
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [repoQuery, setRepoQuery] = useState("");
@@ -101,6 +102,12 @@ export function UserNewProjectPage() {
     };
   }, [selectedRepo]);
 
+  useEffect(() => {
+    if (!selectedRepo) return;
+    const id = window.requestAnimationFrame(() => nameInputRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+  }, [selectedRepo?.id]);
+
   function connectGithub() {
     window.location.href = "/workspace/github/authorize";
   }
@@ -113,6 +120,7 @@ export function UserNewProjectPage() {
       setMessage("GitHub disconnected.");
       setGithubRepoId("");
       setName("");
+      setDescription("");
       setShowAdvanced(false);
       await loadGithub();
     } catch (err) {
@@ -126,6 +134,15 @@ export function UserNewProjectPage() {
     setGithubRepoId(String(repo.id));
     setName(repo.name);
     if (repo.description) setDescription(repo.description.slice(0, 2000));
+    setError(null);
+    setRepoQuery("");
+  }
+
+  function clearRepo() {
+    setGithubRepoId("");
+    setName("");
+    setDescription("");
+    setShowAdvanced(false);
     setError(null);
   }
 
@@ -174,6 +191,7 @@ export function UserNewProjectPage() {
   const githubReady = !!gh?.configured && !!gh.connected && !gh.needs_reauth;
   const defaultBranch = selectedRepo?.default_branch || "main";
   const canCreate = !!githubRepoId && !!name.trim() && !busy;
+  const step = !githubReady ? 1 : selectedRepo ? 3 : 2;
 
   return (
     <main className="admin-main new-project-page">
@@ -184,9 +202,30 @@ export function UserNewProjectPage() {
             <span aria-hidden="true">/</span>
             <span>New</span>
           </nav>
-          <h1>Import Git repository</h1>
-          <p>Connect GitHub, pick a repo you own, then create a VERITAS project to scan it.</p>
+          <h1>New project</h1>
+          <p>Import a GitHub repo you own. VERITAS will scan it for secrets, dependencies, and code issues.</p>
         </header>
+
+        <ol className="np-progress" aria-label="Create project steps">
+          <li className={step >= 1 ? (step === 1 ? "is-current" : "is-done") : ""}>
+            <span className="np-progress-num" aria-hidden="true">
+              1
+            </span>
+            <span>Connect</span>
+          </li>
+          <li className={step >= 2 ? (step === 2 ? "is-current" : "is-done") : ""}>
+            <span className="np-progress-num" aria-hidden="true">
+              2
+            </span>
+            <span>Choose repo</span>
+          </li>
+          <li className={step >= 3 ? (step === 3 ? "is-current" : "is-done") : ""}>
+            <span className="np-progress-num" aria-hidden="true">
+              3
+            </span>
+            <span>Create</span>
+          </li>
+        </ol>
 
         {message ? (
           <div className="notice success" role="status">
@@ -218,7 +257,7 @@ export function UserNewProjectPage() {
             <p>
               {gh.needs_reauth
                 ? "Your GitHub authorization expired or is missing repo access. Reconnect, then choose a repository."
-                : "VERITAS only links repositories you own. Connect once, then pick a repo on the next step."}
+                : "One-time connect. You’ll only see repositories you own."}
             </p>
             <button type="button" className="btn" onClick={connectGithub}>
               {gh.needs_reauth ? "Reconnect GitHub" : "Connect GitHub"}
@@ -240,7 +279,10 @@ export function UserNewProjectPage() {
                 )}
                 <div>
                   <strong>GitHub</strong>
-                  <span>Connected as @{gh.github_login}</span>
+                  <span>
+                    Connected as @{gh.github_login}
+                    {repos.length ? ` · ${repos.length} owned repo${repos.length === 1 ? "" : "s"}` : ""}
+                  </span>
                 </div>
               </div>
               <button
@@ -256,80 +298,98 @@ export function UserNewProjectPage() {
 
             <section className="np-step" aria-labelledby="np-repo-heading">
               <div className="np-step-head">
-                <h2 id="np-repo-heading">1. Choose a repository</h2>
-                <p>Search your owned repos, then select one to import.</p>
+                <h2 id="np-repo-heading">Choose a repository</h2>
+                <p>Only repositories you own are listed.</p>
               </div>
-              <input
-                className="np-input np-search"
-                type="search"
-                value={repoQuery}
-                onChange={(e) => setRepoQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.preventDefault();
-                }}
-                placeholder="Search repositories…"
-                autoComplete="off"
-                autoFocus
-                aria-label="Search repositories"
-              />
-              {!filteredRepos.length ? (
-                <p className="np-empty">
-                  {repoQuery ? "No repositories match that search." : "No owned repositories found on this account."}
-                </p>
+
+              {selectedRepo ? (
+                <div className="np-selected-repo">
+                  <div className="np-selected-repo-body">
+                    <span className="np-selected-check" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d="M20 6 9 17l-5-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                    <div>
+                      <strong>{selectedRepo.full_name}</strong>
+                      <span>
+                        {selectedRepo.private ? "Private" : "Public"}
+                        {selectedRepo.default_branch ? ` · ${selectedRepo.default_branch}` : ""}
+                      </span>
+                    </div>
+                  </div>
+                  <button type="button" className="np-text-btn" onClick={clearRepo}>
+                    Change
+                  </button>
+                </div>
               ) : (
-                <ul className="np-repos" aria-label="Repositories">
-                  {filteredRepos.map((repo) => {
-                    const selected = String(repo.id) === githubRepoId;
-                    return (
-                      <li key={repo.id}>
-                        <button
-                          type="button"
-                          aria-pressed={selected}
-                          className={`np-repo ${selected ? "is-selected" : ""}`}
-                          onClick={() => pickRepo(repo)}
-                        >
-                          <span className="np-repo-mark" aria-hidden="true">
-                            {selected ? (
-                              <svg viewBox="0 0 24 24">
-                                <path
-                                  d="M20 6 9 17l-5-5"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            ) : null}
-                          </span>
-                          <span className="np-repo-body">
-                            <span className="np-repo-name">{repo.full_name}</span>
-                            <span className="np-repo-meta">
-                              {repo.private ? "Private" : "Public"}
-                              {repo.default_branch ? ` · ${repo.default_branch}` : ""}
+                <>
+                  <input
+                    className="np-input np-search"
+                    type="search"
+                    value={repoQuery}
+                    onChange={(e) => setRepoQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.preventDefault();
+                    }}
+                    placeholder="Search your repositories…"
+                    autoComplete="off"
+                    autoFocus
+                    aria-label="Search repositories"
+                  />
+                  {!filteredRepos.length ? (
+                    <div className="np-empty-block">
+                      <p className="np-empty">
+                        {repoQuery
+                          ? "No repositories match that search."
+                          : "No owned repositories found on this account."}
+                      </p>
+                      {!repoQuery ? (
+                        <p className="np-empty-hint">
+                          Create a repo on GitHub first, or reconnect if the wrong account is linked.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <ul className="np-repos" aria-label="Repositories">
+                      {filteredRepos.map((repo) => (
+                        <li key={repo.id}>
+                          <button type="button" className="np-repo" onClick={() => pickRepo(repo)}>
+                            <span className="np-repo-mark" aria-hidden="true" />
+                            <span className="np-repo-body">
+                              <span className="np-repo-name">{repo.full_name}</span>
+                              <span className="np-repo-meta">
+                                {repo.private ? "Private" : "Public"}
+                                {repo.default_branch ? ` · ${repo.default_branch}` : ""}
+                              </span>
                             </span>
-                          </span>
-                          {selected ? <span className="np-repo-picked">Selected</span> : null}
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </>
               )}
             </section>
 
             {selectedRepo ? (
               <section className="np-step np-step-config" aria-labelledby="np-config-heading">
                 <div className="np-step-head">
-                  <h2 id="np-config-heading">2. Configure project</h2>
-                  <p>
-                    Importing <code>{selectedRepo.full_name}</code>
-                  </p>
+                  <h2 id="np-config-heading">Name your project</h2>
+                  <p>You can change this later. Scans start from the project page.</p>
                 </div>
 
                 <label className="np-field">
                   <span>Project name</span>
                   <input
+                    ref={nameInputRef}
                     className="np-input"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
@@ -364,7 +424,7 @@ export function UserNewProjectPage() {
                         onChange={(e) => setDescription(e.target.value)}
                         maxLength={2000}
                         rows={3}
-                        placeholder="Optional"
+                        placeholder="Optional notes for your team"
                       />
                     </label>
                     <label className="np-check">
@@ -403,7 +463,7 @@ export function UserNewProjectPage() {
                 ) : null}
               </section>
             ) : (
-              <p className="np-next-hint">Select a repository above to continue.</p>
+              <p className="np-next-hint">Select a repository above to name your project and create it.</p>
             )}
 
             <div className="np-actions">

@@ -80,7 +80,7 @@ export function UserDashboardPage() {
         <div className="dash-panel">
           <div className="dash-panel-head">
             <h2>Recent scans</h2>
-            <Link to="/user/projects">Projects</Link>
+            <Link to="/user/projects">View projects</Link>
           </div>
           {!data.recent_scans.length ? (
             <div className="empty-state compact">
@@ -109,7 +109,7 @@ export function UserDashboardPage() {
 
         <div className="dash-panel">
           <div className="dash-panel-head">
-            <h2>Your identity</h2>
+            <h2>Identity</h2>
             <Link to="/user/profile">Manage</Link>
           </div>
           <div className="dash-identity">

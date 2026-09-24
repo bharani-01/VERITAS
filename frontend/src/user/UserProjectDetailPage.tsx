@@ -21,12 +21,6 @@ export function UserProjectDetailPage() {
   const [engines, setEngines] = useState({ gitleaks: true, osv: true, semgrep: true });
   const [pathExcludes, setPathExcludes] = useState("node_modules/**\nvendor/**\ndist/**");
   const [failSeverity, setFailSeverity] = useState<"off" | "critical" | "high" | "medium">("off");
-  const [compare, setCompare] = useState<{
-    added: number;
-    removed: number;
-    unchanged: number;
-  } | null>(null);
-  const [compareBusy, setCompareBusy] = useState(false);
   const [scanRef, setScanRef] = useState("");
   const [gitRefs, setGitRefs] = useState<GitRef[]>([]);
   const [notifyEmail, setNotifyEmail] = useState(true);
@@ -152,35 +146,6 @@ export function UserProjectDetailPage() {
       await load();
     } catch (err) {
       setError((err as Error).message);
-    }
-  }
-
-  async function compareLatest() {
-    if (!projectId) return;
-    const completed = scans.filter((s) => s.status === "completed" || (s.status === "failed" && s.summary?.policy_failed));
-    if (completed.length < 2) {
-      setError("Need at least two finished scans to compare.");
-      return;
-    }
-    const [newer, older] = completed;
-    setCompareBusy(true);
-    setError(null);
-    try {
-      const data = await api<{
-        added?: unknown[];
-        removed?: unknown[];
-        unchanged?: unknown[];
-        counts?: { added?: number; removed?: number; unchanged?: number };
-      }>(`/workspace/projects/${projectId}/scans/compare?a=${older.id}&b=${newer.id}`);
-      setCompare({
-        added: data.counts?.added ?? (data.added || []).length,
-        removed: data.counts?.removed ?? (data.removed || []).length,
-        unchanged: data.counts?.unchanged ?? (data.unchanged || []).length,
-      });
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setCompareBusy(false);
     }
   }
 
@@ -326,26 +291,12 @@ export function UserProjectDetailPage() {
               <button
                 type="button"
                 className="btn ghost"
-                disabled={compareBusy || scans.length < 2}
-                onClick={() => void compareLatest()}
-              >
-                {compareBusy ? "Comparing…" : "Compare latest"}
-              </button>
-              <button
-                type="button"
-                className="btn ghost"
                 aria-expanded={showAdvanced}
                 onClick={() => setShowAdvanced((v) => !v)}
               >
                 {showAdvanced ? "Hide advanced" : "Advanced"}
               </button>
             </form>
-            {compare ? (
-              <p className="np-hint">
-                Compare: <strong>{compare.added}</strong> added · <strong>{compare.removed}</strong> removed ·{" "}
-                <strong>{compare.unchanged}</strong> unchanged
-              </p>
-            ) : null}
           </div>
         </section>
 

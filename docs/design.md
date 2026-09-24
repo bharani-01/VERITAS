@@ -2,7 +2,7 @@
 
 ## Direction
 
-**Render-style dark only** — flat canvas, hairline dividers, dense Inter UI. No light/miro themes. No card chrome.
+**Railway / Render-style dark only** — near-black canvas, hairline dividers, dense Inter UI, solid accent active states. No light/miro themes. Prefer sectioned surfaces over separate card chrome.
 
 ## Surfaces
 
@@ -22,21 +22,25 @@ No shared admin/user UI components. Shared `lib/` helpers OK.
 | Body | 14px / 400 | Dense product UI |
 | `--font-ui` / `--font-display` | `"Inter Variable", "Inter", system stack` | Same face everywhere |
 | `--font-mono` | System UI mono stack | SHAs, code, IDs |
-| `--bg` | `#111111` | Canvas |
-| `--bg-deep` | `#0a0a0a` | Nav / insets |
-| `--ink` | `#ededed` | Primary text |
-| `--muted` | `#8b8b8b` | Secondary text |
-| `--line` | `#2a2a2a` | Hairline dividers |
-| `--accent` | `#4f8cff` | Links / primary actions |
-| `--ok` | `#46a758` | Success |
+| `--bg` | `#0c0c0c` | Canvas |
+| `--bg-deep` / `--nav-bg` | `#080808` | Nav / deep insets |
+| `--surface` | `#0f0f0f` | Section fills |
+| `--ink` | `#f2f2f2` | Primary text |
+| `--muted` | `#8a8a8a` | Secondary text / uppercase labels |
+| `--line` | `#262626` | Hairline dividers |
+| `--accent` | `#4f8cff` | Primary actions + active nav |
+| `--ok` | `#3ecf8e` | Success / completed |
 
 ## Rules
 
 1. Dark theme only (`applyTheme("dark")`).
-2. Prefer hairline separators over bordered cards/boxes.
-3. No purple gradients, glow stacks, or decorative grid motifs.
-4. Projects index and project detail use flat `np-*` / `projects-wrap` language. **New project** is a progressive import flow (gate → search/select repo → configure → create); optional settings stay collapsed.
-5. Typography: Inter Variable is self-hosted (not Google `@import`) so the face loads with the SPA and matches across browsers. Forms inherit body font.
-6. App shell pages use full content width (including New project `.np-flow`). Settings/profile forms use Render-style rows (`.rr-row`: title left, controls right; stacks under 760px). Auth marketing column stays as designed.
-7. Accessibility baseline: skip link to `#main-content`, visible `:focus-visible` rings, dark-theme `.notice` / `.badge` / audit tones, labeled collapsed nav, no nested interactive controls in scan history.
-8. Update this file when tokens change.
+2. Prefer hairline separators and unified section frames over scattered bordered cards.
+3. No purple gradients, glow stacks, or decorative grid motifs — keep VERITAS blue.
+4. Active nav uses a **solid accent fill** (white text), not a faint tint.
+5. Uppercase micro-labels (eyebrows, table headers, panel titles) use muted ink + wide tracking.
+6. Resource names underline on hover; status uses compact pills (completed / running / failed).
+7. Projects index and project detail use flat `np-*` / `projects-wrap` language. **New project** is a progressive import flow (gate → search/select repo → configure → create); optional settings stay collapsed.
+8. Typography: Inter Variable is self-hosted (not Google `@import`) so the face loads with the SPA and matches across browsers. Forms inherit body font.
+9. App shell pages use full content width (including New project `.np-flow`). Settings/profile forms use Render-style rows (`.rr-row`: title left, controls right; stacks under 760px). Auth marketing column stays as designed.
+10. Accessibility baseline: skip link to `#main-content`, visible `:focus-visible` rings, dark-theme `.notice` / `.badge` / audit tones, labeled collapsed nav, no nested interactive controls in scan history.
+11. Update this file when tokens change.
