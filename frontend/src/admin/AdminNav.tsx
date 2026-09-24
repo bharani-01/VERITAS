@@ -14,7 +14,7 @@ type Props = {
 function BrandMark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      <img src="/brand/veritas-mark.png" alt="" width={28} height={28} decoding="async" />
+      <img src="/brand/veritas-mark.jpg" alt="" width={28} height={28} decoding="async" />
     </span>
   );
 }

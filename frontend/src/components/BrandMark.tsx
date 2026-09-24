@@ -15,7 +15,7 @@ export function BrandMark({ size = "md", className = "" }: BrandMarkProps) {
   const px = SIZE[size];
   return (
     <span className={`brand-mark brand-mark-${size} ${className}`.trim()} aria-hidden="true">
-      <img src="/brand/veritas-mark.png" alt="" width={px} height={px} decoding="async" />
+      <img src="/brand/veritas-mark.jpg" alt="" width={px} height={px} decoding="async" />
     </span>
   );
 }
@@ -25,7 +25,7 @@ export function BrandLockup({ className = "" }: { className?: string }) {
   return (
     <img
       className={`brand-lockup ${className}`.trim()}
-      src="/brand/veritas-lockup.png"
+      src="/brand/veritas-lockup.jpg"
       alt="VERITAS — Vulnerability Scanner"
       width={280}
       height={280}

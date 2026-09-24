@@ -37,12 +37,12 @@ Source lockup lives under `frontend/public/brand/`. Use the right crop for each 
 
 | Asset | Path | Use |
 |------|------|-----|
-| V mark | `/brand/veritas-mark.png` | Nav, compact headers (`BrandMark`) |
-| Full lockup | `/brand/veritas-lockup.png` | Auth pane / splash (`BrandLockup`) |
-| Splash stack | `/brand/veritas-splash.png` | Optional marketing / loading |
-| App icon | `/brand/veritas-app-icon.png` | Large square mark |
-| Favicon | `/favicon.png` | Browser tab |
-| Apple touch | `/apple-touch-icon.png` | iOS home screen |
+| V mark | `/brand/veritas-mark.jpg` | Nav, compact headers (`BrandMark`) |
+| Full lockup | `/brand/veritas-lockup.jpg` | Auth pane / splash (`BrandLockup`) |
+| Splash stack | `/brand/veritas-splash.jpg` | Optional marketing / loading |
+| App icon | `/brand/veritas-app-icon.jpg` | Large square mark |
+| Favicon | `/favicon.jpg` | Browser tab |
+| Apple touch | `/apple-touch-icon.jpg` | iOS home screen |
 
 Do not redraw the mark as a generic triangle SVG.
 

@@ -27,6 +27,9 @@ def mount_static(app: FastAPI) -> None:
     """Serve the React build (preferred) or legacy static trees before first build."""
     if spa_ready() and SPA_ASSETS.exists():
         app.mount("/assets", StaticFiles(directory=SPA_ASSETS), name="spa-assets")
+        brand_dir = SPA_DIR / "brand"
+        if brand_dir.exists():
+            app.mount("/brand", StaticFiles(directory=brand_dir), name="spa-brand")
         return
     auth_dir = LEGACY_STATIC["auth"]
     if auth_dir.exists():
@@ -58,6 +61,27 @@ def spa_or_legacy(page: str):
             detail="Frontend build missing. Run: cd frontend && npm run build",
         )
     return FileResponse(target)
+
+
+@router.get("/favicon.jpg")
+@router.get("/favicon.png")
+@router.get("/favicon.ico")
+def favicon():
+    for name in ("favicon.jpg", "favicon.png", "favicon.ico"):
+        path = SPA_DIR / name
+        if path.exists():
+            return FileResponse(path)
+    raise HTTPException(status_code=404, detail="Favicon not found.")
+
+
+@router.get("/apple-touch-icon.png")
+@router.get("/apple-touch-icon.jpg")
+def apple_touch_icon():
+    for name in ("apple-touch-icon.jpg", "apple-touch-icon.png"):
+        path = SPA_DIR / name
+        if path.exists():
+            return FileResponse(path)
+    raise HTTPException(status_code=404, detail="Apple touch icon not found.")
 
 
 @router.get("/")
