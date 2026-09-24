@@ -220,15 +220,17 @@ export function AdminSecurityPage() {
       plotOptions: {
         pie: {
           donut: {
-            size: "74%",
+            size: "72%",
             labels: {
               show: true,
-              name: { show: true, fontSize: "11px", color: "#64748b", offsetY: 12 },
-              value: { show: true, fontSize: "1.35rem", fontWeight: 700, color: "#0f172a", offsetY: -8 },
+              name: { show: false },
+              value: { show: false },
               total: {
                 show: true,
-                label: "15m",
+                showAlways: true,
+                label: "requests",
                 fontSize: "11px",
+                fontWeight: 600,
                 color: "#64748b",
                 formatter: () => String(classTotal),
               },
@@ -362,7 +364,7 @@ export function AdminSecurityPage() {
           <div className="sec-panel">
             <div className="sec-panel-head">
               <h2>Classification</h2>
-              <span>15m</span>
+              <span>{classTotal} · 15m</span>
             </div>
             <Chart options={classOptions} series={classSeries} type="donut" height={210} />
           </div>
