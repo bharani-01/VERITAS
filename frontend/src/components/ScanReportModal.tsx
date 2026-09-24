@@ -224,9 +224,8 @@ export function ScanReportModal({
 
   async function copyShare() {
     if (!shareUrl) return;
-    const text = `${caption}\n${shareUrl}`;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(shareUrl);
       setCopied(true);
     } catch {
       setShareError("Could not copy link.");
@@ -243,15 +242,10 @@ export function ScanReportModal({
     <>
       <div className="report-chrome modal-body-pad">
         <div className="report-topbar">
-          {variant === "page" ? (
-            <button type="button" className="report-back-link" onClick={onClose}>
-              Back to scans
-            </button>
-          ) : (
-            <button type="button" className="report-back-link" onClick={onClose}>
-              Close
-            </button>
-          )}
+          <button type="button" className="report-back-btn" onClick={onClose}>
+            <IconBack />
+            <span>{variant === "page" ? "Back to scans" : "Close"}</span>
+          </button>
           <div className="report-top-actions">
             <div className="report-export-menu" ref={exportWrapRef}>
               <button
@@ -386,25 +380,46 @@ export function ScanReportModal({
         ) : !sorted.length ? (
           <div className="empty-state compact">No findings.</div>
         ) : (
-          <ul className="finding-list">
-            {sorted.map((f) => (
-              <li key={f.id}>
-                <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
-                  <div className="finding-head">
+          <div className="finding-table">
+            <div className="finding-table-head" aria-hidden="true">
+              <span>Severity</span>
+              <span>Finding</span>
+              <span>Status</span>
+              <span>Risk</span>
+              <span />
+            </div>
+            <ul className="finding-list">
+              {sorted.map((f) => (
+                <li key={f.id}>
+                  <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
                     <span className={`badge ${f.severity}`}>{f.severity}</span>
-                    <span className="badge muted">{f.status.replace(/_/g, " ")}</span>
-                    <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
-                    <b>{f.title}</b>
-                  </div>
-                  <div className="muted small">
-                    {f.engine}
-                    {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
-                    {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                    <span className="finding-row-main">
+                      <b>{f.title}</b>
+                      <span className="muted small">
+                        {f.engine}
+                        {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
+                        {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
+                      </span>
+                    </span>
+                    <span className="finding-row-status">{f.status.replace(/_/g, " ")}</span>
+                    <span className="finding-row-risk">{f.risk_score.toFixed(1)}</span>
+                    <span className="finding-row-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d="M9 6l6 6-6 6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
     </>
@@ -498,23 +513,42 @@ export function ScanReportModal({
             <div className="modal-root share-sheet-root" role="presentation">
               <button type="button" className="modal-backdrop" aria-label="Close share" onClick={() => setShareOpen(false)} />
               <div className="modal-panel share-sheet" role="dialog" aria-modal="true" aria-labelledby="share-report-title">
-                <div className="modal-head">
+                <div className="share-sheet-head">
                   <div>
-                    <p className="modal-kicker">Share</p>
-                    <h2 id="share-report-title">Copy link</h2>
+                    <h2 id="share-report-title">Share report</h2>
+                    <p className="share-sheet-meta">{caption}</p>
                   </div>
+                  <button
+                    type="button"
+                    className="share-sheet-close"
+                    aria-label="Close"
+                    onClick={() => setShareOpen(false)}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M18 6 6 18M6 6l12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.75"
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                  </button>
                 </div>
-                <div className="modal-body-pad">
+                <div className="share-sheet-body">
                   {shareBusy ? <LoadingMark size="sm" label="Creating link…" /> : null}
-                  {shareError ? <p className="notice error">{shareError}</p> : null}
+                  {shareError ? (
+                    <p className="notice error" role="alert">
+                      {shareError}
+                    </p>
+                  ) : null}
                   {shareUrl ? (
-                    <>
-                      <p className="muted">{caption}</p>
-                      <code className="share-url">{shareUrl}</code>
-                      <button type="button" className="btn" onClick={() => void copyShare()}>
-                        {copied ? "Copied" : "Copy caption + URL"}
+                    <div className="share-link-row">
+                      <input className="share-link-input" type="text" readOnly value={shareUrl} aria-label="Share link" onFocus={(e) => e.currentTarget.select()} />
+                      <button type="button" className="btn share-copy-btn" onClick={() => void copyShare()}>
+                        {copied ? "Copied" : "Copy"}
                       </button>
-                    </>
+                    </div>
                   ) : null}
                 </div>
               </div>

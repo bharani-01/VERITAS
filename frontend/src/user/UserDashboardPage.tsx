@@ -43,7 +43,7 @@ export function UserDashboardPage() {
   const needsGithub = data.github.configured && !data.github.connected;
   const needsProject = data.totals.projects === 0;
   const showSetup = needsGithub || needsProject;
-  const recentScans = data.recent_scans.slice(0, 6);
+  const recentScans = data.recent_scans.slice(0, 12);
   const projects = data.projects.slice(0, 6);
 
   return (

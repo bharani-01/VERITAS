@@ -65,6 +65,26 @@ def active_connection(db: Session, user: User) -> GitHubConnection | None:
 def connection_status(db: Session, user: User) -> dict:
     report = github_config_report()
     conn = active_connection(db, user)
+    # Self-heal stale needs_reauth (false positives or recovered tokens).
+    if conn and conn.needs_reauth:
+        try:
+            token = decrypt_secret(conn.token_encrypted)
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(f"{GITHUB_API}/user", headers=_github_headers(token))
+            if resp.status_code == 200:
+                conn.needs_reauth = False
+                db.add(conn)
+                db.commit()
+                db.refresh(conn)
+            elif resp.status_code == 401:
+                # Confirmed dead token — leave the flag set.
+                pass
+        except ValueError:
+            # Decrypt failure — keep needs_reauth.
+            pass
+        except Exception:
+            # Network blip — don't clear or escalate here.
+            pass
     return {
         "configured": report["configured"],
         "missing": report["missing"],

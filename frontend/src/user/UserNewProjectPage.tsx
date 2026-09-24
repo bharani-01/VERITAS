@@ -53,10 +53,15 @@ export function UserNewProjectPage() {
   async function loadGithub() {
     const status = await api<GitHubStatus>("/workspace/github/status");
     setGh(status);
-    if (status.connected && !status.needs_reauth) {
+    if (status.connected) {
+      // Always try listing repos — server clears a stale needs_reauth on success.
       try {
         const data = await api<{ items: GitHubRepo[] }>("/workspace/github/repos");
         setRepos(data.items);
+        if (status.needs_reauth) {
+          const refreshed = await api<GitHubStatus>("/workspace/github/status");
+          setGh(refreshed);
+        }
       } catch {
         setRepos([]);
       }
@@ -309,36 +314,13 @@ export function UserNewProjectPage() {
             </button>
           </section>
         ) : (
-          <form className="np-flow-form" onSubmit={(e) => void onCreate(e)}>
-            <section className="np-step" aria-labelledby="np-repo-heading">
-              <div className="np-step-head">
-                <h2 id="np-repo-heading">Choose a repository</h2>
-                <p>Search owned repos, then select one to import.</p>
-              </div>
-
-              {selectedRepo && selectedParts ? (
-                <div className="np-selected-repo">
-                  <div className="np-selected-repo-body">
-                    <span className="np-picker-gh" aria-hidden="true">
-                      <GitHubMark />
-                    </span>
-                    <div>
-                      <strong>
-                        <span className="np-picker-owner">{selectedParts.owner}</span>
-                        <span className="np-picker-slash"> / </span>
-                        <span className="np-picker-repo">{selectedParts.name}</span>
-                      </strong>
-                      <span>
-                        {selectedRepo.private ? "Private" : "Public"}
-                        {selectedRepo.default_branch ? ` · ${selectedRepo.default_branch}` : ""}
-                      </span>
-                    </div>
-                  </div>
-                  <button type="button" className="np-text-btn" onClick={clearRepo}>
-                    Change
-                  </button>
+          <form className="np-flow-form np-flow-form-render" onSubmit={(e) => void onCreate(e)}>
+            {!selectedRepo ? (
+              <section className="np-step" aria-labelledby="np-repo-heading">
+                <div className="np-step-head">
+                  <h2 id="np-repo-heading">Choose a repository</h2>
+                  <p>Search owned repos, then select one to import.</p>
                 </div>
-              ) : (
                 <div className="np-picker">
                   <div className="np-picker-toolbar">
                     <label className="np-picker-search">
@@ -431,84 +413,141 @@ export function UserNewProjectPage() {
                     </ul>
                   )}
                 </div>
-              )}
-            </section>
-
-            {selectedRepo ? (
-              <section className="np-step np-step-config" aria-labelledby="np-config-heading">
-                <div className="np-step-head">
-                  <h2 id="np-config-heading">Configure project</h2>
-                  <p>Name it, add an optional description, and choose auto-scan if you want.</p>
-                </div>
-
-                <label className="np-field">
-                  <span>Project name</span>
-                  <input
-                    ref={nameInputRef}
-                    className="np-input"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    required
-                    maxLength={120}
-                    placeholder="my-app"
-                  />
-                </label>
-
-                <label className="np-field">
-                  <span>Description</span>
-                  <textarea
-                    className="np-input np-textarea"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    maxLength={2000}
-                    rows={3}
-                    placeholder="Optional notes for your team"
-                  />
-                </label>
-
-                <label className="np-check">
-                  <input
-                    type="checkbox"
-                    checked={autoScanOnPush}
-                    onChange={(e) => setAutoScanOnPush(e.target.checked)}
-                  />
-                  <span>
-                    <strong>Auto-scan on push</strong>
-                    <span className="np-check-sub">
-                      Start a scan when commits land on the watched branch
-                    </span>
-                  </span>
-                </label>
-
-                <label className={`np-field ${autoScanOnPush ? "" : "is-dimmed"}`}>
-                  <span>Watched branch {refsLoading ? "(loading…)" : ""}</span>
-                  <select
-                    className="np-input"
-                    value={autoScanBranch}
-                    disabled={!autoScanOnPush || refsLoading}
-                    onChange={(e) => setAutoScanBranch(e.target.value)}
-                  >
-                    {(branchOptions.length
-                      ? branchOptions
-                      : [{ name: defaultBranch, type: "branch" as const }]
-                    ).map((b) => (
-                      <option key={b.name} value={b.name}>
-                        {b.name}
-                        {b.name === defaultBranch ? " (default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <p className="np-next-hint">Select a repository above to configure and create your project.</p>
               </section>
             ) : (
-              <p className="np-next-hint">Select a repository above to configure and create your project.</p>
-            )}
+              <>
+                <div className="np-render-fields" aria-label="New project settings">
+                  <div className="rr-row np-config-row">
+                    <div className="rr-meta">
+                      <span className="rr-title">Repository</span>
+                      <p>GitHub repo to import</p>
+                    </div>
+                    <div className="rr-controls">
+                      <div className="np-selected-repo">
+                        <div className="np-selected-repo-body">
+                          <span className="np-picker-gh" aria-hidden="true">
+                            <GitHubMark />
+                          </span>
+                          <div>
+                            <strong>
+                              <span className="np-picker-owner">{selectedParts!.owner}</span>
+                              <span className="np-picker-slash"> / </span>
+                              <span className="np-picker-repo">{selectedParts!.name}</span>
+                            </strong>
+                            <span>
+                              {selectedRepo.private ? "Private" : "Public"}
+                              {selectedRepo.default_branch ? ` · ${selectedRepo.default_branch}` : ""}
+                            </span>
+                          </div>
+                        </div>
+                        <button type="button" className="np-text-btn" onClick={clearRepo}>
+                          Change
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
-            <div className="np-actions">
-              <button className="btn" type="submit" disabled={!canCreate}>
-                {busy ? "Creating…" : "Create project"}
-              </button>
-            </div>
+                  <div className="rr-row np-config-row">
+                    <div className="rr-meta">
+                      <label className="rr-title" htmlFor="np-project-name">
+                        Project name
+                      </label>
+                      <p>Shown across your workspace</p>
+                    </div>
+                    <div className="rr-controls">
+                      <input
+                        id="np-project-name"
+                        ref={nameInputRef}
+                        className="np-input"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        required
+                        maxLength={120}
+                        placeholder="my-app"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rr-row np-config-row">
+                    <div className="rr-meta">
+                      <label className="rr-title" htmlFor="np-project-desc">
+                        Description
+                      </label>
+                      <p>Optional notes for your team</p>
+                    </div>
+                    <div className="rr-controls">
+                      <textarea
+                        id="np-project-desc"
+                        className="np-input np-textarea"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        maxLength={2000}
+                        rows={3}
+                        placeholder="Optional notes for your team"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rr-row np-config-row">
+                    <div className="rr-meta">
+                      <span className="rr-title">Auto-scan on push</span>
+                      <p>Start a scan when commits land on the watched branch</p>
+                    </div>
+                    <div className="rr-controls">
+                      <label className="np-check np-check-inline">
+                        <input
+                          type="checkbox"
+                          checked={autoScanOnPush}
+                          onChange={(e) => setAutoScanOnPush(e.target.checked)}
+                        />
+                        <span>
+                          <strong>{autoScanOnPush ? "Enabled" : "Disabled"}</strong>
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className={`rr-row np-config-row ${autoScanOnPush ? "" : "is-dimmed"}`}>
+                    <div className="rr-meta">
+                      <label className="rr-title" htmlFor="np-watched-branch">
+                        Watched branch
+                      </label>
+                      <p>{refsLoading ? "Loading branches…" : "Branch that triggers auto-scan"}</p>
+                    </div>
+                    <div className="rr-controls">
+                      <select
+                        id="np-watched-branch"
+                        className="np-input"
+                        value={autoScanBranch}
+                        disabled={!autoScanOnPush || refsLoading}
+                        onChange={(e) => setAutoScanBranch(e.target.value)}
+                      >
+                        {(branchOptions.length
+                          ? branchOptions
+                          : [{ name: defaultBranch, type: "branch" as const }]
+                        ).map((b) => (
+                          <option key={b.name} value={b.name}>
+                            {b.name}
+                            {b.name === defaultBranch ? " (default)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="np-actions">
+                  <p className="np-actions-hint">
+                    Create <strong>{name.trim() || selectedRepo.name}</strong> from{" "}
+                    <code>{selectedRepo.full_name}</code>
+                  </p>
+                  <button className="btn" type="submit" disabled={!canCreate}>
+                    {busy ? "Creating…" : "Create project"}
+                  </button>
+                </div>
+              </>
+            )}
           </form>
         )}
       </div>

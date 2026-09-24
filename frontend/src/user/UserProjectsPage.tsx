@@ -280,7 +280,7 @@ export function UserProjectsPage() {
             {recentScans.length ? (
               <section className="np-block projects-recent">
                 <ScanHistoryList
-                  scans={recentScans}
+                  scans={recentScans.slice(0, 12)}
                   title="Recent scans"
                   showProjectName
                   emptyTitle="No recent scans"

@@ -805,7 +805,7 @@ def workspace_dashboard(db: Session, user: User) -> dict:
         )
         or 0
     )
-    recent = list_scans(db, user, limit=8)
+    recent = list_scans(db, user, limit=15)
     github = github_svc.connection_status(db, user)
     return {
         "totals": {

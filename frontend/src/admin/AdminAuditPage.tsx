@@ -246,38 +246,43 @@ export function AdminAuditPage() {
           </div>
 
           <div className="audit-modal-body">
-            <section className="audit-modal-section">
-              <h3>People</h3>
-              <div className="audit-people">
-                <article>
-                  <small>Actor</small>
+            <div className="audit-detail-rows">
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Actor</div>
+                <div className="audit-detail-value">
                   <b>{displayName(selected.actor, selected.actor_user_id)}</b>
-                  <span>{displayHandle(selected.actor) || "No handle"}</span>
-                  {selected.who?.actor_is_admin || selected.actor?.role === "admin" ? (
-                    <span className="audit-pill">admin</span>
-                  ) : null}
-                </article>
-                <article>
-                  <small>Target</small>
+                  <span>
+                    {displayHandle(selected.actor) || "No handle"}
+                    {selected.who?.actor_is_admin || selected.actor?.role === "admin" ? " · admin" : ""}
+                  </span>
+                </div>
+              </div>
+
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Target</div>
+                <div className="audit-detail-value">
                   <b>{displayName(selected.target, selected.target_user_id)}</b>
                   <span>{displayHandle(selected.target) || "No handle"}</span>
-                </article>
+                </div>
               </div>
-            </section>
 
-            <section className="audit-modal-section">
-              <h3>Origin</h3>
-              <div className="audit-origin">
-                <div>
-                  <small>IP address</small>
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">IP address</div>
+                <div className="audit-detail-value">
                   <b className="audit-mono">{selected.ip_address || "Not captured"}</b>
                 </div>
-                <div>
-                  <small>Location</small>
+              </div>
+
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Location</div>
+                <div className="audit-detail-value">
                   <b>{selected.location_label || "Not available"}</b>
                 </div>
-                <div className="audit-origin-wide">
-                  <small>Client</small>
+              </div>
+
+              <div className="audit-detail-row">
+                <div className="audit-detail-label">Request</div>
+                <div className="audit-detail-value">
                   <b className="audit-mono">
                     {selected.how?.method && selected.how?.path
                       ? `${selected.how.method} ${selected.how.path}`
@@ -286,47 +291,40 @@ export function AdminAuditPage() {
                       ? ` → ${selected.status_code ?? selected.how?.status_code}`
                       : ""}
                   </b>
-                  <span>{selected.user_agent || "User-agent not captured"}</span>
+                  <span className="audit-ua">{selected.user_agent || "User-agent not captured"}</span>
                 </div>
               </div>
-            </section>
 
-            {selected.geo?.providers?.length ? (
-              <section className="audit-modal-section">
-                <h3>Geolocation checks</h3>
-                <ul className="audit-geo-list">
-                  {selected.geo.providers.map((p) => (
-                    <li key={`${selected.id}-${p.provider}`}>
-                      <b>{p.provider}</b>
-                      <span>
-                        {[p.city, p.region, p.country].filter(Boolean).join(", ") || "No place data"}
-                        {p.isp ? ` · ${p.isp}` : ""}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-
-            {(selected.before_state || selected.after_state) && (
-              <section className="audit-modal-section">
-                <h3>State change</h3>
-                <div className="audit-state-grid">
-                  {selected.before_state ? (
-                    <pre>
-                      <small>Before</small>
-                      {parseState(selected.before_state)}
-                    </pre>
-                  ) : null}
-                  {selected.after_state ? (
-                    <pre>
-                      <small>After</small>
-                      {parseState(selected.after_state)}
-                    </pre>
-                  ) : null}
+              {selected.geo?.providers?.map((p) => (
+                <div className="audit-detail-row" key={`${selected.id}-${p.provider}`}>
+                  <div className="audit-detail-label">{p.provider}</div>
+                  <div className="audit-detail-value">
+                    <span>
+                      {[p.city, p.region, p.country].filter(Boolean).join(", ") || "No place data"}
+                      {p.isp ? ` · ${p.isp}` : ""}
+                    </span>
+                  </div>
                 </div>
-              </section>
-            )}
+              ))}
+
+              {selected.before_state ? (
+                <div className="audit-detail-row audit-detail-row-stack">
+                  <div className="audit-detail-label">Before</div>
+                  <div className="audit-detail-value">
+                    <pre>{parseState(selected.before_state)}</pre>
+                  </div>
+                </div>
+              ) : null}
+
+              {selected.after_state ? (
+                <div className="audit-detail-row audit-detail-row-stack">
+                  <div className="audit-detail-label">After</div>
+                  <div className="audit-detail-value">
+                    <pre>{parseState(selected.after_state)}</pre>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <div className="modal-actions">

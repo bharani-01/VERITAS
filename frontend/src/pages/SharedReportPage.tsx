@@ -169,24 +169,45 @@ export function SharedReportPage() {
         {!sorted.length ? (
           <div className="empty-state">No findings in this report.</div>
         ) : (
-          <ul className="finding-list">
-            {sorted.map((f) => (
-              <li key={f.id}>
-                <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
-                  <div className="finding-head">
+          <div className="finding-table">
+            <div className="finding-table-head" aria-hidden="true">
+              <span>Severity</span>
+              <span>Finding</span>
+              <span>Status</span>
+              <span>Risk</span>
+              <span />
+            </div>
+            <ul className="finding-list">
+              {sorted.map((f) => (
+                <li key={f.id}>
+                  <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
                     <span className={`badge ${f.severity}`}>{f.severity}</span>
-                    <span className="badge muted">{f.status.replace(/_/g, " ")}</span>
-                    <span className="badge muted">risk {f.risk_score.toFixed(1)}</span>
-                    <b>{f.title}</b>
-                  </div>
-                  <div className="muted small">
-                    {f.engine}
-                    {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
-                  </div>
-                </button>
-              </li>
-            ))}
-          </ul>
+                    <span className="finding-row-main">
+                      <b>{f.title}</b>
+                      <span className="muted small">
+                        {f.engine}
+                        {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
+                      </span>
+                    </span>
+                    <span className="finding-row-status">{f.status.replace(/_/g, " ")}</span>
+                    <span className="finding-row-risk">{f.risk_score.toFixed(1)}</span>
+                    <span className="finding-row-chevron" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path
+                          d="M9 6l6 6-6 6"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </section>
 
