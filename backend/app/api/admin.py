@@ -444,6 +444,8 @@ def list_audit_events(
 def list_http_requests(
     severity: str | None = None,
     classification: str | None = None,
+    flagged: bool = False,
+    q: str | None = None,
     page: int = 1,
     page_size: int = 50,
     since: str | None = None,
@@ -456,6 +458,11 @@ def list_http_requests(
         query = query.where(HttpRequestEvent.severity == severity)
     if classification:
         query = query.where(HttpRequestEvent.classification == classification)
+    elif flagged:
+        query = query.where(HttpRequestEvent.classification != "clean")
+    if q and q.strip():
+        pattern = f"%{q.strip()}%"
+        query = query.where(HttpRequestEvent.path.ilike(pattern))
     if since:
         try:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
@@ -474,6 +481,7 @@ def list_http_requests(
         "page": page,
         "page_size": limit,
         "total": total,
+        "has_more": page * limit < total,
         "server_time": utcnow(),
     }
 

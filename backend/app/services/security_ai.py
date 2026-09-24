@@ -1,4 +1,4 @@
-"""Groq AI agent for live HTTP security countermeasures (fail-open)."""
+"""AI agent for live HTTP security countermeasures (Groq → OpenRouter fail-open)."""
 
 from __future__ import annotations
 
@@ -9,36 +9,69 @@ from typing import Any
 
 import httpx
 
-from app.core.config import GROQ_API_KEY, GROQ_MODEL, reload_env
+from app.core.config import GROQ_API_KEY, GROQ_MODEL, OPENROUTER_API_KEY, OPENROUTER_REVIEW_MODEL, reload_env
 
 logger = logging.getLogger(__name__)
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 _TIMEOUT = 45.0
 
 
-def _api_key() -> str:
+def _groq_key() -> str:
     reload_env()
     return (os.getenv("GROQ_API_KEY") or os.getenv("AI_API_KEY") or GROQ_API_KEY or "").strip()
 
 
-def _model() -> str:
+def _openrouter_key() -> str:
     reload_env()
-    return (os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "llama-3.3-70b-versatile").strip()
+    return (os.getenv("OPENROUTER_API_KEY") or OPENROUTER_API_KEY or "").strip()
+
+
+def _provider() -> tuple[str, str, str, dict[str, str]] | None:
+    """Return (name, url, model, headers) or None if no key configured."""
+    groq = _groq_key()
+    if groq:
+        model = (
+            os.getenv("GROQ_REPORT_MODEL") or os.getenv("GROQ_MODEL") or GROQ_MODEL or "llama-3.3-70b-versatile"
+        ).strip()
+        return (
+            "groq",
+            GROQ_URL,
+            model,
+            {"Authorization": f"Bearer {groq}", "Content-Type": "application/json"},
+        )
+    or_key = _openrouter_key()
+    if or_key:
+        model = (os.getenv("OPENROUTER_REVIEW_MODEL") or OPENROUTER_REVIEW_MODEL or "openai/gpt-4o-mini").strip()
+        return (
+            "openrouter",
+            OPENROUTER_URL,
+            model,
+            {
+                "Authorization": f"Bearer {or_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": (os.getenv("PUBLIC_APP_URL") or "https://veritas.trackifyapp.co.in").rstrip("/"),
+                "X-Title": "VERITAS Security Agent",
+            },
+        )
+    return None
 
 
 def analyze_http_security(context: dict[str, Any]) -> dict[str, Any]:
     """
     Analyze recent HTTP telemetry and return countermeasure suggestions.
-    Never raises. Returns {status, summary, suggestions, model?}.
+    Prefers Groq; falls back to OpenRouter. Never raises.
     """
-    key = _api_key()
-    if not key:
+    provider = _provider()
+    if not provider:
         return {
             "status": "skipped_no_key",
-            "summary": "AI analysis is unavailable — GROQ_API_KEY is not configured.",
+            "summary": "AI analysis is unavailable — configure GROQ_API_KEY or OPENROUTER_API_KEY.",
             "suggestions": [],
         }
+
+    name, url, model, headers = provider
 
     system = (
         "You are VERITAS Security Agent, a senior application security engineer. "
@@ -57,10 +90,10 @@ def analyze_http_security(context: dict[str, Any]) -> dict[str, Any]:
     try:
         with httpx.Client(timeout=_TIMEOUT) as client:
             resp = client.post(
-                GROQ_URL,
-                headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                url,
+                headers=headers,
                 json={
-                    "model": _model(),
+                    "model": model,
                     "temperature": 0.25,
                     "response_format": {"type": "json_object"},
                     "messages": [
@@ -70,12 +103,13 @@ def analyze_http_security(context: dict[str, Any]) -> dict[str, Any]:
                 },
             )
         if resp.status_code >= 400:
-            logger.warning("security ai http %s: %s", resp.status_code, (resp.text or "")[:200])
+            logger.warning("security ai (%s) http %s: %s", name, resp.status_code, (resp.text or "")[:200])
             return {
                 "status": "failed_http",
-                "summary": f"AI agent request failed (HTTP {resp.status_code}).",
+                "summary": f"AI agent request failed via {name} (HTTP {resp.status_code}).",
                 "suggestions": [],
                 "code": resp.status_code,
+                "provider": name,
             }
 
         body = resp.json()
@@ -113,13 +147,15 @@ def analyze_http_security(context: dict[str, Any]) -> dict[str, Any]:
             "status": "ok",
             "summary": summary,
             "suggestions": suggestions,
-            "model": _model(),
+            "model": model,
+            "provider": name,
         }
     except Exception as exc:
-        logger.warning("security ai failed: %s", str(exc)[:200])
+        logger.warning("security ai (%s) failed: %s", name, str(exc)[:200])
         return {
             "status": "failed_open",
             "summary": "AI agent could not complete analysis. Try again shortly.",
             "suggestions": [],
             "error": str(exc)[:200],
+            "provider": name,
         }

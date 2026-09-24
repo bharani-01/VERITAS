@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
@@ -47,12 +47,15 @@ type AiAnalyze = {
   summary: string;
   suggestions: AiSuggestion[];
   model?: string;
+  provider?: string;
   sample_size?: number;
 };
 
 type TrafficResponse = {
   items: HttpItem[];
   total: number;
+  page: number;
+  has_more?: boolean;
 };
 
 type Scope = "all" | "flagged";
@@ -60,6 +63,7 @@ type ClassFilter = "" | "clean" | "sqli" | "xss" | "csrf" | "auth_anomaly";
 type SevFilter = "" | "info" | "low" | "medium" | "high" | "critical";
 
 const POLL_MS = 4000;
+const PAGE_SIZE = 40;
 
 const STATUS_LABEL: Record<Overview["status"], string> = {
   safe: "Safe",
@@ -78,6 +82,7 @@ function classLabel(c: string) {
   if (c === "xss") return "XSS";
   if (c === "csrf") return "CSRF";
   if (c === "auth_anomaly") return "Auth anomaly";
+  if (c === "general") return "General";
   return "Clean";
 }
 
@@ -93,63 +98,126 @@ export function AdminSecurityPage() {
   useDocumentTitle("Security");
   const [data, setData] = useState<Overview | null>(null);
   const [traffic, setTraffic] = useState<HttpItem[]>([]);
-  const [trafficTotal, setTrafficTotal] = useState(0);
+  const [trafficPage, setTrafficPage] = useState(1);
+  const [trafficHasMore, setTrafficHasMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [scope, setScope] = useState<Scope>("all");
   const [classFilter, setClassFilter] = useState<ClassFilter>("");
   const [sevFilter, setSevFilter] = useState<SevFilter>("");
   const [pathQuery, setPathQuery] = useState("");
+  const [pathDebounced, setPathDebounced] = useState("");
   const [ai, setAi] = useState<AiAnalyze | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const loadingMoreRef = useRef(false);
+  const scopeRef = useRef(scope);
+  const classRef = useRef(classFilter);
+  const sevRef = useRef(sevFilter);
+  const pathRef = useRef(pathDebounced);
+
+  scopeRef.current = scope;
+  classRef.current = classFilter;
+  sevRef.current = sevFilter;
+  pathRef.current = pathDebounced;
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setPathDebounced(pathQuery.trim()), 280);
+    return () => window.clearTimeout(t);
+  }, [pathQuery]);
+
+  const buildTrafficQuery = useCallback((pageNum: number) => {
+    const params = new URLSearchParams();
+    params.set("page", String(pageNum));
+    params.set("page_size", String(PAGE_SIZE));
+    if (classRef.current) params.set("classification", classRef.current);
+    else if (scopeRef.current === "flagged") params.set("flagged", "true");
+    if (sevRef.current) params.set("severity", sevRef.current);
+    if (pathRef.current) params.set("q", pathRef.current);
+    return `/admin/http-requests?${params.toString()}`;
+  }, []);
+
+  const loadOverview = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("page_size", "50");
-      if (classFilter) params.set("classification", classFilter);
-      if (sevFilter) params.set("severity", sevFilter);
-
-      const [overview, feed] = await Promise.all([
-        api<Overview>("/admin/security-overview"),
-        api<TrafficResponse>(`/admin/http-requests?${params.toString()}`),
-      ]);
-
+      const overview = await api<Overview>("/admin/security-overview");
       setData(overview);
-      setTraffic(feed.items);
-      setTrafficTotal(feed.total);
       setError(null);
     } catch (err) {
       setError((err as Error).message);
+    }
+  }, []);
+
+  const resetTraffic = useCallback(async () => {
+    setLoading(true);
+    setTrafficPage(1);
+    try {
+      const [overview, feed] = await Promise.all([
+        api<Overview>("/admin/security-overview"),
+        api<TrafficResponse>(buildTrafficQuery(1)),
+      ]);
+      setData(overview);
+      setTraffic(feed.items);
+      setTrafficHasMore(Boolean(feed.has_more ?? feed.items.length < feed.total));
+      setTrafficPage(1);
+      setError(null);
+    } catch (err) {
+      setError((err as Error).message);
+      setTraffic([]);
+      setTrafficHasMore(false);
     } finally {
       setLoading(false);
     }
-  }, [classFilter, sevFilter]);
+  }, [buildTrafficQuery]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void resetTraffic();
+  }, [scope, classFilter, sevFilter, pathDebounced, resetTraffic]);
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const timer = window.setInterval(() => void load(), POLL_MS);
+    const timer = window.setInterval(() => void loadOverview(), POLL_MS);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, load]);
+  }, [autoRefresh, loadOverview]);
 
-  const visibleTraffic = useMemo(() => {
-    let items = traffic;
-    if (scope === "flagged") {
-      items = items.filter((r) => r.classification !== "clean");
+  const loadMore = useCallback(async () => {
+    if (loadingMoreRef.current || loading || !trafficHasMore) return;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    const next = trafficPage + 1;
+    try {
+      const feed = await api<TrafficResponse>(buildTrafficQuery(next));
+      setTraffic((prev) => {
+        const seen = new Set(prev.map((e) => e.id));
+        return [...prev, ...feed.items.filter((e) => !seen.has(e.id))];
+      });
+      setTrafficHasMore(Boolean(feed.has_more ?? next * PAGE_SIZE < feed.total));
+      setTrafficPage(next);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      loadingMoreRef.current = false;
+      setLoadingMore(false);
     }
-    const q = pathQuery.trim().toLowerCase();
-    if (q) {
-      items = items.filter((r) => `${r.method} ${r.path}`.toLowerCase().includes(q));
-    }
-    return items;
-  }, [traffic, scope, pathQuery]);
+  }, [buildTrafficQuery, loading, trafficHasMore, trafficPage]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    const root = scrollRef.current;
+    if (!node || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) void loadMore();
+      },
+      { root, rootMargin: "160px", threshold: 0 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [loadMore, traffic.length, trafficHasMore]);
 
   const peak = useMemo(() => Math.max(0, ...(data?.volume_60m || []).map((b) => b.count)), [data?.volume_60m]);
   const cleanPct = useMemo(() => {
@@ -342,7 +410,7 @@ export function AdminSecurityPage() {
             <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
             Live
           </label>
-          <button type="button" className="btn ghost" onClick={() => void load()} disabled={loading}>
+          <button type="button" className="btn ghost" onClick={() => void resetTraffic()} disabled={loading}>
             Refresh
           </button>
           <Link className="btn ghost" to="/admin/audit">
@@ -464,9 +532,6 @@ export function AdminSecurityPage() {
         <div className="sec-traffic-toolbar">
           <div className="sec-panel-head">
             <h2>HTTP traffic</h2>
-            <span>
-              {visibleTraffic.length} shown · {trafficTotal} total
-            </span>
           </div>
           <div className="sec-filters">
             <div className="audit-seg" role="group" aria-label="Scope">
@@ -514,10 +579,10 @@ export function AdminSecurityPage() {
           </div>
         </div>
 
-        {!visibleTraffic.length ? (
+        {!traffic.length ? (
           <p className="sec-empty">No requests match the current filters.</p>
         ) : (
-          <div className="table-wrap sec-table-wrap">
+          <div className="table-wrap sec-table-wrap sec-traffic-scroll" ref={scrollRef} role="feed" aria-busy={loadingMore}>
             <table className="audit-table">
               <thead>
                 <tr>
@@ -531,7 +596,7 @@ export function AdminSecurityPage() {
                 </tr>
               </thead>
               <tbody>
-                {visibleTraffic.map((row) => (
+                {traffic.map((row) => (
                   <tr key={row.id} className={row.classification !== "clean" ? "sec-row-flag" : undefined}>
                     <td>
                       <span className="audit-time">
@@ -565,6 +630,9 @@ export function AdminSecurityPage() {
                 ))}
               </tbody>
             </table>
+            <div ref={sentinelRef} className="sec-sentinel" aria-hidden="true" />
+            {loadingMore ? <p className="sec-load-more">Loading more…</p> : null}
+            {!trafficHasMore ? <p className="sec-load-more">End of traffic</p> : null}
           </div>
         )}
       </section>
