@@ -1,7 +1,17 @@
 #!/usr/bin/env bash
 # WIPE nvme1n1 + nvme2n1 and create one ~200G LVM volume at /data for VERITAS.
 # Does NOT touch the root disk (nvme0n1).
+#
+# SAFETY: refuse to run unless CONFIRM=WIPE is set in the environment.
+# Example: CONFIRM=WIPE sudo -E bash scripts/ec2-mount-data-disk.sh
 set -euo pipefail
+
+if [[ "${CONFIRM:-}" != "WIPE" ]]; then
+  echo "Refusing to wipe disks." >&2
+  echo "This script DESTRUCTIVELY formats \$DISK1 and \$DISK2." >&2
+  echo "Re-run with CONFIRM=WIPE if you intend to proceed." >&2
+  exit 2
+fi
 
 DISK1="${DISK1:-/dev/nvme1n1}"
 DISK2="${DISK2:-/dev/nvme2n1}"
@@ -10,6 +20,19 @@ SCAN_ROOT="${SCAN_ROOT:-$MOUNT_POINT/veritas-scans}"
 ENV_FILE="${ENV_FILE:-/opt/veritas/backend/.env}"
 VG_NAME="veritas_vg"
 LV_NAME="data"
+
+# Never allow wiping the likely root disk
+ROOT_SRC="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+for d in "$DISK1" "$DISK2"; do
+  if [[ -n "$ROOT_SRC" && "$ROOT_SRC" == "$d"* ]]; then
+    echo "Refusing to wipe root device: $d (mounted at /)" >&2
+    exit 3
+  fi
+  if [[ "$d" == "/dev/nvme0n1" || "$d" == "/dev/sda" || "$d" == "/dev/xvda" ]]; then
+    echo "Refusing to wipe likely root disk: $d" >&2
+    exit 3
+  fi
+done
 
 echo "=== BEFORE (will WIPE $DISK1 and $DISK2) ==="
 lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT

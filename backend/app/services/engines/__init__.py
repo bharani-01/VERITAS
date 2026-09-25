@@ -6,6 +6,8 @@ from app.services.engines.normalize import (
     public_repo_path,
 )
 from app.services.engines.runners import (
+    DEFAULT_PATH_EXCLUDES,
+    merge_path_excludes,
     run_bandit,
     run_checkov,
     run_detect_secrets,
@@ -40,9 +42,11 @@ DEFAULT_ENGINES = ("gitleaks", "osv", "semgrep")
 __all__ = [
     "ALL_ENGINES",
     "DEFAULT_ENGINES",
+    "DEFAULT_PATH_EXCLUDES",
     "NormalizedFinding",
     "classify_family",
     "finding_fingerprint",
+    "merge_path_excludes",
     "normalize_severity",
     "public_repo_path",
     "run_bandit",

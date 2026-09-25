@@ -16,6 +16,7 @@ from app.services.ai_report import generate_final_report
 from app.services.engines import (
     ALL_ENGINES,
     DEFAULT_ENGINES,
+    merge_path_excludes,
     run_bandit,
     run_checkov,
     run_detect_secrets,
@@ -536,7 +537,7 @@ def run_scan_job(scan_id: str) -> None:
                 _check_cancel(session, scan)
                 options = _parse_options(scan)
                 enabled = set(options["engines"])
-                excludes = options["path_excludes"]
+                excludes = merge_path_excludes(options["path_excludes"])
                 want_review = bool(options["code_review"]) or scan.scan_mode == "rules_plus_ai"
 
                 if repo_path:
@@ -570,7 +571,7 @@ def run_scan_job(scan_id: str) -> None:
                             28,
                             32,
                             "Entropy secret scan…",
-                            lambda: run_detect_secrets(repo_path),
+                            lambda: run_detect_secrets(repo_path, excludes=excludes),
                             "Entropy secret scan finished",
                             "No entropy secrets found",
                             "Found {n} entropy secret finding(s)",
@@ -641,7 +642,7 @@ def run_scan_job(scan_id: str) -> None:
                             68,
                             72,
                             "Python security pass…",
-                            lambda: run_bandit(repo_path),
+                            lambda: run_bandit(repo_path, excludes=excludes),
                             "Python security pass finished",
                             "No Bandit issues found",
                             "Found {n} Python security issue(s)",

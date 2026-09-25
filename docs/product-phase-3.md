@@ -21,7 +21,7 @@ Ops alerts: when an enabled engine is **missing** on the host, or a scan **fails
 - `git`
 - **Semgrep** via `pip install semgrep` on **Linux/macOS** (in `requirements.txt` with platform marker; runner prefers `python -m semgrep`). Windows local installs skip Semgrep — run real SAST on EC2.
 - `gitleaks`, `osv-scanner` (optional binaries; skipped if missing)
-- Deep engines (optional; skipped if missing): **TruffleHog**, **Trivy**, **Bandit**, **detect-secrets**, **pip-audit**, **Checkov**, **njsscan**, **Hadolint**, **ShellCheck**
+- Deep engines (optional; skipped if missing): **TruffleHog**, **Trivy**, **Bandit**, **detect-secrets**, **pip-audit**, **Checkov**, **njsscan**, **Hadolint**, **ShellCheck**. Default path excludes always include `.git`, `node_modules`, venvs, caches, and built SPA assets. Bandit skips test trees + B101/B404/B603; detect-secrets disables KeywordDetector and excludes tests/`.git`.
 - Strict Semgrep uses expanded language + IaC packs (`p/python`…`p/rust`, `p/docker`, `p/kubernetes`, `p/terraform`, `p/nginx`)
 
 ## UX / reporting

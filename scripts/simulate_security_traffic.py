@@ -16,6 +16,7 @@ import random
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -189,11 +190,16 @@ def _probes() -> list[Probe]:
 
 def _build_url(base: str, path: str, query: str | None) -> str:
     base = base.rstrip("/")
+    parsed = urllib.parse.urlparse(base)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(f"base-url must be http(s)://host — got {base!r}")
     if not path.startswith("/"):
         path = "/" + path
-    if query:
-        return f"{base}{path}?{query}"
-    return f"{base}{path}"
+    # Rebuild so urllib cannot be steered to file:// via query/path tricks.
+    safe = urllib.parse.urlunparse(
+        (parsed.scheme, parsed.netloc, path, "", query or "", "")
+    )
+    return safe
 
 
 def _send(base: str, probe: Probe, timeout: float) -> tuple[int, str]:

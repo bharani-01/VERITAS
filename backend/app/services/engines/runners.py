@@ -1,12 +1,114 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 from app.services.engines.normalize import NormalizedFinding, classify_family, normalize_severity
+
+# Always skip VCS / deps / build junk unless the user explicitly removes them.
+DEFAULT_PATH_EXCLUDES: list[str] = [
+    ".git",
+    "node_modules",
+    ".venv",
+    "venv",
+    "__pycache__",
+    ".tox",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    "coverage",
+    "*.min.js",
+    "*.map",
+    "backend/app/web/static/spa/assets",
+]
+
+
+def merge_path_excludes(extra: list[str] | None = None) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for pattern in [*DEFAULT_PATH_EXCLUDES, *(extra or [])]:
+        cleaned = (pattern or "").strip().replace("\\", "/")
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        out.append(cleaned)
+    return out[:80]
+
+
+def _norm_rel(path: str | None) -> str:
+    rel = (path or "").replace("\\", "/")
+    while rel.startswith("./"):
+        rel = rel[2:]
+    return rel.lstrip("/")
+
+
+def _path_is_excluded(path: str | None, excludes: list[str]) -> bool:
+    rel = _norm_rel(path).lower()
+    if not rel:
+        return False
+    if rel.startswith(".git/") or "/.git/" in f"/{rel}":
+        return True
+    for pattern in excludes:
+        p = pattern.lower().strip()
+        if not p:
+            continue
+        if p.startswith("*."):
+            if rel.endswith(p[1:]):
+                return True
+            continue
+        p = p.rstrip("/")
+        if rel == p or rel.startswith(p + "/") or f"/{p}/" in f"/{rel}/":
+            return True
+    return False
+
+
+_BANDIT_PASSWORD_FP = re.compile(
+    r"(verification|password_reset|password reset|alter table|https?://|"
+    r"requested |completed |webhook|secret keyword|encryption)",
+    re.I,
+)
+
+
+def _drop_noise_finding(finding: NormalizedFinding, excludes: list[str]) -> bool:
+    """True = discard (noise / out of scope)."""
+    if _path_is_excluded(finding.file_path, excludes):
+        return True
+    engine = (finding.engine or "").lower()
+    rule = (finding.rule_id or "").lower()
+    title = (finding.title or "").lower()
+    msg = (finding.message or "").lower()
+    snippet = (finding.snippet or "").lower()
+
+    # Pytest asserts and intentional subprocess(shell=False) / import subprocess.
+    if engine == "bandit" and rule in {"b101", "b404", "b603"}:
+        return True
+    if engine == "bandit" and rule in {"b105", "b106", "b107"}:
+        blob = f"{title} {msg} {snippet}"
+        if _BANDIT_PASSWORD_FP.search(blob):
+            return True
+
+    # detect-secrets KeywordDetector is extremely noisy on auth field names.
+    if engine == "detect_secrets" and "secret keyword" in title:
+        return True
+
+    # Semgrep SRI rule false-positives on <link rel=canonical> / meta URLs.
+    if engine == "semgrep" and "integrity" in msg and "subresource" in msg:
+        if "<script" not in snippet and "stylesheet" not in snippet and 'rel="stylesheet"' not in snippet:
+            return True
+
+    return False
+
+
+def _filter_findings(
+    findings: list[NormalizedFinding],
+    excludes: list[str],
+) -> list[NormalizedFinding]:
+    return [f for f in findings if not _drop_noise_finding(f, excludes)]
 
 
 def _which(*names: str) -> str | None:
@@ -213,7 +315,13 @@ def run_semgrep(
     include_paths: list[str] | None = None,
     excludes: list[str] | None = None,
 ) -> tuple[list[NormalizedFinding], dict]:
-    meta: dict = {"engine": "semgrep", "available": False, "configs": semgrep_configs(security_level)}
+    excludes = merge_path_excludes(excludes)
+    meta: dict = {
+        "engine": "semgrep",
+        "available": False,
+        "configs": semgrep_configs(security_level),
+        "excludes": excludes,
+    }
     cmd_prefix = _semgrep_cmd()
     if not cmd_prefix:
         meta["skipped"] = "semgrep not found (pip install semgrep)"
@@ -235,7 +343,7 @@ def run_semgrep(
     if include_paths:
         for rel in include_paths[:400]:
             cmd.extend(["--include", rel.replace("\\", "/")])
-    for pattern in excludes or []:
+    for pattern in excludes:
         cleaned = (pattern or "").strip().replace("\\", "/")
         if cleaned:
             cmd.extend(["--exclude", cleaned])
@@ -280,6 +388,7 @@ def run_semgrep(
                     raw=item if isinstance(item, dict) else {},
                 )
             )
+        findings = _filter_findings(findings, excludes)
         meta["findings"] = len(findings)
         return findings, meta
     except Exception as exc:
@@ -467,17 +576,34 @@ def _bandit_cmd() -> list[str] | None:
     return None
 
 
-def run_bandit(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
+def run_bandit(workdir: Path, *, excludes: list[str] | None = None) -> tuple[list[NormalizedFinding], dict]:
     """Python-focused SAST. Soft-skip if not installed."""
-    meta: dict = {"engine": "bandit", "available": False}
+    excludes = merge_path_excludes(excludes)
+    # Always skip unit tests for Bandit (assert_used / fixture passwords).
+    excludes = merge_path_excludes([*excludes, "tests", "backend/tests", "**/test_*.py", "**/tests"])
+    meta: dict = {"engine": "bandit", "available": False, "excludes": excludes}
     cmd = _bandit_cmd()
     if not cmd:
         meta["skipped"] = "bandit not found"
         return [], meta
     meta["available"] = True
+    # B101 assert_used (tests), B404 import subprocess, B603 subprocess no shell — expected patterns.
+    skip_tests = "B101,B404,B603"
+    x_paths = [".git", "node_modules", ".venv", "venv", "tests", "backend/tests", "__pycache__"]
     try:
         proc = subprocess.run(
-            [*cmd, "-r", str(workdir), "-f", "json", "-q"],
+            [
+                *cmd,
+                "-r",
+                str(workdir),
+                "-f",
+                "json",
+                "-q",
+                "-x",
+                ",".join(str(workdir / p) for p in x_paths),
+                "-s",
+                skip_tests,
+            ],
             capture_output=True,
             text=True,
             timeout=600,
@@ -498,6 +624,12 @@ def run_bandit(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
             cwe = item.get("issue_cwe")
             if isinstance(cwe, dict) and cwe.get("id") is not None:
                 cwe_id = str(cwe.get("id"))[:32]
+            # Prefer path relative to workdir for UI + exclude matching
+            filename = item.get("filename") or ""
+            try:
+                rel = str(Path(filename).resolve().relative_to(workdir.resolve())).replace("\\", "/")
+            except Exception:
+                rel = filename.replace("\\", "/")
             findings.append(
                 NormalizedFinding(
                     engine="bandit",
@@ -507,13 +639,14 @@ def run_bandit(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
                     vuln_family=classify_family(str(test_id), str(title), item.get("issue_text")),
                     cwe=cwe_id,
                     message=(item.get("issue_text") or "")[:2000],
-                    file_path=item.get("filename"),
+                    file_path=rel,
                     line_start=item.get("line_number"),
                     line_end=line_end,
                     snippet=(item.get("code") or "")[:2000],
                     raw=item,
                 )
             )
+        findings = _filter_findings(findings, excludes)
         meta["findings"] = len(findings)
         # Bandit exits 1 when findings exist
         if proc.returncode not in (0, 1) and not findings:
@@ -553,9 +686,17 @@ def _py_module_cmd(module: str, *probe_args: str) -> list[str] | None:
     return None
 
 
-def run_detect_secrets(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
+def run_detect_secrets(workdir: Path, *, excludes: list[str] | None = None) -> tuple[list[NormalizedFinding], dict]:
     """Yelp detect-secrets — complementary entropy/keyword secret heuristics."""
-    meta: dict = {"engine": "detect_secrets", "available": False}
+    excludes = merge_path_excludes(
+        [
+            *(excludes or []),
+            "tests",
+            "backend/tests",
+            "frontend/node_modules",
+        ]
+    )
+    meta: dict = {"engine": "detect_secrets", "available": False, "excludes": excludes}
     cmd = _py_module_cmd("detect_secrets") or _which("detect-secrets")
     if isinstance(cmd, str):
         cmd = [cmd]
@@ -564,9 +705,32 @@ def run_detect_secrets(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
         return [], meta
     meta["available"] = True
     try:
-        # `detect-secrets scan` writes JSON baseline to stdout
+        # Exclude VCS/deps/tests/build; disable KeywordDetector (auth field-name FPs).
+        scan_cmd = [
+            *cmd,
+            "scan",
+            "--all-files",
+            "--disable-plugin",
+            "KeywordDetector",
+            "--exclude-files",
+            r".*/\.git/.*",
+            "--exclude-files",
+            r".*/node_modules/.*",
+            "--exclude-files",
+            r".*/(\.venv|venv)/.*",
+            "--exclude-files",
+            r".*/(tests|__tests__)/.*",
+            "--exclude-files",
+            r".*/test_.*\.py$",
+            "--exclude-files",
+            r".*\.(min\.js|map)$",
+            "--exclude-files",
+            r".*/static/spa/assets/.*",
+            "--exclude-files",
+            r".*/package-lock\.json$",
+        ]
         proc = subprocess.run(
-            [*cmd, "scan", "--all-files"],
+            scan_cmd,
             cwd=str(workdir),
             capture_output=True,
             text=True,
@@ -599,6 +763,7 @@ def run_detect_secrets(workdir: Path) -> tuple[list[NormalizedFinding], dict]:
                             raw=item,
                         )
                     )
+        findings = _filter_findings(findings, excludes)
         meta["findings"] = len(findings)
         if proc.returncode not in (0, 1) and not findings:
             meta["error"] = ((proc.stderr or proc.stdout) or f"exit {proc.returncode}")[:300]
