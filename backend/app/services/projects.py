@@ -51,15 +51,22 @@ def _dashboard_charts(db: Session, user: User) -> dict:
     """Compare previous scan runs + open-finding distributions for the user dashboard."""
     owned = Project.owner_user_id == user.id
 
-    run_rows = db.execute(
-        select(Scan, Project.name)
+    # Look back over recent finished scans; prefer ones that still have finding rows.
+    # (Newest commits can be clean redeploys while open findings live on older scans.)
+    candidates = db.execute(
+        select(Scan, Project.name, func.count(Finding.id))
         .join(Project, Scan.project_id == Project.id)
+        .outerjoin(Finding, Finding.scan_id == Scan.id)
         .where(owned, Scan.status.in_(("completed", "failed")))
+        .group_by(Scan.id, Project.name)
         .order_by(Scan.created_at.desc())
-        .limit(12)
+        .limit(80)
     ).all()
-    # Chronological (oldest → newest) for trend charts
-    run_rows = list(reversed(run_rows))
+    with_findings = [(scan, name) for scan, name, count in candidates if int(count or 0) > 0][:12]
+    if len(with_findings) >= 2:
+        run_rows = list(reversed(with_findings))
+    else:
+        run_rows = list(reversed([(scan, name) for scan, name, _ in candidates[:12]]))
     run_ids = [scan.id for scan, _ in run_rows]
 
     # Prefer live Finding rows — older summaries often omit by_severity / findings_count.
