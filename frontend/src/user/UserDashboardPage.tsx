@@ -59,54 +59,86 @@ export function UserDashboardPage() {
   }, [scope, projectOptions]);
 
   const runs = useMemo(() => {
-    const filtered = scope === "all" ? allRuns : allRuns.filter((r) => r.project_id === scope);
+    if (scope === "all") return allRuns;
+    const filtered = allRuns.filter((r) => r.project_id === scope);
     return filtered.length > 16 ? filtered.slice(-16) : filtered;
   }, [allRuns, scope]);
-
-  const runCategories = useMemo(
-    () =>
-      runs.map((r) => {
-        const when = r.created_at ? formatLocalDateTime(r.created_at).split(",")[0] : "";
-        const base = r.label || when || "run";
-        if (scope === "all" && r.project_name) {
-          return `${base} · ${r.project_name}`;
-        }
-        return base;
-      }),
-    [runs, scope]
-  );
 
   const projectSeriesMeta = useMemo(() => {
     if (scope !== "all") return [] as { id: string; name: string }[];
     const order: { id: string; name: string }[] = [];
     const seen = new Set<string>();
-    for (const run of runs) {
+    for (const run of allRuns) {
       if (!run.project_id || seen.has(run.project_id)) continue;
       seen.add(run.project_id);
-      order.push({ id: run.project_id, name: run.project_name || "Project" });
+      order.push({
+        id: run.project_id,
+        name: run.project_name || projectOptions.find((p) => p.id === run.project_id)?.name || "Project",
+      });
     }
     return order;
-  }, [runs, scope]);
+  }, [allRuns, scope, projectOptions]);
+
+  /** Per-project chronological runs (All mode) — aligned by run index, not interleaved timeline. */
+  const runsByProject = useMemo(() => {
+    const map = new Map<string, typeof allRuns>();
+    if (scope !== "all") return map;
+    for (const meta of projectSeriesMeta) {
+      const list = allRuns.filter((r) => r.project_id === meta.id);
+      map.set(meta.id, list.length > 16 ? list.slice(-16) : list);
+    }
+    return map;
+  }, [allRuns, scope, projectSeriesMeta]);
+
+  const allModeLen = useMemo(() => {
+    if (scope !== "all") return 0;
+    let max = 0;
+    for (const list of runsByProject.values()) max = Math.max(max, list.length);
+    return max;
+  }, [scope, runsByProject]);
+
+  const runCategories = useMemo(() => {
+    if (scope === "all") {
+      return Array.from({ length: allModeLen }, (_, i) => `Run ${i + 1}`);
+    }
+    return runs.map((r) => {
+      const when = r.created_at ? formatLocalDateTime(r.created_at).split(",")[0] : "";
+      return r.label || when || "run";
+    });
+  }, [scope, allModeLen, runs]);
 
   const runSeries = useMemo(() => {
     if (scope === "all") {
-      return projectSeriesMeta.map((p) => ({
-        name: p.name,
-        data: runs.map((r) => (r.project_id === p.id ? Number(r.findings_count || 0) : null)),
-      }));
+      return projectSeriesMeta.map((p) => {
+        const list = runsByProject.get(p.id) || [];
+        return {
+          name: p.name,
+          data: Array.from({ length: allModeLen }, (_, i) =>
+            i < list.length ? Number(list[i].findings_count || 0) : null
+          ),
+        };
+      });
     }
     return SEV_ORDER.map((sev, i) => ({
       name: SEV_LABELS[i],
       data: runs.map((r) => Number(r.by_severity?.[sev] || 0)),
     }));
-  }, [runs, scope, projectSeriesMeta]);
+  }, [scope, projectSeriesMeta, runsByProject, allModeLen, runs]);
 
   const runColors = useMemo(() => {
     if (scope === "all") {
-      return projectSeriesMeta.map((_, i) => PROJECT_LINE_COLORS[i % PROJECT_LINE_COLORS.length]);
+      return projectSeriesMeta.map((p, i) => {
+        const base = PROJECT_LINE_COLORS[i % PROJECT_LINE_COLORS.length];
+        if (!hoverFocus || hoverFocus === p.id) return base;
+        return `${base}55`;
+      });
     }
-    return [...SEV_COLORS];
-  }, [scope, projectSeriesMeta]);
+    return SEV_ORDER.map((sev, i) => {
+      const base = SEV_COLORS[i];
+      if (!hoverFocus || hoverFocus === sev) return base;
+      return `${base}55`;
+    });
+  }, [scope, projectSeriesMeta, hoverFocus]);
 
   const runStrokeWidths = useMemo(() => {
     const n = runSeries.length;
@@ -116,6 +148,8 @@ export function UserDashboardPage() {
       return key === hoverFocus ? 3.5 : 1.15;
     });
   }, [hoverFocus, runSeries, scope, projectSeriesMeta]);
+
+  const pointCount = scope === "all" ? allModeLen : runs.length;
 
   const runOptions: ApexOptions = useMemo(
     () => ({
@@ -154,10 +188,10 @@ export function UserDashboardPage() {
       stroke: {
         curve: "smooth",
         width: runStrokeWidths,
-        connectNulls: true,
+        connectNulls: false,
       },
       markers: {
-        size: runs.length <= 8 ? 4 : 3,
+        size: pointCount <= 8 ? 4 : 3,
         strokeWidth: 0,
         hover: { size: 6 },
       },
@@ -179,7 +213,7 @@ export function UserDashboardPage() {
       xaxis: {
         categories: runCategories,
         labels: {
-          rotate: runs.length > 6 ? -28 : 0,
+          rotate: pointCount > 8 ? -20 : 0,
           style: { colors: "#94a3b8", fontSize: "10px" },
           trim: true,
           hideOverlappingLabels: true,
@@ -199,11 +233,29 @@ export function UserDashboardPage() {
         theme: "light",
         shared: false,
         intersect: true,
-        y: {
-          formatter: (v) => {
-            if (v == null || Number.isNaN(v)) return "—";
-            return `${v} finding${v === 1 ? "" : "s"}`;
-          },
+        custom: ({ series, seriesIndex, dataPointIndex }) => {
+          const value = series?.[seriesIndex]?.[dataPointIndex];
+          if (value == null || Number.isNaN(value)) return "";
+          if (scope === "all") {
+            const meta = projectSeriesMeta[seriesIndex];
+            const run = meta ? runsByProject.get(meta.id)?.[dataPointIndex] : undefined;
+            const title = meta?.name || "Project";
+            const sha = run?.label || `Run ${dataPointIndex + 1}`;
+            const open =
+              meta && charts?.open_by_severity_by_project?.[meta.id]
+                ? charts.open_by_severity_by_project[meta.id]
+                : null;
+            const openBits = open
+              ? SEV_ORDER.map((k) => `${k}: ${open[k] || 0}`).join(" · ")
+              : "";
+            return `<div class="dash-chart-tip"><strong>${title}</strong><div>${sha} · ${value} finding${
+              value === 1 ? "" : "s"
+            }</div>${openBits ? `<div class="muted">${openBits} open</div>` : ""}</div>`;
+          }
+          const sev = SEV_LABELS[seriesIndex] || "Findings";
+          const run = runs[dataPointIndex];
+          const sha = run?.label || `Run ${dataPointIndex + 1}`;
+          return `<div class="dash-chart-tip"><strong>${sev}</strong><div>${sha} · ${value}</div></div>`;
         },
       },
       states: {
@@ -211,7 +263,17 @@ export function UserDashboardPage() {
         active: { filter: { type: "none" } },
       },
     }),
-    [runCategories, runs.length, runColors, runStrokeWidths, scope, projectSeriesMeta]
+    [
+      runCategories,
+      pointCount,
+      runColors,
+      runStrokeWidths,
+      scope,
+      projectSeriesMeta,
+      runsByProject,
+      runs,
+      charts?.open_by_severity_by_project,
+    ]
   );
 
   const focusProjectId = scope === "all" ? hoverFocus || "all" : scope;
@@ -376,7 +438,13 @@ export function UserDashboardPage() {
               <div>
                 <h2>Findings by run</h2>
                 <span>
-                  {runs.length ? `${runs.length} runs · ${scopeLabel}` : "No finished scans"}
+                  {scope === "all"
+                    ? allModeLen
+                      ? `${projectSeriesMeta.length} projects · up to ${allModeLen} runs each`
+                      : "No finished scans"
+                    : runs.length
+                      ? `${runs.length} runs · ${scopeLabel}`
+                      : "No finished scans"}
                 </span>
               </div>
               {projectOptions.length > 0 ? (
@@ -398,12 +466,12 @@ export function UserDashboardPage() {
                 </div>
               ) : null}
             </div>
-            {runs.length ? (
+            {(scope === "all" ? allModeLen > 0 : runs.length > 0) ? (
               <Chart options={runOptions} series={runSeries} type="line" height={280} />
             ) : (
               <p className="dash-chart-empty">
                 {scope === "all"
-                  ? "Finish a scan to compare severity across runs."
+                  ? "Finish a scan to compare projects across runs."
                   : "No finished scans with findings for this project yet."}
               </p>
             )}

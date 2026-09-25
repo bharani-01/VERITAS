@@ -1911,6 +1911,25 @@ html.nav-pref-collapsed .app-frame .app-nav .nav-logout {
   max-width: 100%;
 }
 
+.dash-chart-tip {
+  padding: 8px 10px;
+  font: 500 0.78rem/1.35 var(--font-ui);
+  color: var(--ink);
+}
+
+.dash-chart-tip strong {
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.8rem;
+}
+
+.dash-chart-tip .muted {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
 .dash-list-action {
   color: var(--ink-soft);
   font-size: 0.8125rem;
