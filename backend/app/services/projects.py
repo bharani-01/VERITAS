@@ -60,6 +60,33 @@ def _dashboard_charts(db: Session, user: User) -> dict:
     ).all()
     # Chronological (oldest → newest) for trend charts
     run_rows = list(reversed(run_rows))
+    run_ids = [scan.id for scan, _ in run_rows]
+
+    # Prefer live Finding rows — older summaries often omit by_severity / findings_count.
+    sev_by_scan: dict[str, dict[str, int]] = {sid: _empty_severity() for sid in run_ids}
+    total_by_scan: dict[str, int] = {sid: 0 for sid in run_ids}
+    family_by_scan: dict[str, dict[str, int]] = {sid: {} for sid in run_ids}
+    if run_ids:
+        for scan_id, severity, count in db.execute(
+            select(Finding.scan_id, Finding.severity, func.count())
+            .where(Finding.scan_id.in_(run_ids))
+            .group_by(Finding.scan_id, Finding.severity)
+        ).all():
+            sid = str(scan_id)
+            key = str(severity or "info").lower()
+            n = int(count)
+            if sid in sev_by_scan and key in sev_by_scan[sid]:
+                sev_by_scan[sid][key] = n
+            if sid in total_by_scan:
+                total_by_scan[sid] += n
+        for scan_id, family, count in db.execute(
+            select(Finding.scan_id, Finding.vuln_family, func.count())
+            .where(Finding.scan_id.in_(run_ids))
+            .group_by(Finding.scan_id, Finding.vuln_family)
+        ).all():
+            sid = str(scan_id)
+            if sid in family_by_scan:
+                family_by_scan[sid][str(family or "other")] = int(count)
 
     runs: list[dict] = []
     for scan, project_name in run_rows:
@@ -71,9 +98,16 @@ def _dashboard_charts(db: Session, user: User) -> dict:
                     summary = parsed
             except json.JSONDecodeError:
                 summary = {}
-        by_sev = _normalize_severity_counts(summary.get("by_severity"))
-        by_family_raw = summary.get("by_family") if isinstance(summary.get("by_family"), dict) else {}
-        by_family = {str(k): int(v or 0) for k, v in by_family_raw.items() if v}
+        by_sev = sev_by_scan.get(scan.id) or _empty_severity()
+        if not sum(by_sev.values()):
+            by_sev = _normalize_severity_counts(summary.get("by_severity"))
+        findings_count = total_by_scan.get(scan.id) or 0
+        if not findings_count:
+            findings_count = int(summary.get("findings_count") or sum(by_sev.values()) or 0)
+        by_family = family_by_scan.get(scan.id) or {}
+        if not by_family:
+            by_family_raw = summary.get("by_family") if isinstance(summary.get("by_family"), dict) else {}
+            by_family = {str(k): int(v or 0) for k, v in by_family_raw.items() if v}
         label = (scan.commit_short or (scan.commit_sha or "")[:7] or scan.target or "scan")[:16]
         runs.append(
             {
@@ -83,7 +117,7 @@ def _dashboard_charts(db: Session, user: User) -> dict:
                 "label": label,
                 "status": scan.status,
                 "created_at": scan.finished_at or scan.created_at,
-                "findings_count": int(summary.get("findings_count") or sum(by_sev.values()) or 0),
+                "findings_count": findings_count,
                 "by_severity": by_sev,
                 "by_family": by_family,
             }
