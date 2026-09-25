@@ -16,15 +16,20 @@ const SEV_ORDER = ["critical", "high", "medium", "low", "info"] as const;
 const SEV_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#0284c7", "#94a3b8"];
 const SEV_LABELS = ["Critical", "High", "Medium", "Low", "Info"];
 
-function highlightLineSeries(chartContext: { el?: HTMLElement | null } | undefined, activeIndex: number | null) {
-  const root = chartContext?.el;
+function chartRoot(chartContext: unknown): HTMLElement | null {
+  if (!chartContext || typeof chartContext !== "object") return null;
+  const ctx = chartContext as { el?: HTMLElement | null; w?: { globals?: { dom?: { baseEl?: HTMLElement } } } };
+  return ctx.el || ctx.w?.globals?.dom?.baseEl || null;
+}
+
+function highlightLineSeries(chartContext: unknown, activeIndex: number | null) {
+  const root = chartRoot(chartContext);
   if (!root) return;
   root.querySelectorAll<SVGElement>(".apexcharts-series").forEach((el, i) => {
     const on = activeIndex === null || i === activeIndex;
     el.style.opacity = on ? "1" : "0.14";
     el.style.transition = "opacity 120ms ease";
-    const paths = el.querySelectorAll<SVGPathElement>("path");
-    paths.forEach((path) => {
+    el.querySelectorAll<SVGPathElement>("path").forEach((path) => {
       path.style.strokeWidth = on && activeIndex !== null ? "3.25" : "";
     });
   });
@@ -104,7 +109,7 @@ export function UserDashboardPage() {
         zoom: { enabled: false },
         events: {
           dataPointMouseEnter: (_e, ctx, config) => {
-            highlightLineSeries(ctx, config.seriesIndex);
+            highlightLineSeries(ctx, config?.seriesIndex ?? null);
           },
           dataPointMouseLeave: (_e, ctx) => {
             highlightLineSeries(ctx, null);
