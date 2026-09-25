@@ -42,8 +42,9 @@ export function UserProjectDetailPage() {
 
   useDocumentTitle(project ? `${project.name} · Scans` : "Scans");
 
-  async function load() {
+  async function load(opts?: { hydrateForm?: boolean }) {
     if (!projectId) return;
+    const hydrateForm = !!opts?.hydrateForm;
     const [proj, scanData, gh] = await Promise.all([
       api<{ project: Project }>(`/workspace/projects/${projectId}`),
       api<{ items: Scan[] }>(`/workspace/projects/${projectId}/scans`),
@@ -71,17 +72,21 @@ export function UserProjectDetailPage() {
       }
     }
     setGhNeedsReauth(!!gh.needs_reauth);
-    if (proj.project.notify_email_default != null) setNotifyEmail(!!proj.project.notify_email_default);
-    if (proj.project.notify_in_app_default != null) setNotifyInApp(!!proj.project.notify_in_app_default);
-    setAutoScan(!!proj.project.auto_scan_on_push);
-    setAutoBranch(proj.project.auto_scan_branch || proj.project.github_default_branch || "");
-    if (proj.project.security_level === "basic" || proj.project.security_level === "strict") {
-      setSecurityLevel(proj.project.security_level);
-    } else {
-      setSecurityLevel("standard");
-    }
-    if (proj.project.github_default_branch && !scanRef) {
-      setScanRef(proj.project.github_default_branch);
+    // Only hydrate editable Advanced / notify fields on first load (or after save).
+    // Polling must not wipe in-progress form edits.
+    if (hydrateForm) {
+      if (proj.project.notify_email_default != null) setNotifyEmail(!!proj.project.notify_email_default);
+      if (proj.project.notify_in_app_default != null) setNotifyInApp(!!proj.project.notify_in_app_default);
+      setAutoScan(!!proj.project.auto_scan_on_push);
+      setAutoBranch(proj.project.auto_scan_branch || proj.project.github_default_branch || "");
+      if (proj.project.security_level === "basic" || proj.project.security_level === "strict") {
+        setSecurityLevel(proj.project.security_level);
+      } else {
+        setSecurityLevel("standard");
+      }
+      if (proj.project.github_default_branch && !scanRef) {
+        setScanRef(proj.project.github_default_branch);
+      }
     }
   }
 
@@ -91,7 +96,7 @@ export function UserProjectDetailPage() {
     setEnteringScanIds([]);
     setScans([]);
     setProject(null);
-    load().catch((err: Error) => setError(err.message));
+    load({ hydrateForm: true }).catch((err: Error) => setError(err.message));
     return () => {
       enterTimersRef.current.forEach((t) => window.clearTimeout(t));
       enterTimersRef.current = [];
@@ -104,7 +109,7 @@ export function UserProjectDetailPage() {
     const ms = active ? 1200 : 3000;
     const id = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
-      load().catch(() => undefined);
+      load({ hydrateForm: false }).catch(() => undefined);
     }, ms);
     return () => window.clearInterval(id);
   }, [scans, projectId]);
@@ -209,6 +214,13 @@ export function UserProjectDetailPage() {
           body: JSON.stringify(patch),
         });
         setProject(res.project);
+        setAutoScan(!!res.project.auto_scan_on_push);
+        setAutoBranch(res.project.auto_scan_branch || res.project.github_default_branch || "");
+        if (res.project.security_level === "basic" || res.project.security_level === "strict") {
+          setSecurityLevel(res.project.security_level);
+        } else if (patch.security_level) {
+          setSecurityLevel("standard");
+        }
       }
       setAdvancedSaved(true);
       window.setTimeout(() => setAdvancedSaved(false), 2500);
