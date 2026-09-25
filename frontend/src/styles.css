@@ -1712,6 +1712,15 @@ html.nav-pref-collapsed .app-frame .app-nav .nav-logout {
   color: var(--ink-soft);
 }
 
+.dash-list-sha {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  font-weight: 550;
+  color: var(--ink-soft);
+  background: transparent;
+  padding: 0;
+}
+
 .dash-list .badge,
 .dash-list-action {
   flex: 0 0 auto;
