@@ -261,6 +261,41 @@ def scan_finished_email(
     )
 
 
+def ops_scan_alert_email(
+    *,
+    project_name: str,
+    scan_id: str,
+    status: str,
+    owner_email: str | None,
+    issues: list[str],
+    report_url: str,
+) -> EmailMessage:
+    status_label = (status or "unknown").replace("_", " ")
+    issue_lines = [f"• {item}" for item in issues[:40]]
+    if len(issues) > 40:
+        issue_lines.append(f"• …and {len(issues) - 40} more")
+    return EmailMessage(
+        template="ops_scan_alert",
+        subject=f"VERITAS ops · {project_name} · {status_label}",
+        html=render_layout(
+            title="Scan ops alert",
+            paragraphs=[
+                "A VERITAS scan hit a missing engine and/or an application-side error.",
+                "Expected soft-skips (no Dockerfiles, disabled engines, etc.) are not included.",
+            ],
+            meta_lines=[
+                f"Project: {project_name}",
+                f"Scan: {scan_id}",
+                f"Status: {status_label}",
+                f"Owner: {owner_email or '—'}",
+                *issue_lines,
+            ],
+            cta_label="Open scan",
+            cta_url=report_url,
+        ),
+    )
+
+
 def account_status_email(*, display_name: str, status: str, sign_in_url: str) -> EmailMessage:
     """Fallback for status transitions — prefer specific builders above."""
     key = (status or "").strip().lower()

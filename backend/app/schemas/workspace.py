@@ -24,6 +24,7 @@ class ProjectUpdate(BaseModel):
     notify_in_app_default: bool | None = None
     auto_scan_on_push: bool | None = None
     auto_scan_branch: str | None = Field(default=None, max_length=128)
+    scan_options: dict | None = None
 
 
 class ScanCreate(BaseModel):

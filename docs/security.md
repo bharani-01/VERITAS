@@ -38,6 +38,7 @@ Login is blocked unless status is `active`.
 - Rate-limit blocks (`429`) are audited as `rate_limited`
 - Does **not** log every HTTP request or every SQL query into `audit_events` (noise, PII risk, performance)
 - Admin UI: `/admin/audit` via `GET /admin/audit-events` (filters including severity, infinite scroll, response code column)
+- Admin Files: `/admin/files` browses real mounted disks (`GET /admin/fs/mounts`, `/admin/fs/list`) and downloads files (`GET /admin/fs/download`); path-safe under selected mount; blocks `/proc` `/sys` `/dev` `/run` and high-risk secrets (`.env`, private keys, `/etc/shadow`); list/download audited as `fs_list` / `fs_download`
 
 ## HTTP telemetry (Security dashboard)
 
@@ -57,6 +58,7 @@ In-memory limiter on signup, login, verify, reset, and profile update endpoints.
 - Never commit `backend/.env`
 - Bootstrap admin credentials required for empty production DB
 - Resend API key optional locally (emails stay `queued`)
+- Ops alert mailbox via `OPS_ALERT_EMAIL` (missing scan engines / app-side scan failures); not a credential
 - GitHub OAuth client secret and access tokens never returned to the client; tokens encrypted at rest (`TOKEN_ENCRYPTION_SECRET`)
 - Optional `OPENROUTER_API_KEY` for Rules+AI code review; optional `GROQ_API_KEY` for final report/remediations; scans fail-open (engines still complete) when unset or provider errors
 - Never commit API keys; rotate any key pasted in chat before production
@@ -65,7 +67,7 @@ In-memory limiter on signup, login, verify, reset, and profile update endpoints.
 - `fail_severity` policy is evaluated server-side after engines merge
 - GitHub API **401** (or decrypt failure) marks connection `needs_reauth`; **403** rate limits do not
 - Push webhooks at `/webhooks/github` require valid `X-Hub-Signature-256` per project secret
-- Repo clones for scans use short-lived workdirs under a server temp path and are deleted after the job
+- Repo clones for scans use short-lived workdirs under `VERITAS_SCAN_ROOT` (default `/tmp/veritas-scans`) and are deleted after the job. Prefer a large mounted EBS volume (e.g. `/data/veritas-scans`) in production.
 
 ## Agent rules
 

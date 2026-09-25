@@ -19,7 +19,20 @@ export function UserProjectDetailPage() {
   const [scanMode, setScanMode] = useState<"rules_only" | "rules_plus_ai">("rules_only");
   const [scanScope, setScanScope] = useState<"full" | "changed">("full");
   const [securityLevel, setSecurityLevel] = useState<"basic" | "standard" | "strict">("standard");
-  const [engines, setEngines] = useState({ gitleaks: true, osv: true, semgrep: true });
+  const [engines, setEngines] = useState({
+    gitleaks: true,
+    osv: true,
+    semgrep: true,
+    trufflehog: false,
+    trivy: false,
+    bandit: false,
+    detect_secrets: false,
+    pip_audit: false,
+    checkov: false,
+    njsscan: false,
+    hadolint: false,
+    shellcheck: false,
+  });
   const [pathExcludes, setPathExcludes] = useState("node_modules/**\nvendor/**\ndist/**");
   const [failSeverity, setFailSeverity] = useState<"off" | "critical" | "high" | "medium">("off");
   const [scanRef, setScanRef] = useState("");
@@ -84,6 +97,36 @@ export function UserProjectDetailPage() {
       } else {
         setSecurityLevel("standard");
       }
+      const opts = proj.project.scan_options;
+      if (opts) {
+        const enabled = new Set(opts.engines || ["gitleaks", "osv", "semgrep"]);
+        setEngines({
+          gitleaks: enabled.has("gitleaks"),
+          osv: enabled.has("osv"),
+          semgrep: enabled.has("semgrep"),
+          trufflehog: enabled.has("trufflehog"),
+          trivy: enabled.has("trivy"),
+          bandit: enabled.has("bandit"),
+          detect_secrets: enabled.has("detect_secrets"),
+          pip_audit: enabled.has("pip_audit"),
+          checkov: enabled.has("checkov"),
+          njsscan: enabled.has("njsscan"),
+          hadolint: enabled.has("hadolint"),
+          shellcheck: enabled.has("shellcheck"),
+        });
+        if (opts.path_excludes?.length) {
+          setPathExcludes(opts.path_excludes.join("\n"));
+        }
+        if (opts.fail_severity === "critical" || opts.fail_severity === "high" || opts.fail_severity === "medium") {
+          setFailSeverity(opts.fail_severity);
+        } else {
+          setFailSeverity("off");
+        }
+        if (opts.scan_mode === "rules_plus_ai") setScanMode("rules_plus_ai");
+        else setScanMode("rules_only");
+        if (opts.scan_scope === "changed") setScanScope("changed");
+        else setScanScope("full");
+      }
       if (proj.project.github_default_branch && !scanRef) {
         setScanRef(proj.project.github_default_branch);
       }
@@ -139,7 +182,22 @@ export function UserProjectDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      const selectedEngines = (["gitleaks", "osv", "semgrep"] as const).filter((e) => engines[e]);
+      const selectedEngines = (
+        [
+          "gitleaks",
+          "osv",
+          "semgrep",
+          "trufflehog",
+          "trivy",
+          "bandit",
+          "detect_secrets",
+          "pip_audit",
+          "checkov",
+          "njsscan",
+          "hadolint",
+          "shellcheck",
+        ] as const
+      ).filter((e) => engines[e]);
       if (!selectedEngines.length) {
         setError("Select at least one engine.");
         setBusy(false);
@@ -197,30 +255,77 @@ export function UserProjectDetailPage() {
     setError(null);
     setAdvancedSaved(false);
     try {
-      const patch: Record<string, unknown> = {};
-      if (securityLevel !== (project.security_level || "standard")) {
-        patch.security_level = securityLevel;
+      const selectedEngines = (
+        [
+          "gitleaks",
+          "osv",
+          "semgrep",
+          "trufflehog",
+          "trivy",
+          "bandit",
+          "detect_secrets",
+          "pip_audit",
+          "checkov",
+          "njsscan",
+          "hadolint",
+          "shellcheck",
+        ] as const
+      ).filter((e) => engines[e]);
+      if (!selectedEngines.length) {
+        setError("Select at least one engine before saving.");
+        setAdvancedBusy(false);
+        return;
       }
-      const autoChanged =
-        autoScan !== !!project.auto_scan_on_push ||
-        (autoBranch || "") !== (project.auto_scan_branch || project.github_default_branch || "");
-      if (autoChanged && project.github_repo_full_name) {
+      const patch: Record<string, unknown> = {
+        security_level: securityLevel,
+        notify_email_default: notifyEmail,
+        notify_in_app_default: notifyInApp,
+        scan_options: {
+          engines: selectedEngines,
+          path_excludes: pathExcludes
+            .split(/[\n,]+/)
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .slice(0, 40),
+          fail_severity: failSeverity,
+          scan_mode: scanMode,
+          scan_scope: scanScope,
+          code_review: scanMode === "rules_plus_ai",
+        },
+      };
+      if (project.github_repo_full_name) {
         patch.auto_scan_on_push = autoScan;
         patch.auto_scan_branch = autoBranch.trim() || project.github_default_branch || null;
       }
-      if (Object.keys(patch).length) {
-        const res = await api<{ project: Project }>(`/workspace/projects/${projectId}`, {
-          method: "PATCH",
-          body: JSON.stringify(patch),
+      const res = await api<{ project: Project }>(`/workspace/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      });
+      setProject(res.project);
+      setAutoScan(!!res.project.auto_scan_on_push);
+      setAutoBranch(res.project.auto_scan_branch || res.project.github_default_branch || "");
+      if (res.project.security_level === "basic" || res.project.security_level === "strict") {
+        setSecurityLevel(res.project.security_level);
+      } else {
+        setSecurityLevel("standard");
+      }
+      const opts = res.project.scan_options;
+      if (opts?.engines) {
+        const enabled = new Set(opts.engines);
+        setEngines({
+          gitleaks: enabled.has("gitleaks"),
+          osv: enabled.has("osv"),
+          semgrep: enabled.has("semgrep"),
+          trufflehog: enabled.has("trufflehog"),
+          trivy: enabled.has("trivy"),
+          bandit: enabled.has("bandit"),
+          detect_secrets: enabled.has("detect_secrets"),
+          pip_audit: enabled.has("pip_audit"),
+          checkov: enabled.has("checkov"),
+          njsscan: enabled.has("njsscan"),
+          hadolint: enabled.has("hadolint"),
+          shellcheck: enabled.has("shellcheck"),
         });
-        setProject(res.project);
-        setAutoScan(!!res.project.auto_scan_on_push);
-        setAutoBranch(res.project.auto_scan_branch || res.project.github_default_branch || "");
-        if (res.project.security_level === "basic" || res.project.security_level === "strict") {
-          setSecurityLevel(res.project.security_level);
-        } else if (patch.security_level) {
-          setSecurityLevel("standard");
-        }
       }
       setAdvancedSaved(true);
       window.setTimeout(() => setAdvancedSaved(false), 2500);
@@ -372,34 +477,38 @@ export function UserProjectDetailPage() {
             <section className="np-block rr-row">
               <div className="rr-meta">
                 <h2 className="rr-title">Engines</h2>
-                <p>Pick Secrets, Dependencies (SCA), and/or Code (SAST). At least one required.</p>
+                <p>
+                  Core engines on by default. Deep modules add coverage and time — enable when you want
+                  the fullest pass. At least one required.
+                </p>
               </div>
               <div className="rr-controls">
                 <div className="np-check-row">
-                  <label className="np-check">
-                    <input
-                      type="checkbox"
-                      checked={engines.gitleaks}
-                      onChange={(e) => setEngines((v) => ({ ...v, gitleaks: e.target.checked }))}
-                    />
-                    <span>Secrets</span>
-                  </label>
-                  <label className="np-check">
-                    <input
-                      type="checkbox"
-                      checked={engines.osv}
-                      onChange={(e) => setEngines((v) => ({ ...v, osv: e.target.checked }))}
-                    />
-                    <span>Dependencies</span>
-                  </label>
-                  <label className="np-check">
-                    <input
-                      type="checkbox"
-                      checked={engines.semgrep}
-                      onChange={(e) => setEngines((v) => ({ ...v, semgrep: e.target.checked }))}
-                    />
-                    <span>Code</span>
-                  </label>
+                  {(
+                    [
+                      ["gitleaks", "Secrets (Gitleaks)"],
+                      ["osv", "Dependencies (OSV)"],
+                      ["semgrep", "Code (Semgrep)"],
+                      ["trufflehog", "Deep secrets (TruffleHog)"],
+                      ["detect_secrets", "Entropy secrets (detect-secrets)"],
+                      ["trivy", "Deep SCA (Trivy)"],
+                      ["pip_audit", "Python pkgs (pip-audit)"],
+                      ["checkov", "IaC (Checkov)"],
+                      ["bandit", "Python SAST (Bandit)"],
+                      ["njsscan", "Node SAST (njsscan)"],
+                      ["hadolint", "Dockerfile (Hadolint)"],
+                      ["shellcheck", "Shell (ShellCheck)"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label className="np-check" key={key}>
+                      <input
+                        type="checkbox"
+                        checked={engines[key]}
+                        onChange={(e) => setEngines((v) => ({ ...v, [key]: e.target.checked }))}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
             </section>
@@ -604,7 +713,7 @@ export function UserProjectDetailPage() {
                     />
                     <span>
                       <strong>Enable auto-scan</strong>
-                      <span className="np-check-sub">Saved to this project when you apply below</span>
+                      <span className="np-check-sub">Included when you save advanced settings below</span>
                     </span>
                   </label>
                   <label className={`np-field ${autoScan ? "" : "is-dimmed"}`}>
@@ -625,19 +734,27 @@ export function UserProjectDetailPage() {
                         ))}
                     </select>
                   </label>
-                  <div className="np-advanced-foot">
-                    <button
-                      type="button"
-                      className="btn ghost"
-                      disabled={advancedBusy || ghNeedsReauth}
-                      onClick={() => void saveAdvanced()}
-                    >
-                      {advancedBusy ? "Saving…" : advancedSaved ? "Saved" : "Save auto-scan settings"}
-                    </button>
-                  </div>
                 </div>
               </section>
             ) : null}
+
+            <section className="np-block rr-row">
+              <div className="rr-meta">
+                <h2 className="rr-title">Save</h2>
+              </div>
+              <div className="rr-controls">
+                <div className="np-advanced-foot">
+                  <button
+                    type="button"
+                    className="btn"
+                    disabled={advancedBusy}
+                    onClick={() => void saveAdvanced()}
+                  >
+                    {advancedBusy ? "Saving…" : advancedSaved ? "Saved" : "Save advanced settings"}
+                  </button>
+                </div>
+              </div>
+            </section>
           </>
         ) : null}
 

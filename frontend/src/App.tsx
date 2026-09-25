@@ -4,6 +4,7 @@ import { RouteTitle } from "./components/RouteTitle";
 import { LoadingMark } from "./components/LoadingMark";
 import { AdminAuditPage } from "./admin/AdminAuditPage";
 import { AdminDashboardPage } from "./admin/AdminDashboardPage";
+import { AdminFilesPage } from "./admin/AdminFilesPage";
 import { AdminProfilePage } from "./admin/AdminProfilePage";
 import { AdminSettingsPage } from "./admin/AdminSettingsPage";
 import { AdminShell } from "./admin/AdminShell";
@@ -45,6 +46,7 @@ export default function App() {
       <Route element={<AdminShell />}>
         <Route path="/admin/" element={<AdminDashboardPage />} />
         <Route path="/admin/directory" element={<AdminUsersPage />} />
+        <Route path="/admin/files" element={<AdminFilesPage />} />
         <Route path="/admin/audit" element={<AdminAuditPage />} />
         <Route
           path="/admin/security"

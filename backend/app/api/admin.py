@@ -5,7 +5,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy import func, select
+from fastapi.responses import FileResponse
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
@@ -17,6 +18,7 @@ from app.schemas import UserPatch
 from app.services.audit import audit, audit_severity, public_user, snapshot
 from app.services.auth import active_admin_count
 from app.services.email import send_account_status, send_token_email
+from app.services.host_fs import list_dir, list_mounts, normalize_root, resolve_download
 from app.services.http_traffic import serialize_http_event
 from app.services.http_classifier import ATTACK_FAMILIES
 from app.services.security_ai import analyze_http_security
@@ -378,7 +380,12 @@ def list_audit_events(
     elif category == "auth_failures":
         query = query.where(AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]))
     elif category == "admin":
-        query = query.where(AuditEvent.action.like("user_%"))
+        query = query.where(
+            or_(
+                AuditEvent.action.like("user_%"),
+                AuditEvent.action.in_(["fs_list", "fs_download"]),
+            )
+        )
     elif category == "workspace":
         query = query.where(
             AuditEvent.action.in_(
@@ -657,3 +664,107 @@ def security_analyze(_: User = Depends(require_admin), db: Session = Depends(db_
     result["sample_size"] = len(sample)
     result["request_count"] = len(all_15)
     return result
+
+
+@router.get("/fs/mounts")
+def fs_mounts(request: Request, actor: User = Depends(require_admin), db: Session = Depends(db_session)):
+    """List real mounted disks available for the admin Files browser."""
+    mounts = list_mounts()
+    audit(
+        db,
+        request,
+        "fs_list",
+        actor=actor,
+        after={"op": "mounts", "count": len(mounts)},
+        status_code=200,
+    )
+    db.commit()
+    return {"mounts": mounts, "server_time": utcnow()}
+
+
+@router.get("/fs/list")
+def fs_list(
+    request: Request,
+    root: str = "/",
+    path: str = "",
+    limit: int = 500,
+    offset: int = 0,
+    actor: User = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    """List directory entries under an allowed mount root."""
+    try:
+        root_norm = normalize_root(root)
+        data = list_dir(root_norm, path, limit=limit, offset=offset)
+    except HTTPException as exc:
+        audit(
+            db,
+            request,
+            "fs_list",
+            actor=actor,
+            after={"op": "list", "root": root, "path": path, "error": exc.detail},
+            status_code=exc.status_code,
+        )
+        db.commit()
+        raise
+    audit(
+        db,
+        request,
+        "fs_list",
+        actor=actor,
+        after={
+            "op": "list",
+            "root": data.get("root"),
+            "path": data.get("path"),
+            "total": data.get("total"),
+        },
+        status_code=200,
+    )
+    db.commit()
+    data["server_time"] = utcnow()
+    return data
+
+
+@router.get("/fs/download")
+def fs_download(
+    request: Request,
+    root: str = "/",
+    path: str = "",
+    actor: User = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    """Download a single file from an allowed mount (secret paths blocked)."""
+    try:
+        root_norm = normalize_root(root)
+        file_path = resolve_download(root_norm, path)
+    except HTTPException as exc:
+        audit(
+            db,
+            request,
+            "fs_download",
+            actor=actor,
+            after={"op": "download", "root": root, "path": path, "error": exc.detail},
+            status_code=exc.status_code,
+        )
+        db.commit()
+        raise
+    audit(
+        db,
+        request,
+        "fs_download",
+        actor=actor,
+        after={
+            "op": "download",
+            "root": root_norm,
+            "path": path,
+            "name": file_path.name,
+            "size": file_path.stat().st_size,
+        },
+        status_code=200,
+    )
+    db.commit()
+    return FileResponse(
+        path=str(file_path),
+        filename=file_path.name,
+        media_type="application/octet-stream",
+    )

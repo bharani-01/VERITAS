@@ -4,7 +4,6 @@ import os
 import shutil
 import stat
 import subprocess
-import tempfile
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -12,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.crypto import decrypt_secret
+from app.core.config import scan_workdir_root
 from app.models import GitHubConnection, Project, User
 from app.services import github as github_svc
 
@@ -31,7 +31,7 @@ def _git_bin() -> str:
 
 
 def prepare_workdir(scan_id: str) -> Path:
-    root = Path(tempfile.gettempdir()) / "veritas-scans" / scan_id
+    root = Path(scan_workdir_root()) / scan_id
     if root.exists():
         shutil.rmtree(root, ignore_errors=True)
     root.mkdir(parents=True, exist_ok=True)
@@ -77,8 +77,8 @@ def cleanup_workdir(path: Path | None) -> None:
 
 
 def purge_all_scan_workdirs() -> None:
-    """Remove every leftover /tmp/veritas-scans/* directory (orphans after crashes)."""
-    root = Path(tempfile.gettempdir()) / "veritas-scans"
+    """Remove every leftover veritas-scans/* directory (orphans after crashes)."""
+    root = Path(scan_workdir_root())
     if not root.is_dir():
         return
     for child in root.iterdir():

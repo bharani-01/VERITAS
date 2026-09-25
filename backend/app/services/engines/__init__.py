@@ -5,16 +5,57 @@ from app.services.engines.normalize import (
     normalize_severity,
     public_repo_path,
 )
-from app.services.engines.runners import run_gitleaks, run_osv, run_semgrep, semgrep_configs
+from app.services.engines.runners import (
+    run_bandit,
+    run_checkov,
+    run_detect_secrets,
+    run_gitleaks,
+    run_hadolint,
+    run_njsscan,
+    run_osv,
+    run_pip_audit,
+    run_semgrep,
+    run_shellcheck,
+    run_trivy,
+    run_trufflehog,
+    semgrep_configs,
+)
+
+ALL_ENGINES = (
+    "gitleaks",
+    "osv",
+    "semgrep",
+    "trufflehog",
+    "trivy",
+    "bandit",
+    "detect_secrets",
+    "pip_audit",
+    "checkov",
+    "njsscan",
+    "hadolint",
+    "shellcheck",
+)
+DEFAULT_ENGINES = ("gitleaks", "osv", "semgrep")
 
 __all__ = [
+    "ALL_ENGINES",
+    "DEFAULT_ENGINES",
     "NormalizedFinding",
     "classify_family",
     "finding_fingerprint",
     "normalize_severity",
     "public_repo_path",
+    "run_bandit",
+    "run_checkov",
+    "run_detect_secrets",
     "run_gitleaks",
+    "run_hadolint",
+    "run_njsscan",
     "run_osv",
+    "run_pip_audit",
     "run_semgrep",
+    "run_shellcheck",
+    "run_trivy",
+    "run_trufflehog",
     "semgrep_configs",
 ]

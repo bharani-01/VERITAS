@@ -22,6 +22,7 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
   const { pathname } = useLocation();
   const dashActive = pathname === "/admin" || pathname === "/admin/";
   const usersActive = pathname.startsWith("/admin/directory");
+  const filesActive = pathname.startsWith("/admin/files");
   const auditActive = pathname.startsWith("/admin/audit");
   const securityActive = pathname.startsWith("/admin/security");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -101,6 +102,17 @@ export function AdminNav({ user, collapsed, onToggle, onLogout }: Props) {
           <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
         <span className="nav-link-text">Users</span>
+      </Link>
+      <Link
+        className={`nav-link ${filesActive ? "active" : ""}`}
+        to="/admin/files"
+        aria-label="Files"
+        aria-current={filesActive ? "page" : undefined}
+      >
+        <svg className="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+        </svg>
+        <span className="nav-link-text">Files</span>
       </Link>
       <Link
         className={`nav-link ${auditActive ? "active" : ""}`}

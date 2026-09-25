@@ -106,6 +106,7 @@ def patch_project(
             notify_in_app_default=body.notify_in_app_default,
             auto_scan_on_push=body.auto_scan_on_push,
             auto_scan_branch=body.auto_scan_branch,
+            scan_options=body.scan_options,
         )
     except HTTPException as exc:
         if body.github_repo_id is not None and "owned by your connected GitHub" in str(exc.detail):

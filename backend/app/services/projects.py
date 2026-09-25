@@ -21,6 +21,7 @@ from app.core.rate_limit import rate_limiter
 from app.core.time import utcnow
 from app.models import Finding, FindingSuppression, Project, Scan, User
 from app.services import github as github_svc
+from app.services.engines import ALL_ENGINES, DEFAULT_ENGINES
 from app.services.engines.normalize import finding_fingerprint, public_repo_path
 from app.services.scan_runner import enqueue_scan, estimate_eta_seconds, run_scan_job
 
@@ -209,6 +210,7 @@ def _dashboard_charts(db: Session, user: User) -> dict:
 
 
 def public_project(project: Project) -> dict:
+    opts = project_scan_options(project)
     return {
         "id": project.id,
         "name": project.name,
@@ -225,9 +227,105 @@ def public_project(project: Project) -> dict:
         "auto_scan_on_push": bool(getattr(project, "auto_scan_on_push", False)),
         "auto_scan_branch": getattr(project, "auto_scan_branch", None)
         or project.github_default_branch,
+        "scan_options": opts,
         "created_at": project.created_at,
         "updated_at": project.updated_at,
     }
+
+
+def project_scan_options(project: Project) -> dict:
+    """Saved Advanced defaults for this project (engines, excludes, gates, mode)."""
+    default = {
+        "engines": list(DEFAULT_ENGINES),
+        "path_excludes": ["node_modules/**", "vendor/**", "dist/**"],
+        "fail_severity": "off",
+        "scan_mode": "rules_only",
+        "scan_scope": "full",
+        "code_review": False,
+    }
+    raw = getattr(project, "scan_options_json", None)
+    if not raw:
+        return default
+    try:
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return default
+    except json.JSONDecodeError:
+        return default
+    allowed = set(ALL_ENGINES)
+    engines = [e for e in (data.get("engines") or default["engines"]) if e in allowed]
+    if not engines:
+        engines = list(DEFAULT_ENGINES)
+    excludes: list[str] = []
+    for item in data.get("path_excludes") or default["path_excludes"]:
+        cleaned = str(item or "").strip()[:128]
+        if cleaned:
+            excludes.append(cleaned)
+    excludes = excludes[:40]
+    fail = (data.get("fail_severity") or "off").strip().lower()
+    if fail not in {"off", "critical", "high", "medium"}:
+        fail = "off"
+    mode = (data.get("scan_mode") or "rules_only").strip().lower()
+    if mode not in {"rules_only", "rules_plus_ai"}:
+        mode = "rules_only"
+    scope = (data.get("scan_scope") or "full").strip().lower()
+    if scope not in {"full", "changed"}:
+        scope = "full"
+    return {
+        "engines": engines,
+        "path_excludes": excludes,
+        "fail_severity": fail,
+        "scan_mode": mode,
+        "scan_scope": scope,
+        "code_review": bool(data.get("code_review")) if "code_review" in data else (mode == "rules_plus_ai"),
+    }
+
+
+def set_project_scan_options(
+    project: Project,
+    *,
+    engines: list[str] | None = None,
+    path_excludes: list[str] | None = None,
+    fail_severity: str | None = None,
+    scan_mode: str | None = None,
+    scan_scope: str | None = None,
+    code_review: bool | None = None,
+) -> dict:
+    current = project_scan_options(project)
+    allowed = set(ALL_ENGINES)
+    if engines is not None:
+        chosen = [e for e in engines if e in allowed]
+        if not chosen:
+            raise HTTPException(status_code=400, detail="Select at least one scan engine.")
+        current["engines"] = chosen
+    if path_excludes is not None:
+        excludes: list[str] = []
+        for item in path_excludes:
+            cleaned = str(item or "").strip()[:128]
+            if cleaned:
+                excludes.append(cleaned)
+        current["path_excludes"] = excludes[:40]
+    if fail_severity is not None:
+        fail = fail_severity.strip().lower()
+        if fail not in {"off", "critical", "high", "medium"}:
+            raise HTTPException(status_code=400, detail="Invalid fail_severity.")
+        current["fail_severity"] = fail
+    if scan_mode is not None:
+        mode = scan_mode.strip().lower()
+        if mode not in {"rules_only", "rules_plus_ai"}:
+            raise HTTPException(status_code=400, detail="Invalid scan_mode.")
+        current["scan_mode"] = mode
+        if code_review is None:
+            current["code_review"] = mode == "rules_plus_ai"
+    if scan_scope is not None:
+        scope = scan_scope.strip().lower()
+        if scope not in {"full", "changed"}:
+            raise HTTPException(status_code=400, detail="Invalid scan_scope.")
+        current["scan_scope"] = scope
+    if code_review is not None:
+        current["code_review"] = bool(code_review)
+    project.scan_options_json = json.dumps(current)
+    return current
 
 
 
@@ -301,7 +399,7 @@ def _scan_options(scan: Scan) -> dict:
     raw = getattr(scan, "options_json", None)
     if not raw:
         return {
-            "engines": ["gitleaks", "osv", "semgrep"],
+            "engines": list(DEFAULT_ENGINES),
             "path_excludes": [],
             "fail_severity": "off",
             "code_review": False,
@@ -462,6 +560,7 @@ def update_project(
     notify_in_app_default: bool | None = None,
     auto_scan_on_push: bool | None = None,
     auto_scan_branch: str | None = None,
+    scan_options: dict | None = None,
 ) -> Project:
     project = get_owned_project(db, user, project_id)
     if name is not None:
@@ -486,6 +585,18 @@ def update_project(
         project.auto_scan_on_push = bool(auto_scan_on_push)
     if auto_scan_branch is not None:
         project.auto_scan_branch = auto_scan_branch.strip() or None
+    if scan_options is not None:
+        if not isinstance(scan_options, dict):
+            raise HTTPException(status_code=400, detail="Invalid scan_options.")
+        set_project_scan_options(
+            project,
+            engines=scan_options.get("engines"),
+            path_excludes=scan_options.get("path_excludes"),
+            fail_severity=scan_options.get("fail_severity"),
+            scan_mode=scan_options.get("scan_mode"),
+            scan_scope=scan_options.get("scan_scope"),
+            code_review=scan_options.get("code_review"),
+        )
 
     repo_changed = False
     if clear_github:
@@ -692,35 +803,50 @@ def create_scan(
     level = security_level or project.security_level or "standard"
     if level not in {"basic", "standard", "strict"}:
         raise HTTPException(status_code=400, detail="Invalid security_level.")
-    mode = scan_mode or ("rules_plus_ai" if level == "strict" else "rules_only")
+    saved = project_scan_options(project)
+    if scan_mode is not None:
+        mode = scan_mode
+    else:
+        mode = saved.get("scan_mode") or ("rules_plus_ai" if level == "strict" else "rules_only")
     if mode not in {"rules_only", "rules_plus_ai"}:
         raise HTTPException(status_code=400, detail="Invalid scan_mode.")
-    scope = (scan_scope or "full").strip().lower()
+    if scan_scope is not None:
+        scope = (scan_scope or "full").strip().lower()
+    else:
+        scope = (saved.get("scan_scope") or "full").strip().lower()
     if scope not in {"full", "changed"}:
         raise HTTPException(status_code=400, detail="Invalid scan_scope.")
     if scope == "changed" and resolved_source not in {"github_repo", "github_push"}:
         raise HTTPException(status_code=400, detail="Changed-files scans require a linked GitHub repository.")
 
-    allowed_engines = {"gitleaks", "osv", "semgrep"}
+    allowed_engines = set(ALL_ENGINES)
     if engines is None:
-        chosen = ["gitleaks", "osv", "semgrep"]
+        chosen = [e for e in saved["engines"] if e in allowed_engines] or list(DEFAULT_ENGINES)
     else:
         chosen = [e for e in engines if e in allowed_engines]
         if not chosen:
-            raise HTTPException(status_code=400, detail="Select at least one engine (gitleaks, osv, semgrep).")
-
+            raise HTTPException(
+                status_code=400,
+                detail="Select at least one scan engine.",
+            )
     excludes = []
-    for item in path_excludes or []:
+    exclude_src = path_excludes if path_excludes is not None else saved.get("path_excludes") or []
+    for item in exclude_src:
         cleaned = str(item or "").strip()[:128]
         if cleaned:
             excludes.append(cleaned)
     excludes = excludes[:40]
 
-    fail = (fail_severity or "off").strip().lower()
+    fail = (fail_severity if fail_severity is not None else saved.get("fail_severity") or "off").strip().lower()
     if fail not in {"off", "critical", "high", "medium"}:
         raise HTTPException(status_code=400, detail="Invalid fail_severity.")
 
-    review = bool(code_review) if code_review is not None else (mode == "rules_plus_ai")
+    if code_review is not None:
+        review = bool(code_review)
+    else:
+        review = bool(saved.get("code_review")) if scan_mode is None else (mode == "rules_plus_ai")
+    if mode == "rules_plus_ai":
+        review = True
     options = {
         "engines": chosen,
         "path_excludes": excludes,

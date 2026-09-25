@@ -13,6 +13,14 @@ export type Project = {
   notify_in_app_default?: boolean;
   auto_scan_on_push?: boolean;
   auto_scan_branch?: string | null;
+  scan_options?: {
+    engines?: string[];
+    path_excludes?: string[];
+    fail_severity?: string;
+    scan_mode?: string;
+    scan_scope?: string;
+    code_review?: boolean;
+  };
   created_at: string;
   updated_at: string;
 };

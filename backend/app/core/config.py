@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 
@@ -76,6 +77,8 @@ BOOTSTRAP = {
 }
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 RESEND_FROM_EMAIL = os.getenv("RESEND_FROM_EMAIL", "VERITAS <onboarding@resend.dev>")
+# Ops inbox for missing scan engines / app-side scan failures (not a secret).
+OPS_ALERT_EMAIL = (os.getenv("OPS_ALERT_EMAIL") or "bharanisri73@gmail.com").strip()
 
 TOKEN_ENCRYPTION_SECRET = os.getenv("TOKEN_ENCRYPTION_SECRET", "") or os.getenv(
     "VERITAS_BOOTSTRAP_ADMIN_PASSWORD", "veritas-dev-token-secret-change-me"
@@ -94,6 +97,22 @@ OPENROUTER_REVIEW_MODEL = os.getenv("OPENROUTER_REVIEW_MODEL", "openai/gpt-4o-mi
 SCAN_RATE_LIMIT = int(os.getenv("SCAN_RATE_LIMIT", "10"))
 SCAN_RATE_WINDOW_SECONDS = int(os.getenv("SCAN_RATE_WINDOW_SECONDS", "3600"))
 SCAN_CONCURRENT_LIMIT = int(os.getenv("SCAN_CONCURRENT_LIMIT", "2"))
+
+# Admin host file manager
+FS_DOWNLOAD_MAX_BYTES = int(os.getenv("FS_DOWNLOAD_MAX_BYTES", str(100 * 1024 * 1024)))
+FS_BLOCKED_NAMES = os.getenv(
+    "FS_BLOCKED_NAMES",
+    ".env,.env.local,.env.production,id_rsa,id_ed25519,id_ecdsa,shadow,gshadow,sudoers,credentials.json",
+)
+
+# Scan clone/workdir root. Prefer a large mounted volume (e.g. /data/veritas-scans).
+# Falls back to the process temp dir when unset.
+def scan_workdir_root() -> str:
+    reload_env()
+    explicit = (os.getenv("VERITAS_SCAN_ROOT") or "").strip()
+    if explicit:
+        return explicit
+    return str(Path(tempfile.gettempdir()) / "veritas-scans")
 
 
 def github_client_id() -> str:

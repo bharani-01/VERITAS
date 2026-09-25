@@ -36,6 +36,8 @@ _ACTION_SUMMARIES = {
     "github_repo_attached": "Attached a GitHub repository",
     "github_repo_rejected": "Rejected foreign GitHub repository attach",
     "rate_limited": "Request rate limited",
+    "fs_list": "Admin listed host filesystem",
+    "fs_download": "Admin downloaded a host file",
 }
 
 
@@ -79,6 +81,10 @@ def audit_severity(action: str, status_code: int | None = None) -> str:
     if action in ("user_rejected", "user_deactivated"):
         return "medium"
     if action in ("logout", "project_deleted", "github_disconnected"):
+        return "low"
+    if action == "fs_download":
+        return "medium"
+    if action == "fs_list":
         return "low"
     if status_code is not None:
         if status_code >= 500:

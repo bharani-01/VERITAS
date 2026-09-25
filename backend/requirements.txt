@@ -10,3 +10,9 @@ pytest>=8.0,<9.0
 httpx>=0.27,<1.0
 # Semgrep ships Linux/macOS wheels; skipped on Windows (run scans on EC2/Linux).
 semgrep>=1.90,<2.0; sys_platform == "linux" or sys_platform == "darwin"
+# Optional deep engines (soft-skipped at runtime if install/import fails on a host).
+bandit>=1.7,<2.0
+detect-secrets>=1.5,<2.0
+pip-audit>=2.7,<3.0
+checkov>=3.2,<4.0
+njsscan>=0.3,<1.0

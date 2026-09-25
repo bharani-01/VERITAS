@@ -19,7 +19,7 @@ type Props = {
   className?: string;
 };
 
-/** Supabase-style project picker: search + jump between workspace projects. */
+/** Workspace project picker — search and jump between projects. */
 export function ProjectSwitcher({
   current = null,
   projects: seeded,
@@ -116,7 +116,10 @@ export function ProjectSwitcher({
         <span className="project-switcher-mark" aria-hidden="true">
           {(current?.name || "P").slice(0, 1).toUpperCase()}
         </span>
-        <span className="project-switcher-label">{label}</span>
+        <span className="project-switcher-copy">
+          <span className="project-switcher-kicker">Project</span>
+          <span className="project-switcher-label">{label}</span>
+        </span>
         <svg className="project-switcher-chevron" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
@@ -124,21 +127,33 @@ export function ProjectSwitcher({
 
       {open ? (
         <div className="project-switcher-menu" role="listbox" aria-label="Switch project">
-          <div className="project-switcher-search">
+          <label className="project-switcher-search">
+            <svg className="project-switcher-search-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.75" />
+              <path d="M16.5 16.5 20 20" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+            </svg>
             <input
               ref={searchRef}
+              className="project-switcher-search-input"
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Find a project…"
               aria-label="Find a project"
             />
+          </label>
+
+          <div className="project-switcher-meta">
+            <span>{loading ? "Loading" : `${filtered.length} project${filtered.length === 1 ? "" : "s"}`}</span>
           </div>
+
           <div className="project-switcher-list">
             {loading ? (
-              <p className="project-switcher-empty">Loading…</p>
+              <p className="project-switcher-empty">Loading projects…</p>
             ) : !filtered.length ? (
-              <p className="project-switcher-empty">No matching projects</p>
+              <p className="project-switcher-empty">
+                {query.trim() ? "No matches for that search." : "No projects yet."}
+              </p>
             ) : (
               filtered.map((p) => {
                 const active = current?.id === p.id;
@@ -156,21 +171,31 @@ export function ProjectSwitcher({
                     </span>
                     <span className="project-switcher-item-text">
                       <b>{p.name}</b>
-                      <small>{p.github_repo_full_name || "No GitHub repo"}</small>
+                      <small>{p.github_repo_full_name || "No GitHub repo linked"}</small>
                     </span>
                     {active ? (
-                      <svg className="project-switcher-check" viewBox="0 0 24 24" aria-hidden="true">
-                        <path d="M5 12l5 5L20 7" fill="none" stroke="currentColor" strokeWidth="2" />
-                      </svg>
+                      <span className="project-switcher-badge" aria-hidden="true">
+                        Current
+                      </span>
                     ) : null}
                   </button>
                 );
               })
             )}
           </div>
+
           <div className="project-switcher-foot">
             {showAllLink ? (
               <Link to="/user/projects" className="project-switcher-foot-link" onClick={() => setOpen(false)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M4 6h16M4 12h16M4 18h10"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                  />
+                </svg>
                 All projects
               </Link>
             ) : null}
@@ -183,10 +208,22 @@ export function ProjectSwitcher({
                   onNewProject();
                 }}
               >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                </svg>
                 New project
               </button>
             ) : (
               <Link to="/user/projects" className="project-switcher-foot-link" onClick={() => setOpen(false)}>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M5 7h14M5 12h14M5 17h8"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                  />
+                </svg>
                 Manage projects
               </Link>
             )}

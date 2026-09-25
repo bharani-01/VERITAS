@@ -86,7 +86,8 @@ Output lands in `backend/app/web/static/spa` and is what uvicorn serves.
 ## Scan pipeline (Phase 4 quality pack)
 
 1. Clone linked repo (short-lived workdir)
-2. Selected engines: Gitleaks → OSV → Semgrep (path excludes + security_level packs)
+2. Selected engines (soft-skip if missing): Gitleaks → TruffleHog → detect-secrets → OSV → pip-audit → Trivy → Checkov → Semgrep → Bandit → njsscan → Hadolint → ShellCheck
+
 3. Optional OpenRouter structured code review (`services/ai_code_review.py`)
 4. Merge findings → optional Groq final report (`services/ai_report.py`)
 5. Severity policy gate → persist summary (`by_severity`, `ai_report`, engine meta)

@@ -66,6 +66,33 @@ if ! command -v osv-scanner >/dev/null 2>&1; then
   curl -fsSL "https://github.com/google/osv-scanner/releases/download/v${OSV_VER}/osv-scanner_linux_amd64" \
     -o /tmp/osv-scanner && sudo install -m 755 /tmp/osv-scanner /usr/local/bin/osv-scanner || true
 fi
+# Deep engines (soft-skip at runtime if missing)
+"$APP_ROOT/backend/.venv/bin/pip" install -q "bandit>=1.7,<2.0" "detect-secrets>=1.5,<2.0" "pip-audit>=2.7,<3.0" "checkov>=3.2,<4.0" "njsscan>=0.3,<1.0" || true
+if ! command -v trufflehog >/dev/null 2>&1; then
+  curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
+    | sudo sh -s -- -b /usr/local/bin || true
+fi
+if ! command -v trivy >/dev/null 2>&1; then
+  curl -fsSL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+    | sudo sh -s -- -b /usr/local/bin || true
+fi
+if ! command -v hadolint >/dev/null 2>&1; then
+  HADOLINT_VER="2.12.0"
+  curl -fsSL "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VER}/hadolint-Linux-x86_64" \
+    -o /tmp/hadolint && sudo install -m 755 /tmp/hadolint /usr/local/bin/hadolint || true
+fi
+if ! command -v shellcheck >/dev/null 2>&1; then
+  sudo apt-get install -y -qq shellcheck || true
+fi
+command -v trufflehog >/dev/null && trufflehog --version || true
+command -v trivy >/dev/null && trivy --version || true
+command -v hadolint >/dev/null && hadolint --version || true
+command -v shellcheck >/dev/null && shellcheck --version || true
+"$APP_ROOT/backend/.venv/bin/python" -m bandit --version || true
+"$APP_ROOT/backend/.venv/bin/python" -m detect_secrets --version || true
+"$APP_ROOT/backend/.venv/bin/python" -m pip_audit --version || true
+"$APP_ROOT/backend/.venv/bin/python" -m checkov --version || true
+"$APP_ROOT/backend/.venv/bin/njsscan" --help >/dev/null 2>&1 || "$APP_ROOT/backend/.venv/bin/python" -c "import njsscan" || true
 
 sudo tee /etc/systemd/system/veritas.service >/dev/null <<EOF
 [Unit]

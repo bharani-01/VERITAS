@@ -41,7 +41,7 @@ Create scan (`POST /workspace/projects/{id}/scans`) accepts:
 | Field | Values |
 |-------|--------|
 | `security_level` | `basic` \| `standard` \| `strict` (Semgrep packs) |
-| `engines` | subset of `gitleaks`, `osv`, `semgrep` |
+| `engines` | subset of `gitleaks`, `osv`, `semgrep`, `trufflehog`, `detect_secrets`, `trivy`, `pip_audit`, `checkov`, `bandit`, `njsscan`, `hadolint`, `shellcheck` (defaults: gitleaks/osv/semgrep) |
 | `path_excludes` | glob-like patterns (capped) for SAST / AI review |
 | `fail_severity` | `off` \| `critical` \| `high` \| `medium` — mark scan `failed` if open finding ≥ gate |
 | `code_review` | enable OpenRouter review when not already Rules + AI |

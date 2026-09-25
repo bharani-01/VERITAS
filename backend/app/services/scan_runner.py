@@ -13,7 +13,22 @@ from app.core.time import ensure_utc, utcnow
 from app.models import AppNotification, Finding, FindingSuppression, Project, Scan, User
 from app.services.ai_code_review import review_repository
 from app.services.ai_report import generate_final_report
-from app.services.engines import run_gitleaks, run_osv, run_semgrep
+from app.services.engines import (
+    ALL_ENGINES,
+    DEFAULT_ENGINES,
+    run_bandit,
+    run_checkov,
+    run_detect_secrets,
+    run_gitleaks,
+    run_hadolint,
+    run_njsscan,
+    run_osv,
+    run_pip_audit,
+    run_semgrep,
+    run_shellcheck,
+    run_trivy,
+    run_trufflehog,
+)
 from app.services.engines.normalize import public_repo_path
 from app.services.scan_clone import (
     CloneError,
@@ -37,13 +52,27 @@ def estimate_eta_seconds(
     engines: list[str] | None = None,
 ) -> int:
     """Initial wall-clock guess (seconds). Conservative — real ETA is refined from progress."""
-    chosen = [e for e in (engines or ["gitleaks", "osv", "semgrep"]) if e in {"gitleaks", "osv", "semgrep"}]
+    allowed = set(ALL_ENGINES)
+    chosen = [e for e in (engines or list(DEFAULT_ENGINES)) if e in allowed]
     if not chosen:
-        chosen = ["gitleaks", "osv", "semgrep"]
+        chosen = list(DEFAULT_ENGINES)
     total = 25 if has_github else 8  # clone / setup
-    costs = {"gitleaks": 50, "osv": 45, "semgrep": 150}
+    costs = {
+        "gitleaks": 50,
+        "osv": 45,
+        "semgrep": 150,
+        "trufflehog": 90,
+        "trivy": 120,
+        "bandit": 60,
+        "detect_secrets": 55,
+        "pip_audit": 40,
+        "checkov": 100,
+        "njsscan": 70,
+        "hadolint": 25,
+        "shellcheck": 30,
+    }
     for engine in chosen:
-        total += costs[engine]
+        total += costs.get(engine, 60)
     level = {"basic": 0.7, "standard": 1.0, "strict": 1.4}.get((security_level or "standard").lower(), 1.0)
     ai = 55 if (scan_mode or "") == "rules_plus_ai" else 0
     return max(30, int(total * level + ai))
@@ -96,8 +125,17 @@ PHASE_LABELS = {
     "queued": "Getting ready…",
     "cloning": "Pulling your repository…",
     "secrets": "Looking for exposed secrets…",
+    "secrets_deep": "Deep secret hunt…",
+    "secrets_entropy": "Entropy secret scan…",
     "sca": "Checking dependencies…",
+    "sca_python": "Auditing Python packages…",
+    "sca_deep": "Deep dependency & config check…",
+    "iac": "Checking infrastructure as code…",
     "semgrep": "Reading through the code…",
+    "bandit": "Python security pass…",
+    "nodejs": "Node.js security pass…",
+    "docker": "Dockerfile review…",
+    "shell": "Shell script review…",
     "code_review": "AI code review…",
     "reporting": "Writing the security report…",
     "completed": "Done",
@@ -111,7 +149,7 @@ _SEVERITY_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
 def _parse_options(scan: Scan) -> dict:
     raw = getattr(scan, "options_json", None)
     default = {
-        "engines": ["gitleaks", "osv", "semgrep"],
+        "engines": list(DEFAULT_ENGINES),
         "path_excludes": [],
         "fail_severity": "off",
         "code_review": False,
@@ -122,7 +160,8 @@ def _parse_options(scan: Scan) -> dict:
         data = json.loads(raw)
         if not isinstance(data, dict):
             return default
-        engines = [e for e in (data.get("engines") or default["engines"]) if e in {"gitleaks", "osv", "semgrep"}]
+        allowed = set(ALL_ENGINES)
+        engines = [e for e in (data.get("engines") or default["engines"]) if e in allowed]
         if not engines:
             engines = default["engines"]
         return {
@@ -312,6 +351,95 @@ def _notify(session, scan: Scan, project: Project, user: User, summary: dict) ->
             session.rollback()
 
 
+_EXPECTED_SKIP_MARKERS = (
+    "disabled",
+    "no requirements",
+    "no dockerfile",
+    "no shell",
+    "no changed",
+    "no repository",
+    "manual target",
+    "cancelled",
+)
+
+_MISSING_MARKERS = ("not found", "binary not found")
+
+
+def _collect_ops_issues(
+    engine_meta: list[dict] | None,
+    *,
+    scan_status: str | None = None,
+    error_message: str | None = None,
+) -> list[str]:
+    """Build human-readable ops issues (missing tools / engine errors / scan failure)."""
+    issues: list[str] = []
+    status = (scan_status or "").lower()
+    err_msg = (error_message or "").strip()
+    # User severity gates are intentional — not ops infrastructure problems.
+    if status == "failed" and err_msg and "severity policy failed" not in err_msg.lower():
+        issues.append(f"scan failed: {err_msg[:400]}")
+    for meta in engine_meta or []:
+        if not isinstance(meta, dict):
+            continue
+        name = str(meta.get("engine") or "engine")
+        skipped = meta.get("skipped")
+        if isinstance(skipped, str) and skipped.strip():
+            low = skipped.lower()
+            if any(m in low for m in _EXPECTED_SKIP_MARKERS):
+                pass
+            elif any(m in low for m in _MISSING_MARKERS):
+                issues.append(f"{name}: missing module — {skipped[:240]}")
+            elif "error" in low or "failed" in low:
+                issues.append(f"{name}: skipped — {skipped[:240]}")
+        err = meta.get("error")
+        if err:
+            issues.append(f"{name}: error — {str(err)[:240]}")
+    # Dedupe while preserving order
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in issues:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def _alert_ops(
+    session,
+    scan: Scan,
+    project: Project,
+    user: User | None,
+    engine_meta: list[dict] | None = None,
+) -> None:
+    """Email ops inbox when engines are missing or the scan failed on the app side."""
+    try:
+        from app.services.email import send_ops_scan_alert
+
+        issues = _collect_ops_issues(
+            engine_meta,
+            scan_status=scan.status,
+            error_message=scan.error_message,
+        )
+        if not issues:
+            return
+        send_ops_scan_alert(
+            session,
+            project_name=project.name,
+            project_id=project.id,
+            scan_id=scan.id,
+            status=scan.status or "unknown",
+            owner_email=(user.email if user else None),
+            issues=issues,
+        )
+        session.commit()
+    except Exception:
+        try:
+            session.rollback()
+        except Exception:
+            pass
+
+
 def run_scan_job(scan_id: str) -> None:
     workdir: Path | None = None
     try:
@@ -412,72 +540,176 @@ def run_scan_job(scan_id: str) -> None:
                 want_review = bool(options["code_review"]) or scan.scan_mode == "rules_plus_ai"
 
                 if repo_path:
-                    if "gitleaks" in enabled:
-                        _set_progress(
-                            session, scan, phase="secrets", percent=20, log="Looking for exposed secrets…"
-                        )
-                        g_findings, g_meta = run_gitleaks(repo_path)
-                        engine_meta.append(g_meta)
-                        findings_out.extend(g_findings)
-                        _log_engine_results(
-                            session,
-                            scan,
-                            phase="secrets",
-                            percent=28,
-                            started_msg="Secret scan finished",
-                            empty_msg="No exposed secrets found",
-                            found_msg="Found {n} potential secret exposure(s)",
-                            findings=g_findings,
-                        )
-                    else:
-                        engine_meta.append({"engine": "gitleaks", "skipped": "disabled"})
+                    # Ordered pipeline. Percents are coarse milestones; live ETA uses elapsed/%.
+                    engine_steps: list[tuple] = [
+                        (
+                            "gitleaks",
+                            "secrets",
+                            16,
+                            20,
+                            "Looking for exposed secrets…",
+                            lambda: run_gitleaks(repo_path),
+                            "Secret scan finished",
+                            "No exposed secrets found",
+                            "Found {n} potential secret exposure(s)",
+                        ),
+                        (
+                            "trufflehog",
+                            "secrets_deep",
+                            22,
+                            26,
+                            "Deep secret hunt…",
+                            lambda: run_trufflehog(repo_path),
+                            "Deep secret scan finished",
+                            "No additional secrets found",
+                            "Found {n} deep secret finding(s)",
+                        ),
+                        (
+                            "detect_secrets",
+                            "secrets_entropy",
+                            28,
+                            32,
+                            "Entropy secret scan…",
+                            lambda: run_detect_secrets(repo_path),
+                            "Entropy secret scan finished",
+                            "No entropy secrets found",
+                            "Found {n} entropy secret finding(s)",
+                        ),
+                        (
+                            "osv",
+                            "sca",
+                            34,
+                            38,
+                            "Checking dependencies…",
+                            lambda: run_osv(repo_path),
+                            "Dependency check finished",
+                            "No known vulnerable dependencies found",
+                            "Found {n} dependency issue(s)",
+                        ),
+                        (
+                            "pip_audit",
+                            "sca_python",
+                            40,
+                            44,
+                            "Auditing Python packages…",
+                            lambda: run_pip_audit(repo_path),
+                            "Python package audit finished",
+                            "No pip-audit issues found",
+                            "Found {n} Python package issue(s)",
+                        ),
+                        (
+                            "trivy",
+                            "sca_deep",
+                            46,
+                            50,
+                            "Deep dependency & config check…",
+                            lambda: run_trivy(repo_path),
+                            "Deep SCA finished",
+                            "No Trivy issues found",
+                            "Found {n} Trivy finding(s)",
+                        ),
+                        (
+                            "checkov",
+                            "iac",
+                            52,
+                            56,
+                            "Checking infrastructure as code…",
+                            lambda: run_checkov(repo_path),
+                            "IaC check finished",
+                            "No Checkov issues found",
+                            "Found {n} IaC issue(s)",
+                        ),
+                        (
+                            "semgrep",
+                            "semgrep",
+                            58,
+                            66,
+                            "Reading through the code…",
+                            lambda: run_semgrep(
+                                repo_path,
+                                security_level=scan.security_level,
+                                include_paths=changed_paths,
+                                excludes=excludes,
+                            ),
+                            "Code analysis finished",
+                            "No code issues found in this pass",
+                            "Found {n} code issue(s)",
+                        ),
+                        (
+                            "bandit",
+                            "bandit",
+                            68,
+                            72,
+                            "Python security pass…",
+                            lambda: run_bandit(repo_path),
+                            "Python security pass finished",
+                            "No Bandit issues found",
+                            "Found {n} Python security issue(s)",
+                        ),
+                        (
+                            "njsscan",
+                            "nodejs",
+                            74,
+                            76,
+                            "Node.js security pass…",
+                            lambda: run_njsscan(repo_path),
+                            "Node.js security pass finished",
+                            "No njsscan issues found",
+                            "Found {n} Node.js issue(s)",
+                        ),
+                        (
+                            "hadolint",
+                            "docker",
+                            77,
+                            78,
+                            "Dockerfile review…",
+                            lambda: run_hadolint(repo_path),
+                            "Dockerfile review finished",
+                            "No Dockerfile issues found",
+                            "Found {n} Dockerfile issue(s)",
+                        ),
+                        (
+                            "shellcheck",
+                            "shell",
+                            79,
+                            80,
+                            "Shell script review…",
+                            lambda: run_shellcheck(repo_path),
+                            "Shell review finished",
+                            "No shell issues found",
+                            "Found {n} shell issue(s)",
+                        ),
+                    ]
 
-                    _check_cancel(session, scan)
-                    if "osv" in enabled:
-                        _set_progress(
-                            session, scan, phase="sca", percent=40, log="Checking dependencies…"
-                        )
-                        o_findings, o_meta = run_osv(repo_path)
-                        engine_meta.append(o_meta)
-                        findings_out.extend(o_findings)
+                    for (
+                        eng_name,
+                        phase,
+                        pct_start,
+                        pct_end,
+                        start_log,
+                        runner,
+                        started_msg,
+                        empty_msg,
+                        found_msg,
+                    ) in engine_steps:
+                        _check_cancel(session, scan)
+                        if eng_name not in enabled:
+                            engine_meta.append({"engine": eng_name, "skipped": "disabled"})
+                            continue
+                        _set_progress(session, scan, phase=phase, percent=pct_start, log=start_log)
+                        e_findings, e_meta = runner()
+                        engine_meta.append(e_meta)
+                        findings_out.extend(e_findings)
                         _log_engine_results(
                             session,
                             scan,
-                            phase="sca",
-                            percent=48,
-                            started_msg="Dependency check finished",
-                            empty_msg="No known vulnerable dependencies found",
-                            found_msg="Found {n} dependency issue(s)",
-                            findings=o_findings,
+                            phase=phase,
+                            percent=pct_end,
+                            started_msg=started_msg,
+                            empty_msg=empty_msg,
+                            found_msg=found_msg,
+                            findings=e_findings,
                         )
-                    else:
-                        engine_meta.append({"engine": "osv", "skipped": "disabled"})
-
-                    _check_cancel(session, scan)
-                    if "semgrep" in enabled:
-                        _set_progress(
-                            session, scan, phase="semgrep", percent=60, log="Reading through the code…"
-                        )
-                        s_findings, s_meta = run_semgrep(
-                            repo_path,
-                            security_level=scan.security_level,
-                            include_paths=changed_paths,
-                            excludes=excludes,
-                        )
-                        engine_meta.append(s_meta)
-                        findings_out.extend(s_findings)
-                        _log_engine_results(
-                            session,
-                            scan,
-                            phase="semgrep",
-                            percent=72,
-                            started_msg="Code analysis finished",
-                            empty_msg="No code issues found in this pass",
-                            found_msg="Found {n} code issue(s)",
-                            findings=s_findings,
-                        )
-                    else:
-                        engine_meta.append({"engine": "semgrep", "skipped": "disabled"})
 
                     if want_review:
                         _check_cancel(session, scan)
@@ -485,7 +717,7 @@ def run_scan_job(scan_id: str) -> None:
                             session,
                             scan,
                             phase="code_review",
-                            percent=78,
+                            percent=82,
                             log="AI code review in progress…",
                         )
                         r_findings, r_meta = review_repository(
@@ -512,7 +744,7 @@ def run_scan_job(scan_id: str) -> None:
                     for nf in findings_out:
                         nf.file_path = public_repo_path(nf.file_path, repo_root=root)
                 else:
-                    for name in ("gitleaks", "osv", "semgrep", "openrouter_review"):
+                    for name in (*ALL_ENGINES, "openrouter_review"):
                         engine_meta.append({"engine": name, "skipped": "no repository workspace"})
 
                 cleanup_workdir(workdir)
@@ -680,6 +912,7 @@ def run_scan_job(scan_id: str) -> None:
                 session.add(scan)
                 session.commit()
                 _notify(session, scan, project, user, summary)
+                _alert_ops(session, scan, project, user, engine_meta)
             except ScanCancelled:
                 scan.status = "cancelled"
                 scan.error_message = "Scan cancelled by user."
@@ -715,6 +948,7 @@ def run_scan_job(scan_id: str) -> None:
                 session.add(scan)
                 session.commit()
                 _notify(session, scan, project, user, {"findings_count": 0})
+                _alert_ops(session, scan, project, user, engine_meta)
             except Exception as exc:
                 scan.status = "failed"
                 scan.error_message = str(exc)[:1000]
@@ -732,6 +966,7 @@ def run_scan_job(scan_id: str) -> None:
                 session.add(scan)
                 session.commit()
                 _notify(session, scan, project, user, {"findings_count": 0})
+                _alert_ops(session, scan, project, user, engine_meta)
     finally:
         cleanup_workdir(workdir)
 
