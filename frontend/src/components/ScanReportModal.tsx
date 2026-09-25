@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LoadingMark } from "./LoadingMark";
+import { MarkdownReport } from "./MarkdownReport";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
@@ -361,7 +362,7 @@ export function ScanReportModal({
       {aiReport && !scanning ? (
         <div className="report-ai modal-body-pad">
           <h3 className="report-section-title">AI final report</h3>
-          <pre className="ai-report-body">{aiReport}</pre>
+          <MarkdownReport source={aiReport} className="ai-report-body" />
         </div>
       ) : null}
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Link, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
+import { MarkdownReport } from "../components/MarkdownReport";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
 import { shortCommit } from "../lib/scanDisplay";
@@ -162,7 +163,7 @@ export function SharedReportPage() {
         {scan.summary?.ai_report ? (
           <div className="report-ai">
             <h2>AI final report</h2>
-            <pre className="ai-report-body">{scan.summary.ai_report}</pre>
+            <MarkdownReport source={scan.summary.ai_report} className="ai-report-body" />
           </div>
         ) : null}
         <h2>Findings (highest risk first)</h2>

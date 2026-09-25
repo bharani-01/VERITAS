@@ -22,6 +22,7 @@ This repository is optimized for agentic development. Read these files before ch
 - Never commit secrets (`.env`, credentials, session tokens, GitHub tokens).
 - Server-side validation only for authz and GitHub repo ownership.
 - Update docs when architecture, design, or agent workflows change.
+- After meaningful finished work: commit, `git push`, and AWS deploy to EC2 (`veritas.trackifyapp.co.in`) — see `.cursor/rules/ship-aws-git.mdc`. Never overwrite remote `backend/.env`.
 
 ## Runtime
 

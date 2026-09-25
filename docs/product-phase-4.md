@@ -51,7 +51,7 @@ Project Advanced UI exposes depth, engines, excludes, severity gate, and Compare
 
 ## Coverage + exports
 
-Scan summary includes `by_severity`, `by_family`, `engines` meta, `ai_report`, `policy_failed`. Report UI shows coverage bars and AI report. Client exports: Markdown, JSON, CSV, HTML, **SARIF 2.1.0**.
+Scan summary includes `by_severity`, `by_family`, `engines` meta, `ai_report`, `policy_failed`. Report UI shows coverage bars and AI report as rendered markdown (`MarkdownReport` + GFM). Client exports: Markdown, JSON, CSV, HTML, **SARIF 2.1.0**.
 
 ## Cancel
 
