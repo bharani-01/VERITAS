@@ -15,6 +15,7 @@ type ShellContext = { user: User };
 const SEV_ORDER = ["critical", "high", "medium", "low", "info"] as const;
 const SEV_COLORS = ["#dc2626", "#ea580c", "#ca8a04", "#0284c7", "#94a3b8"];
 const SEV_LABELS = ["Critical", "High", "Medium", "Low", "Info"];
+const PROJECT_LINE_COLORS = ["#2563eb", "#0d9488", "#ea580c", "#7c3aed", "#db2777", "#0891b2", "#ca8a04", "#334155"];
 
 /** User home — workspace summary + scan comparison graphs. */
 export function UserDashboardPage() {
@@ -22,12 +23,18 @@ export function UserDashboardPage() {
   const [data, setData] = useState<WorkspaceDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scope, setScope] = useState<"all" | string>("all");
+  /** When All: hovered project id. When project-scoped: hovered severity key. */
+  const [hoverFocus, setHoverFocus] = useState<string | null>(null);
 
   useEffect(() => {
     api<WorkspaceDashboard>("/workspace/dashboard")
       .then(setData)
       .catch((err: Error) => setError(err.message));
   }, []);
+
+  useEffect(() => {
+    setHoverFocus(null);
+  }, [scope]);
 
   const charts = data?.charts;
   const allRuns = charts?.runs || [];
@@ -53,7 +60,6 @@ export function UserDashboardPage() {
 
   const runs = useMemo(() => {
     const filtered = scope === "all" ? allRuns : allRuns.filter((r) => r.project_id === scope);
-    // Cap chart density for readability
     return filtered.length > 16 ? filtered.slice(-16) : filtered;
   }, [allRuns, scope]);
 
@@ -70,14 +76,46 @@ export function UserDashboardPage() {
     [runs, scope]
   );
 
-  const runSeries = useMemo(
-    () =>
-      SEV_ORDER.map((sev, i) => ({
-        name: SEV_LABELS[i],
-        data: runs.map((r) => Number(r.by_severity?.[sev] || 0)),
-      })),
-    [runs]
-  );
+  const projectSeriesMeta = useMemo(() => {
+    if (scope !== "all") return [] as { id: string; name: string }[];
+    const order: { id: string; name: string }[] = [];
+    const seen = new Set<string>();
+    for (const run of runs) {
+      if (!run.project_id || seen.has(run.project_id)) continue;
+      seen.add(run.project_id);
+      order.push({ id: run.project_id, name: run.project_name || "Project" });
+    }
+    return order;
+  }, [runs, scope]);
+
+  const runSeries = useMemo(() => {
+    if (scope === "all") {
+      return projectSeriesMeta.map((p) => ({
+        name: p.name,
+        data: runs.map((r) => (r.project_id === p.id ? Number(r.findings_count || 0) : null)),
+      }));
+    }
+    return SEV_ORDER.map((sev, i) => ({
+      name: SEV_LABELS[i],
+      data: runs.map((r) => Number(r.by_severity?.[sev] || 0)),
+    }));
+  }, [runs, scope, projectSeriesMeta]);
+
+  const runColors = useMemo(() => {
+    if (scope === "all") {
+      return projectSeriesMeta.map((_, i) => PROJECT_LINE_COLORS[i % PROJECT_LINE_COLORS.length]);
+    }
+    return [...SEV_COLORS];
+  }, [scope, projectSeriesMeta]);
+
+  const runStrokeWidths = useMemo(() => {
+    const n = runSeries.length;
+    if (!hoverFocus) return Array(n).fill(2.5) as number[];
+    return runSeries.map((_, i) => {
+      const key = scope === "all" ? projectSeriesMeta[i]?.id : SEV_ORDER[i];
+      return key === hoverFocus ? 3.5 : 1.15;
+    });
+  }, [hoverFocus, runSeries, scope, projectSeriesMeta]);
 
   const runOptions: ApexOptions = useMemo(
     () => ({
@@ -88,13 +126,40 @@ export function UserDashboardPage() {
         animations: { enabled: true },
         background: "transparent",
         zoom: { enabled: false },
+        events: {
+          dataPointMouseEnter: (_e, _ctx, config) => {
+            const idx = config?.seriesIndex;
+            if (typeof idx !== "number" || idx < 0) return;
+            if (scope === "all") {
+              const id = projectSeriesMeta[idx]?.id;
+              if (id) setHoverFocus(id);
+            } else {
+              setHoverFocus(SEV_ORDER[idx] || null);
+            }
+          },
+          dataPointMouseLeave: () => setHoverFocus(null),
+          legendClick: (_chart, seriesIndex) => {
+            if (typeof seriesIndex !== "number" || seriesIndex < 0) return;
+            if (scope === "all") {
+              const id = projectSeriesMeta[seriesIndex]?.id;
+              if (id) setHoverFocus((prev) => (prev === id ? null : id));
+            } else {
+              const key = SEV_ORDER[seriesIndex];
+              if (key) setHoverFocus((prev) => (prev === key ? null : key));
+            }
+          },
+        },
       },
-      colors: [...SEV_COLORS],
-      stroke: { curve: "smooth", width: 2.5 },
+      colors: runColors,
+      stroke: {
+        curve: "smooth",
+        width: runStrokeWidths,
+        connectNulls: true,
+      },
       markers: {
         size: runs.length <= 8 ? 4 : 3,
         strokeWidth: 0,
-        hover: { size: 5 },
+        hover: { size: 6 },
       },
       dataLabels: { enabled: false },
       legend: {
@@ -103,6 +168,8 @@ export function UserDashboardPage() {
         fontSize: "11px",
         markers: { size: 5 },
         itemMargin: { horizontal: 8 },
+        onItemClick: { toggleDataSeries: false },
+        onItemHover: { highlightDataSeries: true },
       },
       grid: {
         borderColor: "#e8edf2",
@@ -130,24 +197,40 @@ export function UserDashboardPage() {
       },
       tooltip: {
         theme: "light",
-        shared: true,
-        intersect: false,
-        y: { formatter: (v) => `${v} finding${v === 1 ? "" : "s"}` },
+        shared: false,
+        intersect: true,
+        y: {
+          formatter: (v) => {
+            if (v == null || Number.isNaN(v)) return "—";
+            return `${v} finding${v === 1 ? "" : "s"}`;
+          },
+        },
+      },
+      states: {
+        hover: { filter: { type: "none" } },
+        active: { filter: { type: "none" } },
       },
     }),
-    [runCategories, runs.length]
+    [runCategories, runs.length, runColors, runStrokeWidths, scope, projectSeriesMeta]
   );
 
+  const focusProjectId = scope === "all" ? hoverFocus || "all" : scope;
+
   const openSev = useMemo(() => {
-    if (scope === "all") return charts?.open_by_severity || {};
-    return charts?.open_by_severity_by_project?.[scope] || {};
-  }, [charts?.open_by_severity, charts?.open_by_severity_by_project, scope]);
+    if (focusProjectId === "all") return charts?.open_by_severity || {};
+    return charts?.open_by_severity_by_project?.[focusProjectId] || {};
+  }, [charts?.open_by_severity, charts?.open_by_severity_by_project, focusProjectId]);
 
   const sevDonutSeries = useMemo(
     () => SEV_ORDER.map((s) => Number(openSev[s] || 0)),
     [openSev]
   );
   const sevDonutTotal = sevDonutSeries.reduce((a, b) => a + b, 0);
+
+  const donutFocusName =
+    focusProjectId === "all"
+      ? "All projects"
+      : projectOptions.find((p) => p.id === focusProjectId)?.name || "Project";
 
   const sevDonutOptions: ApexOptions = useMemo(
     () => ({
@@ -328,13 +411,18 @@ export function UserDashboardPage() {
           <div className="dash-chart-block">
             <div className="dash-panel-head">
               <h2>Open by severity</h2>
-              <span>{sevDonutTotal}</span>
+              <span>
+                {sevDonutTotal}
+                {scope === "all" && hoverFocus ? ` · ${donutFocusName}` : ""}
+              </span>
             </div>
             {sevDonutTotal ? (
               <Chart options={sevDonutOptions} series={sevDonutSeries} type="donut" height={280} />
             ) : (
               <p className="dash-chart-empty">
-                {scope === "all" ? "No open findings." : "No open findings for this project."}
+                {focusProjectId === "all"
+                  ? "No open findings."
+                  : `No open findings for ${donutFocusName}.`}
               </p>
             )}
           </div>
