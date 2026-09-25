@@ -25,7 +25,130 @@ from app.services.engines.normalize import finding_fingerprint, public_repo_path
 from app.services.scan_runner import enqueue_scan, estimate_eta_seconds, run_scan_job
 
 FINDING_STATUSES = {"open", "triage", "fixed", "false_positive"}
+_SEVERITY_KEYS = ("critical", "high", "medium", "low", "info")
 logger = logging.getLogger(__name__)
+
+
+def _empty_severity() -> dict[str, int]:
+    return {k: 0 for k in _SEVERITY_KEYS}
+
+
+def _normalize_severity_counts(raw: dict | None) -> dict[str, int]:
+    out = _empty_severity()
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        k = str(key or "").lower()
+        if k in out:
+            try:
+                out[k] = max(0, int(value))
+            except (TypeError, ValueError):
+                out[k] = 0
+    return out
+
+
+def _dashboard_charts(db: Session, user: User) -> dict:
+    """Compare previous scan runs + open-finding distributions for the user dashboard."""
+    owned = Project.owner_user_id == user.id
+
+    run_rows = db.execute(
+        select(Scan, Project.name)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned, Scan.status.in_(("completed", "failed")))
+        .order_by(Scan.created_at.desc())
+        .limit(12)
+    ).all()
+    # Chronological (oldest → newest) for trend charts
+    run_rows = list(reversed(run_rows))
+
+    runs: list[dict] = []
+    for scan, project_name in run_rows:
+        summary: dict = {}
+        if scan.summary_json:
+            try:
+                parsed = json.loads(scan.summary_json)
+                if isinstance(parsed, dict):
+                    summary = parsed
+            except json.JSONDecodeError:
+                summary = {}
+        by_sev = _normalize_severity_counts(summary.get("by_severity"))
+        by_family_raw = summary.get("by_family") if isinstance(summary.get("by_family"), dict) else {}
+        by_family = {str(k): int(v or 0) for k, v in by_family_raw.items() if v}
+        label = (scan.commit_short or (scan.commit_sha or "")[:7] or scan.target or "scan")[:16]
+        runs.append(
+            {
+                "id": scan.id,
+                "project_id": scan.project_id,
+                "project_name": project_name,
+                "label": label,
+                "status": scan.status,
+                "created_at": scan.finished_at or scan.created_at,
+                "findings_count": int(summary.get("findings_count") or sum(by_sev.values()) or 0),
+                "by_severity": by_sev,
+                "by_family": by_family,
+            }
+        )
+
+    open_by_severity = _empty_severity()
+    for severity, count in db.execute(
+        select(Finding.severity, func.count())
+        .select_from(Finding)
+        .join(Scan, Finding.scan_id == Scan.id)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned, Finding.status == "open")
+        .group_by(Finding.severity)
+    ).all():
+        key = str(severity or "info").lower()
+        if key in open_by_severity:
+            open_by_severity[key] = int(count)
+
+    open_by_family: dict[str, int] = {}
+    for family, count in db.execute(
+        select(Finding.vuln_family, func.count())
+        .select_from(Finding)
+        .join(Scan, Finding.scan_id == Scan.id)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned, Finding.status == "open")
+        .group_by(Finding.vuln_family)
+        .order_by(func.count().desc())
+        .limit(8)
+    ).all():
+        open_by_family[str(family or "other")] = int(count)
+
+    open_by_engine: dict[str, int] = {}
+    for engine, count in db.execute(
+        select(Finding.engine, func.count())
+        .select_from(Finding)
+        .join(Scan, Finding.scan_id == Scan.id)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned, Finding.status == "open")
+        .group_by(Finding.engine)
+        .order_by(func.count().desc())
+        .limit(8)
+    ).all():
+        open_by_engine[str(engine or "other")] = int(count)
+
+    outcomes = {"completed": 0, "failed": 0, "cancelled": 0, "running": 0, "queued": 0}
+    for status, count in db.execute(
+        select(Scan.status, func.count())
+        .select_from(Scan)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned)
+        .group_by(Scan.status)
+    ).all():
+        key = str(status or "").lower()
+        if key in outcomes:
+            outcomes[key] = int(count)
+        elif key:
+            outcomes[key] = int(count)
+
+    return {
+        "runs": runs,
+        "open_by_severity": open_by_severity,
+        "open_by_family": open_by_family,
+        "open_by_engine": open_by_engine,
+        "scan_outcomes": outcomes,
+    }
 
 
 def public_project(project: Project) -> dict:
@@ -816,4 +939,5 @@ def workspace_dashboard(db: Session, user: User) -> dict:
         "github": github,
         "recent_scans": [public_scan(scan, name) for scan, name in recent],
         "projects": [public_project(p) for p in projects[:6]],
+        "charts": _dashboard_charts(db, user),
     }

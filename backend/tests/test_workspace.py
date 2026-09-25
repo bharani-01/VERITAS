@@ -82,6 +82,10 @@ def test_project_crud_and_scan_lifecycle():
         assert dash.status_code == 200
         assert dash.json()["totals"]["projects"] == 1
         assert len(dash.json()["recent_scans"]) == 1
+        charts = dash.json().get("charts") or {}
+        assert "runs" in charts
+        assert "open_by_severity" in charts
+        assert "scan_outcomes" in charts
 
         client.post("/auth/logout")
         assert client.post("/auth/login", json={"email": "admin@veritas.example", "password": "bootstrap-password-123"}).status_code == 200

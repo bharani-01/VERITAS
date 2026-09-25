@@ -1843,6 +1843,48 @@ html.nav-pref-collapsed .app-frame .app-nav .nav-logout {
   line-height: 1.4;
 }
 
+.dash-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.9fr);
+  gap: 0;
+  margin-bottom: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.dash-charts-secondary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dash-chart-side {
+  display: grid;
+  grid-template-rows: 1fr 1fr;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+}
+
+.dash-chart-block {
+  padding: 16px 18px 10px;
+  min-width: 0;
+}
+
+.dash-chart-side .dash-chart-block + .dash-chart-block {
+  border-top: 1px solid var(--line);
+}
+
+.dash-charts-secondary .dash-chart-block + .dash-chart-block {
+  border-left: 1px solid var(--line);
+}
+
+.dash-chart-empty {
+  margin: 1.25rem 0 1.5rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.45;
+}
+
 .dash-list-action {
   color: var(--ink-soft);
   font-size: 0.8125rem;
@@ -6578,6 +6620,21 @@ td.col-actions {
 
   .dash-panels {
     grid-template-columns: 1fr;
+  }
+
+  .dash-charts,
+  .dash-charts-secondary {
+    grid-template-columns: 1fr;
+  }
+
+  .dash-chart-side {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .dash-charts-secondary .dash-chart-block + .dash-chart-block {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .dash-metric {

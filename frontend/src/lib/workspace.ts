@@ -146,4 +146,21 @@ export type WorkspaceDashboard = {
   github: GitHubStatus;
   recent_scans: Scan[];
   projects: Project[];
+  charts?: {
+    runs: Array<{
+      id: string;
+      project_id: string;
+      project_name?: string | null;
+      label: string;
+      status: string;
+      created_at: string;
+      findings_count: number;
+      by_severity: Record<string, number>;
+      by_family: Record<string, number>;
+    }>;
+    open_by_severity: Record<string, number>;
+    open_by_family: Record<string, number>;
+    open_by_engine: Record<string, number>;
+    scan_outcomes: Record<string, number>;
+  };
 };
