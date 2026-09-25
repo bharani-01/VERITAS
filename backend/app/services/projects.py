@@ -735,9 +735,10 @@ def create_scan(
         security_level=level,
         scan_mode=mode,
         has_github=bool(project.github_repo_full_name),
+        engines=chosen,
     )
     if review:
-        eta += 40
+        eta += 55
     scan = Scan(
         project_id=project.id,
         created_by_user_id=user.id,
@@ -761,6 +762,7 @@ def create_scan(
                 "label": "Getting ready…",
                 "percent": 0,
                 "eta_remaining_seconds": eta,
+                "eta_initial_seconds": eta,
                 "logs": [{"t": utcnow().isoformat(), "msg": "Scan queued…"}],
                 "findings_so_far": 0,
             }

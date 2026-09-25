@@ -9,7 +9,7 @@ from queue import Empty, Queue
 from sqlalchemy import select
 
 from app.core import database as db
-from app.core.time import utcnow
+from app.core.time import ensure_utc, utcnow
 from app.models import AppNotification, Finding, FindingSuppression, Project, Scan, User
 from app.services.ai_code_review import review_repository
 from app.services.ai_report import generate_final_report
@@ -29,11 +29,67 @@ _worker_started = False
 _lock = threading.Lock()
 
 
-def estimate_eta_seconds(*, security_level: str, scan_mode: str, has_github: bool) -> int:
-    base = 90 if has_github else 25
-    level = {"basic": 0.75, "standard": 1.15, "strict": 1.75}.get((security_level or "standard").lower(), 1.15)
-    ai = 35 if scan_mode == "rules_plus_ai" else 0
-    return int(base * level + ai)
+def estimate_eta_seconds(
+    *,
+    security_level: str,
+    scan_mode: str,
+    has_github: bool,
+    engines: list[str] | None = None,
+) -> int:
+    """Initial wall-clock guess (seconds). Conservative — real ETA is refined from progress."""
+    chosen = [e for e in (engines or ["gitleaks", "osv", "semgrep"]) if e in {"gitleaks", "osv", "semgrep"}]
+    if not chosen:
+        chosen = ["gitleaks", "osv", "semgrep"]
+    total = 25 if has_github else 8  # clone / setup
+    costs = {"gitleaks": 50, "osv": 45, "semgrep": 150}
+    for engine in chosen:
+        total += costs[engine]
+    level = {"basic": 0.7, "standard": 1.0, "strict": 1.4}.get((security_level or "standard").lower(), 1.0)
+    ai = 55 if (scan_mode or "") == "rules_plus_ai" else 0
+    return max(30, int(total * level + ai))
+
+
+def _initial_eta(scan: Scan) -> int:
+    prev = _read_progress(scan)
+    raw = prev.get("eta_initial_seconds")
+    try:
+        if raw is not None:
+            return max(30, int(raw))
+    except (TypeError, ValueError):
+        pass
+    try:
+        return max(30, int(scan.eta_seconds or 180))
+    except (TypeError, ValueError):
+        return 180
+
+
+def _remaining_eta(scan: Scan, percent: int) -> int:
+    """
+    Live ETA from elapsed wall time + percent complete.
+    Avoids the old bug of repeatedly dividing a shrinking eta_seconds into ~5–9s.
+    """
+    pct = max(1, min(99, int(percent or 1)))
+    initial = _initial_eta(scan)
+    if not scan.started_at:
+        return initial
+    try:
+        elapsed = max(1, int((utcnow() - ensure_utc(scan.started_at)).total_seconds()))
+    except Exception:
+        return max(15, initial // 2)
+
+    if pct <= 8:
+        return max(20, initial - elapsed)
+
+    extrapolated_total = int(elapsed * 100 / pct)
+    if pct < 30:
+        blended = int(0.5 * extrapolated_total + 0.5 * max(initial, elapsed + 30))
+    elif pct < 70:
+        blended = int(0.75 * extrapolated_total + 0.25 * max(initial, elapsed + 20))
+    else:
+        blended = max(extrapolated_total, elapsed + 10)
+    remaining = blended - elapsed
+    # Cap so a stuck early percent cannot claim hours forever
+    return max(8, min(remaining, 60 * 45))
 
 
 PHASE_LABELS = {
@@ -120,12 +176,24 @@ def _set_progress(
         logs.append({"t": utcnow().isoformat(), "msg": log[:240]})
     # Cap so progress_json stays small
     logs = logs[-100:]
+    pct = max(0, min(100, int(percent)))
+    initial = prev.get("eta_initial_seconds")
+    if initial is None:
+        try:
+            initial = int(scan.eta_seconds or 180)
+        except (TypeError, ValueError):
+            initial = 180
+    if eta_remaining is None and pct < 100:
+        eta_remaining = _remaining_eta(scan, pct)
+    if pct >= 100:
+        eta_remaining = 0
     scan.progress_json = json.dumps(
         {
             "phase": phase,
             "label": PHASE_LABELS.get(phase, "Working…"),
-            "percent": max(0, min(100, int(percent))),
+            "percent": pct,
             "eta_remaining_seconds": eta_remaining,
+            "eta_initial_seconds": int(initial),
             "logs": logs,
             "findings_so_far": int(prev.get("findings_so_far") or 0),
         }
@@ -141,6 +209,8 @@ def _bump_findings_so_far(session, scan: Scan, count: int) -> None:
     total = int(prev.get("findings_so_far") or 0) + max(0, count)
     prev["findings_so_far"] = total
     prev["logs"] = list(prev.get("logs") or [])
+    if "eta_initial_seconds" not in prev:
+        prev["eta_initial_seconds"] = _initial_eta(scan)
     scan.progress_json = json.dumps(prev)
     session.add(scan)
     session.commit()
@@ -152,7 +222,7 @@ def _log_engine_results(
     *,
     phase: str,
     percent: int,
-    eta_remaining: int | None,
+    eta_remaining: int | None = None,
     started_msg: str,
     empty_msg: str,
     found_msg: str,
@@ -288,7 +358,6 @@ def run_scan_job(scan_id: str) -> None:
                     scan,
                     phase="cloning",
                     percent=5,
-                    eta_remaining=scan.eta_seconds,
                     log="Pulling your repository…",
                     clear_logs=False,
                 )
@@ -312,7 +381,6 @@ def run_scan_job(scan_id: str) -> None:
                         scan,
                         phase="cloning",
                         percent=12,
-                        eta_remaining=max(8, (scan.eta_seconds or 60) - 5),
                         log=f"Repository ready{f' @ {short}' if short else ''}",
                     )
                     if (scan.scan_scope or "full") == "changed":
@@ -324,7 +392,6 @@ def run_scan_job(scan_id: str) -> None:
                             scan,
                             phase="cloning",
                             percent=15,
-                            eta_remaining=max(8, (scan.eta_seconds or 60) // 2),
                             log=f"Scoped to {len(changed_paths)} changed file(s) vs {base}",
                         )
                 else:
@@ -335,7 +402,6 @@ def run_scan_job(scan_id: str) -> None:
                         scan,
                         phase="cloning",
                         percent=15,
-                        eta_remaining=scan.eta_seconds,
                         log="No GitHub workspace — engines will be skipped",
                     )
 
@@ -347,9 +413,8 @@ def run_scan_job(scan_id: str) -> None:
 
                 if repo_path:
                     if "gitleaks" in enabled:
-                        eta = max(10, (scan.eta_seconds or 60) // 2)
                         _set_progress(
-                            session, scan, phase="secrets", percent=20, eta_remaining=eta, log="Looking for exposed secrets…"
+                            session, scan, phase="secrets", percent=20, log="Looking for exposed secrets…"
                         )
                         g_findings, g_meta = run_gitleaks(repo_path)
                         engine_meta.append(g_meta)
@@ -359,7 +424,6 @@ def run_scan_job(scan_id: str) -> None:
                             scan,
                             phase="secrets",
                             percent=28,
-                            eta_remaining=eta,
                             started_msg="Secret scan finished",
                             empty_msg="No exposed secrets found",
                             found_msg="Found {n} potential secret exposure(s)",
@@ -370,9 +434,8 @@ def run_scan_job(scan_id: str) -> None:
 
                     _check_cancel(session, scan)
                     if "osv" in enabled:
-                        eta = max(8, (scan.eta_seconds or 60) // 3)
                         _set_progress(
-                            session, scan, phase="sca", percent=40, eta_remaining=eta, log="Checking dependencies…"
+                            session, scan, phase="sca", percent=40, log="Checking dependencies…"
                         )
                         o_findings, o_meta = run_osv(repo_path)
                         engine_meta.append(o_meta)
@@ -382,7 +445,6 @@ def run_scan_job(scan_id: str) -> None:
                             scan,
                             phase="sca",
                             percent=48,
-                            eta_remaining=eta,
                             started_msg="Dependency check finished",
                             empty_msg="No known vulnerable dependencies found",
                             found_msg="Found {n} dependency issue(s)",
@@ -393,9 +455,8 @@ def run_scan_job(scan_id: str) -> None:
 
                     _check_cancel(session, scan)
                     if "semgrep" in enabled:
-                        eta = max(5, (scan.eta_seconds or 60) // 4)
                         _set_progress(
-                            session, scan, phase="semgrep", percent=60, eta_remaining=eta, log="Reading through the code…"
+                            session, scan, phase="semgrep", percent=60, log="Reading through the code…"
                         )
                         s_findings, s_meta = run_semgrep(
                             repo_path,
@@ -410,7 +471,6 @@ def run_scan_job(scan_id: str) -> None:
                             scan,
                             phase="semgrep",
                             percent=72,
-                            eta_remaining=eta,
                             started_msg="Code analysis finished",
                             empty_msg="No code issues found in this pass",
                             found_msg="Found {n} code issue(s)",
@@ -421,13 +481,11 @@ def run_scan_job(scan_id: str) -> None:
 
                     if want_review:
                         _check_cancel(session, scan)
-                        eta = max(4, (scan.eta_seconds or 40) // 5)
                         _set_progress(
                             session,
                             scan,
                             phase="code_review",
                             percent=78,
-                            eta_remaining=eta,
                             log="AI code review in progress…",
                         )
                         r_findings, r_meta = review_repository(
@@ -442,7 +500,6 @@ def run_scan_job(scan_id: str) -> None:
                             scan,
                             phase="code_review",
                             percent=88,
-                            eta_remaining=eta,
                             started_msg="AI review finished",
                             empty_msg="AI review added no extra findings",
                             found_msg="AI review flagged {n} issue(s)",
@@ -477,7 +534,6 @@ def run_scan_job(scan_id: str) -> None:
                         scan,
                         phase="reporting",
                         percent=90,
-                        eta_remaining=5,
                         log="Writing the security report…",
                     )
                     report_meta = generate_final_report(
@@ -500,7 +556,6 @@ def run_scan_job(scan_id: str) -> None:
                         scan,
                         phase="reporting",
                         percent=93,
-                        eta_remaining=3,
                         log="Report draft ready",
                     )
 
@@ -510,7 +565,6 @@ def run_scan_job(scan_id: str) -> None:
                     scan,
                     phase="reporting",
                     percent=95,
-                    eta_remaining=2,
                     log=f"Saving {len(findings_out)} finding(s)…",
                 )
                 for old in session.scalars(select(Finding).where(Finding.scan_id == scan.id)):
