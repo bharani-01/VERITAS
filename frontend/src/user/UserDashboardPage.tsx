@@ -21,6 +21,7 @@ export function UserDashboardPage() {
   const { user } = useOutletContext<ShellContext>();
   const [data, setData] = useState<WorkspaceDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<"all" | string>("all");
 
   useEffect(() => {
     api<WorkspaceDashboard>("/workspace/dashboard")
@@ -29,15 +30,44 @@ export function UserDashboardPage() {
   }, []);
 
   const charts = data?.charts;
-  const runs = charts?.runs || [];
+  const allRuns = charts?.runs || [];
+
+  const projectOptions = useMemo(() => {
+    const fromProjects = (data?.projects || []).map((p) => ({ id: p.id, name: p.name }));
+    const seen = new Set(fromProjects.map((p) => p.id));
+    for (const run of allRuns) {
+      if (run.project_id && !seen.has(run.project_id)) {
+        seen.add(run.project_id);
+        fromProjects.push({ id: run.project_id, name: run.project_name || "Project" });
+      }
+    }
+    return fromProjects;
+  }, [data?.projects, allRuns]);
+
+  useEffect(() => {
+    if (scope === "all") return;
+    if (!projectOptions.some((p) => p.id === scope)) {
+      setScope("all");
+    }
+  }, [scope, projectOptions]);
+
+  const runs = useMemo(() => {
+    const filtered = scope === "all" ? allRuns : allRuns.filter((r) => r.project_id === scope);
+    // Cap chart density for readability
+    return filtered.length > 16 ? filtered.slice(-16) : filtered;
+  }, [allRuns, scope]);
 
   const runCategories = useMemo(
     () =>
       runs.map((r) => {
         const when = r.created_at ? formatLocalDateTime(r.created_at).split(",")[0] : "";
-        return r.label || when || "run";
+        const base = r.label || when || "run";
+        if (scope === "all" && r.project_name) {
+          return `${base} · ${r.project_name}`;
+        }
+        return base;
       }),
-    [runs]
+    [runs, scope]
   );
 
   const runSeries = useMemo(
@@ -52,17 +82,21 @@ export function UserDashboardPage() {
   const runOptions: ApexOptions = useMemo(
     () => ({
       chart: {
-        type: "bar",
-        stacked: true,
+        type: "line",
         toolbar: { show: false },
         fontFamily: "inherit",
         animations: { enabled: true },
         background: "transparent",
+        zoom: { enabled: false },
       },
       colors: [...SEV_COLORS],
-      plotOptions: { bar: { borderRadius: 3, columnWidth: "58%" } },
+      stroke: { curve: "smooth", width: 2.5 },
+      markers: {
+        size: runs.length <= 8 ? 4 : 3,
+        strokeWidth: 0,
+        hover: { size: 5 },
+      },
       dataLabels: { enabled: false },
-      stroke: { width: 0 },
       legend: {
         position: "top",
         horizontalAlign: "left",
@@ -78,9 +112,10 @@ export function UserDashboardPage() {
       xaxis: {
         categories: runCategories,
         labels: {
-          rotate: runs.length > 6 ? -35 : 0,
+          rotate: runs.length > 6 ? -28 : 0,
           style: { colors: "#94a3b8", fontSize: "10px" },
           trim: true,
+          hideOverlappingLabels: true,
         },
         axisBorder: { show: false },
         axisTicks: { show: false },
@@ -95,13 +130,19 @@ export function UserDashboardPage() {
       },
       tooltip: {
         theme: "light",
+        shared: true,
+        intersect: false,
         y: { formatter: (v) => `${v} finding${v === 1 ? "" : "s"}` },
       },
     }),
     [runCategories, runs.length]
   );
 
-  const openSev = charts?.open_by_severity || {};
+  const openSev = useMemo(() => {
+    if (scope === "all") return charts?.open_by_severity || {};
+    return charts?.open_by_severity_by_project?.[scope] || {};
+  }, [charts?.open_by_severity, charts?.open_by_severity_by_project, scope]);
+
   const sevDonutSeries = useMemo(
     () => SEV_ORDER.map((s) => Number(openSev[s] || 0)),
     [openSev]
@@ -166,6 +207,8 @@ export function UserDashboardPage() {
   const showSetup = needsGithub || needsProject;
   const recentScans = data.recent_scans.slice(0, 12);
   const projects = data.projects.slice(0, 6);
+  const scopeLabel =
+    scope === "all" ? "All projects" : projectOptions.find((p) => p.id === scope)?.name || "Project";
 
   return (
     <main className="admin-main">
@@ -246,14 +289,40 @@ export function UserDashboardPage() {
       <Suspense fallback={<LoadingMark label="Loading charts…" />}>
         <section className="dash-charts dash-charts-pair" aria-label="Scan comparison">
           <div className="dash-chart-block">
-            <div className="dash-panel-head">
-              <h2>Findings by run</h2>
-              <span>{runs.length ? `${runs.length} recent` : "No finished scans"}</span>
+            <div className="dash-panel-head dash-chart-toolbar">
+              <div>
+                <h2>Findings by run</h2>
+                <span>
+                  {runs.length ? `${runs.length} runs · ${scopeLabel}` : "No finished scans"}
+                </span>
+              </div>
+              {projectOptions.length > 0 ? (
+                <div className="audit-seg dash-chart-seg" role="group" aria-label="Chart scope">
+                  <button type="button" className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>
+                    All
+                  </button>
+                  {projectOptions.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={scope === p.id ? "active" : ""}
+                      onClick={() => setScope(p.id)}
+                      title={p.name}
+                    >
+                      {p.name.length > 18 ? `${p.name.slice(0, 16)}…` : p.name}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
             {runs.length ? (
-              <Chart options={runOptions} series={runSeries} type="bar" height={280} />
+              <Chart options={runOptions} series={runSeries} type="line" height={280} />
             ) : (
-              <p className="dash-chart-empty">Finish a scan to compare severity across runs.</p>
+              <p className="dash-chart-empty">
+                {scope === "all"
+                  ? "Finish a scan to compare severity across runs."
+                  : "No finished scans with findings for this project yet."}
+              </p>
             )}
           </div>
           <div className="dash-chart-block">
@@ -264,7 +333,9 @@ export function UserDashboardPage() {
             {sevDonutTotal ? (
               <Chart options={sevDonutOptions} series={sevDonutSeries} type="donut" height={280} />
             ) : (
-              <p className="dash-chart-empty">No open findings.</p>
+              <p className="dash-chart-empty">
+                {scope === "all" ? "No open findings." : "No open findings for this project."}
+              </p>
             )}
           </div>
         </section>

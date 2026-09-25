@@ -159,6 +159,7 @@ export type WorkspaceDashboard = {
       by_family: Record<string, number>;
     }>;
     open_by_severity: Record<string, number>;
+    open_by_severity_by_project?: Record<string, Record<string, number>>;
     open_by_family: Record<string, number>;
     open_by_engine: Record<string, number>;
     scan_outcomes: Record<string, number>;

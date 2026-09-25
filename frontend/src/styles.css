@@ -1893,6 +1893,24 @@ html.nav-pref-collapsed .app-frame .app-nav .nav-logout {
   line-height: 1.45;
 }
 
+.dash-chart-toolbar {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-start;
+}
+
+.dash-chart-toolbar > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dash-chart-seg {
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
 .dash-list-action {
   color: var(--ink-soft);
   font-size: 0.8125rem;

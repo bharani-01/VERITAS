@@ -60,13 +60,13 @@ def _dashboard_charts(db: Session, user: User) -> dict:
         .where(owned, Scan.status.in_(("completed", "failed")))
         .group_by(Scan.id, Project.name)
         .order_by(Scan.created_at.desc())
-        .limit(80)
+        .limit(120)
     ).all()
-    with_findings = [(scan, name) for scan, name, count in candidates if int(count or 0) > 0][:12]
+    with_findings = [(scan, name) for scan, name, count in candidates if int(count or 0) > 0][:30]
     if len(with_findings) >= 2:
         run_rows = list(reversed(with_findings))
     else:
-        run_rows = list(reversed([(scan, name) for scan, name, _ in candidates[:12]]))
+        run_rows = list(reversed([(scan, name) for scan, name, _ in candidates[:30]]))
     run_ids = [scan.id for scan, _ in run_rows]
 
     # Prefer live Finding rows — older summaries often omit by_severity / findings_count.
@@ -143,6 +143,21 @@ def _dashboard_charts(db: Session, user: User) -> dict:
         if key in open_by_severity:
             open_by_severity[key] = int(count)
 
+    open_by_severity_by_project: dict[str, dict[str, int]] = {}
+    for project_id, severity, count in db.execute(
+        select(Scan.project_id, Finding.severity, func.count())
+        .select_from(Finding)
+        .join(Scan, Finding.scan_id == Scan.id)
+        .join(Project, Scan.project_id == Project.id)
+        .where(owned, Finding.status == "open")
+        .group_by(Scan.project_id, Finding.severity)
+    ).all():
+        pid = str(project_id)
+        bucket = open_by_severity_by_project.setdefault(pid, _empty_severity())
+        key = str(severity or "info").lower()
+        if key in bucket:
+            bucket[key] = int(count)
+
     open_by_family: dict[str, int] = {}
     for family, count in db.execute(
         select(Finding.vuln_family, func.count())
@@ -186,6 +201,7 @@ def _dashboard_charts(db: Session, user: User) -> dict:
     return {
         "runs": runs,
         "open_by_severity": open_by_severity,
+        "open_by_severity_by_project": open_by_severity_by_project,
         "open_by_family": open_by_family,
         "open_by_engine": open_by_engine,
         "scan_outcomes": outcomes,
