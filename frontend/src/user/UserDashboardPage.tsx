@@ -5,6 +5,7 @@ import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import type { User } from "../lib/api";
 import { formatStatus } from "../lib/avatars";
+import { scanHeadline, shortCommit } from "../lib/scanDisplay";
 import { formatLocalDateTime } from "../lib/time";
 import type { WorkspaceDashboard } from "../lib/workspace";
 
@@ -415,17 +416,27 @@ export function UserDashboardPage() {
               <ul className="dash-list">
                 {recentScans.map((scan) => {
                   const findings = scan.summary?.findings_count;
+                  const headline = scanHeadline(scan);
+                  const sha = shortCommit(scan.commit_short, scan.commit_sha);
+                  const author = (scan.commit_author || "").trim();
                   return (
                     <li key={scan.id}>
                       <div className="dash-list-main">
                         <div className="dash-list-top">
                           <b>
-                            <Link to={`/user/projects/${scan.project_id}/scans/${scan.id}`}>{scan.target}</Link>
+                            <Link to={`/user/projects/${scan.project_id}/scans/${scan.id}`}>{headline}</Link>
                           </b>
                           <span className={`badge ${scan.status}`}>{formatStatus(scan.status)}</span>
                         </div>
                         <small>
                           <Link to={`/user/projects/${scan.project_id}`}>{scan.project_name || "Project"}</Link>
+                          {sha ? (
+                            <>
+                              {" · "}
+                              <code className="dash-list-sha">{sha}</code>
+                            </>
+                          ) : null}
+                          {author ? ` · ${author}` : null}
                           {" · "}
                           {formatLocalDateTime(scan.created_at)}
                           {typeof findings === "number" ? ` · ${findings} finding${findings === 1 ? "" : "s"}` : ""}
