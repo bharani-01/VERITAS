@@ -1,0 +1,18 @@
+---
+description: Always AWS deploy and git push after finishing meaningful work
+alwaysApply: true
+---
+
+# Ship after every meaningful change
+
+When a user-facing or production-relevant change is done (features, fixes, UI, docs that ship with the product):
+
+1. **Build** the frontend if UI changed (`cd frontend && npm run build`).
+2. **Commit** with a clear message (user asked to ship / this rule applies — treat finish as commit+push approval).
+3. **Git push** to `origin` on the current branch (`git push -u origin HEAD` if needed).
+4. **AWS deploy** to the live EC2 host the same way as prior deploys:
+   - Package: `tar` of `backend frontend docs AGENTS.md scripts` (exclude `node_modules`, `.git`, `__pycache__`, `*.db`, venvs, `backend/.env`).
+   - Host: `veritas.trackifyapp.co.in` (resolve A record); user `ubuntu`; key `C:\Users\bhara\OneDrive\Desktop\AWS-Credentials\SSL.pem`.
+   - `scp` tarball → extract under `/opt/veritas`, `pip install -r requirements.txt` in venv, restart `veritas` (or `veritas-api`), confirm service **active**. Never overwrite remote `backend/.env`.
+
+Do not skip deploy/push at the end of a finished task unless the user explicitly says local-only / no deploy / no push.
