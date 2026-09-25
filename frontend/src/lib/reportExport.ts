@@ -1,4 +1,5 @@
 import type { Finding, Scan } from "./workspace";
+import { normalizeAiReportMarkdown } from "./normalizeAiReportMarkdown";
 
 export type ExportFormat = "md" | "json" | "csv" | "html" | "sarif";
 
@@ -163,7 +164,7 @@ function buildMarkdownWithAi(scan: Scan, findings: Finding[], projectName?: stri
   let md = buildMarkdownReport(scan, findings, projectName);
   const report = scan.summary?.ai_report?.trim();
   if (report) {
-    md += `\n## AI final report\n\n${report}\n`;
+    md += `\n## AI final report\n\n${normalizeAiReportMarkdown(report)}\n`;
   }
   return md;
 }

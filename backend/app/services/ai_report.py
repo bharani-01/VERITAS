@@ -71,9 +71,13 @@ def generate_final_report(
     system = (
         "You are a security engineer writing a VERITAS scan report. "
         "Return JSON only with shape: "
-        '{"summary_markdown":"markdown report with executive summary, themes, and prioritized fixes",'
-        '"fixes":[{"i":0,"steps":["step1","step2"]}]} . '
-        "summary_markdown must be actionable markdown. Keep steps concrete. No surrounding prose outside JSON."
+        '{"summary_markdown":"...","fixes":[{"i":0,"steps":["step1","step2"]}]} . '
+        "summary_markdown MUST be GitHub-Flavored Markdown with real structure: "
+        "start with '# VERITAS Scan Executive Summary', then '##' sections "
+        "(Critical Issues, Themes, Prioritized Fixes, etc.), use '- ' bullet lists "
+        "for findings and P1/P2 fixes (bold the priority label), and blank lines between sections. "
+        "Do not use plain title-case lines without '#' heading markers. "
+        "Keep steps concrete. No surrounding prose outside JSON."
     )
     user_msg = json.dumps(
         {"project": project_name, "target": target, "findings": payload},

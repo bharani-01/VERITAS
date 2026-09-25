@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { normalizeAiReportMarkdown } from "../lib/normalizeAiReportMarkdown";
 
 type Props = {
   source: string;
@@ -8,7 +9,7 @@ type Props = {
 
 /** Renders AI / exported markdown safely as React elements (no raw HTML). */
 export function MarkdownReport({ source, className }: Props) {
-  const md = source.trim();
+  const md = normalizeAiReportMarkdown(source);
   if (!md) return null;
 
   return (
