@@ -1854,6 +1854,14 @@ html.nav-pref-collapsed .app-frame .app-nav .nav-logout {
   background: var(--surface);
 }
 
+.dash-charts-pair {
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 0.85fr);
+}
+
+.dash-charts-pair .dash-chart-block + .dash-chart-block {
+  border-left: 1px solid var(--line);
+}
+
 .dash-charts-secondary {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -6623,8 +6631,14 @@ td.col-actions {
   }
 
   .dash-charts,
-  .dash-charts-secondary {
+  .dash-charts-secondary,
+  .dash-charts-pair {
     grid-template-columns: 1fr;
+  }
+
+  .dash-charts-pair .dash-chart-block + .dash-chart-block {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .dash-chart-side {

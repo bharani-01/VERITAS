@@ -49,11 +49,6 @@ export function UserDashboardPage() {
     [runs]
   );
 
-  const runTotalSeries = useMemo(
-    () => [{ name: "Findings", data: runs.map((r) => Number(r.findings_count || 0)) }],
-    [runs]
-  );
-
   const runOptions: ApexOptions = useMemo(
     () => ({
       chart: {
@@ -106,52 +101,6 @@ export function UserDashboardPage() {
     [runCategories, runs.length]
   );
 
-  const trendOptions: ApexOptions = useMemo(
-    () => ({
-      chart: {
-        type: "area",
-        toolbar: { show: false },
-        fontFamily: "inherit",
-        animations: { enabled: true },
-        background: "transparent",
-        sparkline: { enabled: false },
-      },
-      colors: ["#2563eb"],
-      stroke: { curve: "smooth", width: 2 },
-      fill: {
-        type: "gradient",
-        gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.04, stops: [0, 90, 100] },
-      },
-      dataLabels: { enabled: false },
-      legend: { show: false },
-      grid: {
-        borderColor: "#e8edf2",
-        strokeDashArray: 3,
-        padding: { left: 4, right: 8, top: 8, bottom: 0 },
-      },
-      xaxis: {
-        categories: runCategories,
-        labels: {
-          rotate: runs.length > 6 ? -35 : 0,
-          style: { colors: "#94a3b8", fontSize: "10px" },
-          trim: true,
-        },
-        axisBorder: { show: false },
-        axisTicks: { show: false },
-      },
-      yaxis: {
-        min: 0,
-        forceNiceScale: true,
-        labels: {
-          style: { colors: "#94a3b8", fontSize: "10px" },
-          formatter: (v) => String(Math.round(v)),
-        },
-      },
-      tooltip: { theme: "light", y: { formatter: (v) => `${v} total` } },
-    }),
-    [runCategories, runs.length]
-  );
-
   const openSev = charts?.open_by_severity || {};
   const sevDonutSeries = useMemo(
     () => SEV_ORDER.map((s) => Number(openSev[s] || 0)),
@@ -191,118 +140,6 @@ export function UserDashboardPage() {
       tooltip: { y: { formatter: (v) => `${v}` } },
     }),
     [sevDonutTotal]
-  );
-
-  const familyEntries = useMemo(() => {
-    const raw = charts?.open_by_family || {};
-    return Object.entries(raw).sort((a, b) => b[1] - a[1]);
-  }, [charts?.open_by_family]);
-
-  const familyOptions: ApexOptions = useMemo(
-    () => ({
-      chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent" },
-      plotOptions: { bar: { horizontal: true, borderRadius: 3, barHeight: "62%", distributed: true } },
-      colors: ["#2563eb", "#0d9488", "#7c3aed", "#ea580c", "#0284c7", "#ca8a04", "#64748b", "#db2777"],
-      dataLabels: { enabled: false },
-      legend: { show: false },
-      grid: { borderColor: "#e8edf2", strokeDashArray: 3, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } } },
-      xaxis: {
-        categories: familyEntries.map(([k]) => k),
-        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
-        axisBorder: { show: false },
-        axisTicks: { show: false },
-      },
-      yaxis: { labels: { style: { colors: "#64748b", fontSize: "11px" } } },
-      tooltip: { theme: "light" },
-    }),
-    [familyEntries]
-  );
-
-  const familySeries = useMemo(
-    () => [{ name: "Open", data: familyEntries.map(([, v]) => v) }],
-    [familyEntries]
-  );
-
-  const engineEntries = useMemo(() => {
-    const raw = charts?.open_by_engine || {};
-    return Object.entries(raw).sort((a, b) => b[1] - a[1]);
-  }, [charts?.open_by_engine]);
-
-  const engineOptions: ApexOptions = useMemo(
-    () => ({
-      chart: { type: "bar", toolbar: { show: false }, fontFamily: "inherit", background: "transparent" },
-      plotOptions: { bar: { borderRadius: 3, columnWidth: "48%", distributed: true } },
-      colors: ["#0f172a", "#2563eb", "#0d9488", "#ea580c", "#7c3aed"],
-      dataLabels: { enabled: false },
-      legend: { show: false },
-      grid: { borderColor: "#e8edf2", strokeDashArray: 3 },
-      xaxis: {
-        categories: engineEntries.map(([k]) => k),
-        labels: { style: { colors: "#94a3b8", fontSize: "10px" } },
-        axisBorder: { show: false },
-        axisTicks: { show: false },
-      },
-      yaxis: {
-        min: 0,
-        forceNiceScale: true,
-        labels: { style: { colors: "#94a3b8", fontSize: "10px" }, formatter: (v) => String(Math.round(v)) },
-      },
-      tooltip: { theme: "light" },
-    }),
-    [engineEntries]
-  );
-
-  const engineSeries = useMemo(
-    () => [{ name: "Open", data: engineEntries.map(([, v]) => v) }],
-    [engineEntries]
-  );
-
-  const outcomes = charts?.scan_outcomes || {};
-  const outcomeKeys = useMemo(() => {
-    const preferred = ["completed", "failed", "cancelled", "running", "queued"];
-    const keys = preferred.filter((k) => (outcomes[k] || 0) > 0);
-    for (const k of Object.keys(outcomes)) {
-      if (!keys.includes(k) && (outcomes[k] || 0) > 0) keys.push(k);
-    }
-    return keys.length ? keys : preferred.slice(0, 3);
-  }, [outcomes]);
-
-  const outcomeOptions: ApexOptions = useMemo(
-    () => ({
-      chart: { type: "donut", fontFamily: "inherit", background: "transparent" },
-      labels: outcomeKeys.map((k) => formatStatus(k)),
-      colors: ["#059669", "#dc2626", "#64748b", "#2563eb", "#ca8a04"],
-      legend: { position: "bottom", fontSize: "11px", markers: { size: 5 } },
-      dataLabels: { enabled: false },
-      plotOptions: {
-        pie: {
-          donut: {
-            size: "70%",
-            labels: {
-              show: true,
-              name: { show: false },
-              value: { show: false },
-              total: {
-                show: true,
-                showAlways: true,
-                label: "scans",
-                fontSize: "11px",
-                fontWeight: 600,
-                color: "#64748b",
-                formatter: () => String(outcomeKeys.reduce((a, k) => a + (outcomes[k] || 0), 0)),
-              },
-            },
-          },
-        },
-      },
-      stroke: { width: 2, colors: ["#fff"] },
-    }),
-    [outcomeKeys, outcomes]
-  );
-
-  const outcomeSeries = useMemo(
-    () => outcomeKeys.map((k) => Number(outcomes[k] || 0)),
-    [outcomeKeys, outcomes]
   );
 
   if (error) {
@@ -407,80 +244,32 @@ export function UserDashboardPage() {
       ) : null}
 
       <Suspense fallback={<LoadingMark label="Loading charts…" />}>
-        <section className="dash-charts" aria-label="Scan comparison">
-          <div className="dash-chart-block dash-chart-wide">
+        <section className="dash-charts dash-charts-pair" aria-label="Scan comparison">
+          <div className="dash-chart-block">
             <div className="dash-panel-head">
               <h2>Findings by run</h2>
               <span>{runs.length ? `${runs.length} recent` : "No finished scans"}</span>
             </div>
             {runs.length ? (
-              <Chart options={runOptions} series={runSeries} type="bar" height={260} />
+              <Chart options={runOptions} series={runSeries} type="bar" height={280} />
             ) : (
               <p className="dash-chart-empty">Finish a scan to compare severity across runs.</p>
             )}
           </div>
-          <div className="dash-chart-side">
-            <div className="dash-chart-block">
-              <div className="dash-panel-head">
-                <h2>Open by severity</h2>
-                <span>{sevDonutTotal}</span>
-              </div>
-              {sevDonutTotal ? (
-                <Chart options={sevDonutOptions} series={sevDonutSeries} type="donut" height={210} />
-              ) : (
-                <p className="dash-chart-empty">No open findings.</p>
-              )}
-            </div>
-            <div className="dash-chart-block">
-              <div className="dash-panel-head">
-                <h2>Scan outcomes</h2>
-                <span>All time</span>
-              </div>
-              {outcomeSeries.some((n) => n > 0) ? (
-                <Chart options={outcomeOptions} series={outcomeSeries} type="donut" height={210} />
-              ) : (
-                <p className="dash-chart-empty">No scans yet.</p>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="dash-charts dash-charts-secondary" aria-label="Finding breakdown">
           <div className="dash-chart-block">
             <div className="dash-panel-head">
-              <h2>Finding trend</h2>
-              <span>Total per run</span>
+              <h2>Open by severity</h2>
+              <span>{sevDonutTotal}</span>
             </div>
-            {runs.length ? (
-              <Chart options={trendOptions} series={runTotalSeries} type="area" height={220} />
+            {sevDonutTotal ? (
+              <Chart options={sevDonutOptions} series={sevDonutSeries} type="donut" height={280} />
             ) : (
-              <p className="dash-chart-empty">Trend appears after your first finished scan.</p>
-            )}
-          </div>
-          <div className="dash-chart-block">
-            <div className="dash-panel-head">
-              <h2>Open by family</h2>
-              <span>Top families</span>
-            </div>
-            {familyEntries.length ? (
-              <Chart options={familyOptions} series={familySeries} type="bar" height={220} />
-            ) : (
-              <p className="dash-chart-empty">No open findings by family.</p>
-            )}
-          </div>
-          <div className="dash-chart-block">
-            <div className="dash-panel-head">
-              <h2>Open by engine</h2>
-              <span>Secrets · SCA · SAST</span>
-            </div>
-            {engineEntries.length ? (
-              <Chart options={engineOptions} series={engineSeries} type="bar" height={220} />
-            ) : (
-              <p className="dash-chart-empty">No open findings by engine.</p>
+              <p className="dash-chart-empty">No open findings.</p>
             )}
           </div>
         </section>
       </Suspense>
+
       <section className="dash-panels">
         <div className="dash-panel">
           <div className="dash-panel-head">
