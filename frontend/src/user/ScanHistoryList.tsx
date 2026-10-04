@@ -109,27 +109,26 @@ export function ScanHistoryList({
             const when = relativeTime(scan.finished_at || scan.created_at);
             const findings = findingsCountLabel(scan);
             const headline = scanHeadline(scan);
+            const percent = Math.max(2, Math.min(100, Number(scan.progress?.percent ?? (scan.status === "running" ? 15 : 4))));
+            const progressLabel = scanProgressLabel(scan.progress, scan.status) || "Scanning…";
+
             return (
               <li key={scan.id} className={entering.has(scan.id) ? "scan-hist-enter" : undefined}>
-                <div className="scan-hist-grid scan-hist-row">
+                <div className={`scan-hist-grid scan-hist-row ${scanning ? "is-scanning" : ""}`}>
                   <Link className="scan-hist-stretch" to={href} aria-label={`Open scan: ${headline}`} />
                   <span className="scan-hist-main">
                     <StatusIcon status={scan.status} />
                     <span className="scan-hist-copy">
-                      <span className="scan-hist-msg">{headline}</span>
-                      {scanning ? (
-                        <span className="scan-hist-live">
-                          <span className="scan-hist-live-bar" aria-hidden>
-                            <span
-                              className="scan-hist-live-fill"
-                              style={{ width: `${Math.max(2, Math.min(100, Number(scan.progress?.percent ?? 2)))}%` }}
-                            />
+                      <div className="scan-hist-headline-row">
+                        <span className="scan-hist-msg">{headline}</span>
+                        {scanning ? (
+                          <span className="scan-live-phase-chip" title={progressLabel}>
+                            <span className="scan-live-dot" />
+                            <span className="scan-live-phase-text">{progressLabel}</span>
                           </span>
-                          <span className="scan-hist-live-label">
-                            {scanProgressLabel(scan.progress, scan.status) || "Scanning…"}
-                          </span>
-                        </span>
-                      ) : null}
+                        ) : null}
+                      </div>
+
                       <span className="scan-hist-meta">
                         {showProjectName && scan.project_name ? (
                           <>
@@ -146,8 +145,16 @@ export function ScanHistoryList({
                               ·
                             </span>
                             <span>
-                              {scan.status === "completed" ? "Scanned" : formatStatus(scan.status)} {when}
+                              {scanning ? "Running" : scan.status === "completed" ? "Scanned" : formatStatus(scan.status)} {when}
                             </span>
+                          </>
+                        ) : null}
+                        {scanning && percent > 0 ? (
+                          <>
+                            <span className="scan-hist-dot" aria-hidden="true">
+                              ·
+                            </span>
+                            <span className="scan-live-percent">{percent}%</span>
                           </>
                         ) : null}
                         <span className="scan-hist-mobile-extra">
@@ -161,9 +168,16 @@ export function ScanHistoryList({
                       </span>
                     </span>
                   </span>
+
                   <span className="scan-hist-col">{scanTriggerLabel(scan)}</span>
+
                   <span className="scan-hist-col scan-hist-findings">
-                    {findings === "—" || findings === "…" ? (
+                    {scanning ? (
+                      <span className="scan-analyzing-pill">
+                        <span className="badge-spinner" aria-hidden="true" />
+                        <span>Analyzing…</span>
+                      </span>
+                    ) : findings === "—" || findings === "…" ? (
                       findings
                     ) : (
                       <>
@@ -172,15 +186,39 @@ export function ScanHistoryList({
                       </>
                     )}
                   </span>
-                  <span className="scan-hist-col">{formatScanDuration(scan)}</span>
+
+                  <span className="scan-hist-col">
+                    {scanning ? (
+                      <span className="scan-duration-live" title="Estimated time remaining">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10" />
+                          <polyline points="12 6 12 12 16 14" />
+                        </svg>
+                        <span>{formatScanDuration(scan)}</span>
+                      </span>
+                    ) : (
+                      formatScanDuration(scan)
+                    )}
+                  </span>
+
                   <span className="scan-hist-action">
                     {scanning && onCancel ? (
                       <button
                         type="button"
-                        className="scan-hist-cancel"
-                        onClick={() => onCancel(scan.id)}
+                        className="scan-hist-cancel-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          onCancel(scan.id);
+                        }}
+                        disabled={!!scan.cancel_requested}
+                        aria-label="Cancel scan"
                       >
-                        {scan.cancel_requested ? "Cancelling…" : "Cancel"}
+                        <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                          <line x1="18" y1="6" x2="6" y2="18" />
+                          <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                        <span>{scan.cancel_requested ? "Cancelling…" : "Cancel"}</span>
                       </button>
                     ) : (
                       <button
@@ -203,6 +241,15 @@ export function ScanHistoryList({
                       </button>
                     )}
                   </span>
+
+                  {scanning ? (
+                    <div className="scan-hist-bottom-track" aria-hidden="true">
+                      <div
+                        className="scan-hist-bottom-fill"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
               </li>
             );

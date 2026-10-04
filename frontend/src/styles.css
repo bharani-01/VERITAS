@@ -5437,15 +5437,16 @@ tbody tr:last-child td {
 }
 
 .scan-hist-icon.pending {
-  background: var(--accent-soft);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
   color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .scan-hist-icon.pending .scan-hist-spinner {
-  width: 0.78rem;
-  height: 0.78rem;
-  animation: scan-spinner 0.85s linear infinite;
+  width: 0.82rem;
+  height: 0.82rem;
+  animation: scan-spinner 0.75s linear infinite;
   transform-origin: center;
   display: block;
 }
@@ -6057,37 +6058,163 @@ tbody tr:last-child td {
   word-break: break-word;
 }
 
-.scan-hist-live {
+/* Redesigned Active Scan Live UI */
+.scan-hist-row.is-scanning {
+  background: color-mix(in srgb, var(--accent) 3.5%, transparent);
+}
+
+.scan-hist-row.is-scanning:hover {
+  background: color-mix(in srgb, var(--accent) 6.5%, transparent);
+}
+
+.scan-hist-headline-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-top: 0.35rem;
-  max-width: 100%;
+  gap: 0.55rem;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
-.scan-hist-live-bar {
-  flex: 1;
-  min-width: 64px;
-  max-width: 140px;
-  height: 4px;
+.scan-live-phase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.14rem 0.55rem;
   border-radius: 999px;
-  background: var(--bg-deep);
-  overflow: hidden;
-}
-
-.scan-hist-live-fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.4s var(--ease);
-}
-
-.scan-hist-live-label {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  color: var(--accent);
   font-size: 0.72rem;
-  color: var(--muted);
+  font-weight: 550;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  max-width: 18rem;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 12rem;
+  user-select: none;
+}
+
+.scan-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 7px var(--accent);
+  animation: scan-pulse-dot 1.5s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes scan-pulse-dot {
+  0% { transform: scale(0.85); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.85); opacity: 0.6; }
+}
+
+.scan-live-phase-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scan-live-percent {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* Glowing Bottom Progress Track along the Active Row */
+.scan-hist-bottom-track {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  overflow: hidden;
+  z-index: 3;
+}
+
+.scan-hist-bottom-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6, #38bdf8);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
+  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.scan-hist-bottom-fill::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  animation: scan-shimmer 1.8s infinite;
+}
+
+@keyframes scan-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+/* Findings Column while scanning */
+.scan-analyzing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-size: 0.76rem;
+  font-weight: 550;
+  user-select: none;
+}
+
+.scan-duration-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.scan-duration-live svg {
+  color: var(--accent);
+}
+
+/* Modern Cancel Button */
+.scan-hist-cancel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 550;
+  cursor: pointer;
+  transition: all 0.15s var(--ease);
+  white-space: nowrap;
+}
+
+.scan-hist-cancel-btn:hover:not(:disabled) {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+.scan-hist-cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 
