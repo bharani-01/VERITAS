@@ -87,9 +87,9 @@ export function ScanHistoryList({
           {title}
           <span className="scan-hist-count">{scans.length}</span>
         </span>
-        <span className="scan-hist-h-col">Trigger</span>
-        <span className="scan-hist-h-col">Findings</span>
-        <span className="scan-hist-h-col">Duration</span>
+        <span className="scan-hist-h-col scan-hist-h-trigger">Trigger</span>
+        <span className="scan-hist-h-col scan-hist-h-findings">Findings</span>
+        <span className="scan-hist-h-col scan-hist-h-duration">Duration</span>
         <span className="scan-hist-h-action">
           <span className="sr-only">Actions</span>
         </span>
@@ -169,9 +169,9 @@ export function ScanHistoryList({
                     </span>
                   </span>
 
-                  <span className="scan-hist-col">{scanTriggerLabel(scan)}</span>
+                  <span className="scan-hist-col scan-hist-col-trigger">{scanTriggerLabel(scan)}</span>
 
-                  <span className="scan-hist-col scan-hist-findings">
+                  <span className="scan-hist-col scan-hist-col-findings scan-hist-findings">
                     {scanning ? (
                       <span className="scan-analyzing-pill">
                         <span className="badge-spinner" aria-hidden="true" />
@@ -187,7 +187,7 @@ export function ScanHistoryList({
                     )}
                   </span>
 
-                  <span className="scan-hist-col">
+                  <span className="scan-hist-col scan-hist-col-duration">
                     {scanning ? (
                       <span className="scan-duration-live" title="Estimated time remaining">
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
