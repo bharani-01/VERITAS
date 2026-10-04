@@ -4721,48 +4721,124 @@ tbody tr:last-child td {
   background: var(--nav-hover);
 }
 
-.projects-card {
+/* Projects Table — unified with ScanHistoryList grid system */
+.projects-table {
+  --projects-cols: minmax(0, 1.8fr) 7.5rem 8rem 6.5rem 2.75rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  overflow: visible;
 }
 
-.projects-card-list {
+.projects-grid {
+  display: grid;
+  grid-template-columns: var(--projects-cols);
+  column-gap: 1.25rem;
+  align-items: center;
+  padding: 0 1.25rem;
+}
+
+.projects-head {
+  min-height: 2.65rem;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  font-size: 0.65rem;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.projects-h-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.projects-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.15rem;
+  padding: 0 0.35rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+}
+
+.projects-h-col {
+  text-align: left;
+}
+
+.projects-h-action {
+  text-align: right;
+}
+
+.projects-list {
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.project-card-row {
-  display: flex;
-  align-items: center;
+.projects-row-wrap {
   border-bottom: 1px solid var(--line);
-  transition: background 0.12s var(--ease);
 }
 
-.project-card-row:last-child {
+.projects-row-wrap:last-child {
   border-bottom: none;
 }
 
-.project-card-row:hover {
-  background: var(--nav-hover);
+.projects-row {
+  position: relative;
+  min-height: 4.25rem;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+  transition: background 0.12s var(--ease);
 }
 
-.project-card-main {
-  flex: 1;
-  min-width: 0;
+.projects-row:hover {
+  background: var(--table-hover);
+}
+
+.projects-stretch {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  color: transparent;
+  text-indent: -9999px;
+  overflow: hidden;
+}
+
+.projects-col-main,
+.projects-col-commit,
+.projects-col-status,
+.projects-col-time,
+.projects-col-action {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.projects-col-action {
+  pointer-events: auto;
+}
+
+.projects-col-main {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 1.15rem;
-  cursor: pointer;
-  text-decoration: none;
-  color: inherit;
+  gap: 0.85rem;
+  min-width: 0;
 }
 
 .project-avatar {
+  position: relative;
   flex: 0 0 auto;
   width: 2.35rem;
   height: 2.35rem;
@@ -4778,17 +4854,23 @@ tbody tr:last-child td {
   user-select: none;
 }
 
-.project-avatar-pulse {
-  width: 0.65rem;
-  height: 0.65rem;
+.project-avatar.is-scanning {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.project-avatar-scan-dot {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  border: 2px solid var(--surface);
   animation: project-pulse 1.6s ease-out infinite;
 }
 
 .project-info {
-  flex: 1 1 14rem;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -4810,7 +4892,7 @@ tbody tr:last-child td {
   transition: color 0.12s var(--ease);
 }
 
-.project-card-main:hover .project-name {
+.projects-row:hover .project-name {
   color: var(--accent);
 }
 
@@ -4848,6 +4930,10 @@ tbody tr:last-child td {
   align-items: center;
   gap: 0.4rem;
   color: var(--ink-soft);
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .project-github-icon {
@@ -4857,22 +4943,15 @@ tbody tr:last-child td {
   color: var(--muted);
 }
 
-.project-scan-status {
-  flex: 0 0 auto;
+.projects-col-commit {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
 }
 
-.project-scan-meta {
-  display: flex;
+.projects-sha-badge {
+  display: inline-flex;
   align-items: center;
-  gap: 0.65rem;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-
-.project-commit-code {
+  gap: 0.35rem;
   font-family: var(--font-mono);
   font-size: 0.76rem;
   color: var(--ink-soft);
@@ -4882,31 +4961,130 @@ tbody tr:last-child td {
   border: 1px solid var(--line);
 }
 
-.project-time-tag {
+.projects-col-status {
+  display: flex;
+  align-items: center;
+}
+
+.badge-spinner {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-right: 0.35rem;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: scan-spinner 0.75s linear infinite;
+  vertical-align: middle;
+}
+
+.projects-col-time {
+  display: flex;
+  align-items: center;
+}
+
+.projects-time-text {
   font-size: 0.78rem;
   color: var(--muted);
+  white-space: nowrap;
 }
 
-.project-arrow {
-  flex: 0 0 auto;
+.projects-empty-cell {
+  color: var(--muted);
+  font-size: 0.82rem;
+  opacity: 0.65;
+}
+
+.projects-col-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Action Dropdown Menu */
+.project-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.project-menu-trigger {
   display: grid;
   place-items: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--muted);
-  opacity: 0.45;
-  transition: transform 0.15s ease, opacity 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+  transition: all 0.12s var(--ease);
 }
 
-.project-card-main:hover .project-arrow {
-  opacity: 1;
-  color: var(--accent);
-  transform: translateX(3px);
+.project-menu-trigger:hover,
+.project-menu.open .project-menu-trigger {
+  color: var(--ink);
+  background: var(--nav-hover);
+  border-color: var(--line);
 }
 
-.project-actions-cell {
-  flex: 0 0 auto;
-  padding-right: 0.65rem;
+.project-menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 8.5rem;
+  padding: 0.3rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  animation: menu-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes menu-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.project-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s var(--ease), color 0.1s var(--ease);
+}
+
+.project-menu-item:hover {
+  background: var(--nav-hover);
+  color: var(--ink);
+}
+
+.project-menu-item.danger {
+  color: var(--danger);
+}
+
+.project-menu-item.danger:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .projects-card-empty {
@@ -4919,16 +5097,24 @@ tbody tr:last-child td {
   background: var(--surface);
 }
 
-@media (max-width: 720px) {
-  .project-card-main {
-    flex-wrap: wrap;
-    gap: 0.65rem;
+@media (max-width: 860px) {
+  .projects-table {
+    --projects-cols: minmax(0, 1fr) 7.5rem 6.5rem 2.5rem;
   }
-  .project-scan-status {
-    width: 100%;
-    justify-content: flex-start;
+  .projects-h-col:nth-child(2),
+  .projects-col-commit {
+    display: none;
   }
-  .project-arrow {
+}
+
+@media (max-width: 640px) {
+  .projects-table {
+    --projects-cols: minmax(0, 1fr) 2.5rem;
+  }
+  .projects-h-col:nth-child(3),
+  .projects-col-status,
+  .projects-h-col:nth-child(4),
+  .projects-col-time {
     display: none;
   }
 }

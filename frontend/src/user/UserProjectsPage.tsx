@@ -85,7 +85,12 @@ function ProjectRowMenu({
               onOpen();
             }}
           >
-            Open
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              <polyline points="15 3 21 3 21 9" />
+              <line x1="10" y1="14" x2="21" y2="3" />
+            </svg>
+            <span>Open</span>
           </button>
           <button
             type="button"
@@ -97,7 +102,11 @@ function ProjectRowMenu({
               onDelete();
             }}
           >
-            Delete
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            <span>Delete</span>
           </button>
         </div>
       ) : null}
@@ -242,8 +251,19 @@ export function UserProjectsPage() {
                   <p>No projects match that filter.</p>
                 </div>
               ) : (
-                <div className="projects-card">
-                  <ul className="projects-card-list" role="list">
+                <div className="projects-table">
+                  <div className="projects-grid projects-head">
+                    <span className="projects-h-main">
+                      Project <span className="projects-count-badge">{filtered.length}</span>
+                    </span>
+                    <span className="projects-h-col">Latest Commit</span>
+                    <span className="projects-h-col">Scan Status</span>
+                    <span className="projects-h-col">Activity</span>
+                    <span className="projects-h-action">
+                      <span className="sr-only">Actions</span>
+                    </span>
+                  </div>
+                  <ul className="projects-list" role="list">
                     {filtered.map((project) => {
                       const latest = latestByProject.get(project.id);
                       const sha = latest ? shortCommit(latest.commit_short, latest.commit_sha) : null;
@@ -251,102 +271,105 @@ export function UserProjectsPage() {
                         latest && (latest.status === "queued" || latest.status === "running");
                       const initial = (project.name || "P").trim().slice(0, 1).toUpperCase();
                       const findingsCount = latest?.summary?.findings_count;
+                      const href = `/user/projects/${project.id}`;
 
                       return (
-                        <li key={project.id} className="project-card-row">
-                          <div
-                            className="project-card-main"
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => navigate(`/user/projects/${project.id}`)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.preventDefault();
-                                navigate(`/user/projects/${project.id}`);
-                              }
-                            }}
-                          >
-                            <div className="project-avatar" aria-hidden="true">
-                              {scanning ? (
-                                <span className="project-avatar-pulse" />
-                              ) : (
-                                <span>{initial}</span>
-                              )}
-                            </div>
-
-                            <div className="project-info">
-                              <div className="project-info-top">
-                                <span className="project-name">{project.name}</span>
-                                {project.auto_scan_on_push ? (
-                                  <span className="project-auto-chip" title="Auto-scan on push enabled">
-                                    <span className="project-auto-dot" />
-                                    Auto · {project.auto_scan_branch || project.github_default_branch || "main"}
-                                  </span>
-                                ) : null}
-                              </div>
-
-                              <div className="project-info-sub">
-                                {project.github_repo_full_name ? (
-                                  <span className="project-repo-tag">
-                                    <GitHubIcon className="project-github-icon" />
-                                    <span>{project.github_repo_full_name}</span>
-                                  </span>
-                                ) : (
-                                  <span className="project-repo-tag muted">No repository linked</span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="project-scan-status">
-                              {latest ? (
-                                <div className="project-scan-meta">
-                                  {sha ? (
-                                    <code className="project-commit-code" title="Latest commit">
-                                      {sha}
-                                    </code>
-                                  ) : null}
-                                  <span
-                                    className={`badge ${
-                                      scanning
-                                        ? "pending"
-                                        : findingsCount === 0
-                                        ? "ok"
-                                        : "medium"
-                                    }`}
-                                  >
-                                    {scanning ? "Scanning…" : findingsCountLabel(latest) + " findings"}
-                                  </span>
-                                  <span className="project-time-tag">
-                                    {relativeTime(latest.finished_at || latest.created_at)}
-                                  </span>
-                                </div>
-                              ) : (
-                                <div className="project-scan-meta">
-                                  <span className="badge muted">No scans yet</span>
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="project-arrow" aria-hidden="true">
-                              <svg viewBox="0 0 24 24" width="16" height="16">
-                                <path
-                                  d="M9 18l6-6-6-6"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                />
-                              </svg>
-                            </div>
-                          </div>
-
-                          <div className="project-actions-cell">
-                            <ProjectRowMenu
-                              projectName={project.name}
-                              onOpen={() => navigate(`/user/projects/${project.id}`)}
-                              onDelete={() => void onDelete(project.id)}
+                        <li key={project.id} className="projects-row-wrap">
+                          <div className="projects-grid projects-row">
+                            <Link
+                              className="projects-stretch"
+                              to={href}
+                              aria-label={`Open project ${project.name}`}
                             />
+
+                            <div className="projects-col-main">
+                              <div
+                                className={`project-avatar ${scanning ? "is-scanning" : ""}`}
+                                aria-hidden="true"
+                              >
+                                <span className="project-avatar-initial">{initial}</span>
+                                {scanning ? <span className="project-avatar-scan-dot" /> : null}
+                              </div>
+
+                              <div className="project-info">
+                                <div className="project-info-top">
+                                  <span className="project-name">{project.name}</span>
+                                  {project.auto_scan_on_push ? (
+                                    <span className="project-auto-chip" title="Auto-scan on push enabled">
+                                      <span className="project-auto-dot" />
+                                      Auto · {project.auto_scan_branch || project.github_default_branch || "main"}
+                                    </span>
+                                  ) : null}
+                                </div>
+
+                                <div className="project-info-sub">
+                                  {project.github_repo_full_name ? (
+                                    <span className="project-repo-tag">
+                                      <GitHubIcon className="project-github-icon" />
+                                      <span>{project.github_repo_full_name}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="project-repo-tag muted">No repository linked</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="projects-col-commit">
+                              {sha ? (
+                                <code className="projects-sha-badge" title="Latest commit">
+                                  <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
+                                    <path d="M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0ZM8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0Zm0 1.5a6.5 6.5 0 0 1 5.92 3.826 3.998 3.998 0 0 0-4.42 2.174h-3a3.998 3.998 0 0 0-4.42-2.174A6.5 6.5 0 0 1 8 1.5Z" />
+                                  </svg>
+                                  <span>{sha}</span>
+                                </code>
+                              ) : (
+                                <span className="projects-empty-cell">—</span>
+                              )}
+                            </div>
+
+                            <div className="projects-col-status">
+                              {latest ? (
+                                <span
+                                  className={`badge ${
+                                    scanning
+                                      ? "pending"
+                                      : findingsCount === 0
+                                      ? "ok"
+                                      : "medium"
+                                  }`}
+                                >
+                                  {scanning ? (
+                                    <>
+                                      <span className="badge-spinner" aria-hidden="true" />
+                                      Scanning…
+                                    </>
+                                  ) : (
+                                    findingsCountLabel(latest) + " findings"
+                                  )}
+                                </span>
+                              ) : (
+                                <span className="badge muted">No scans</span>
+                              )}
+                            </div>
+
+                            <div className="projects-col-time">
+                              {latest ? (
+                                <span className="projects-time-text">
+                                  {relativeTime(latest.finished_at || latest.created_at)}
+                                </span>
+                              ) : (
+                                <span className="projects-empty-cell">—</span>
+                              )}
+                            </div>
+
+                            <div className="projects-col-action">
+                              <ProjectRowMenu
+                                projectName={project.name}
+                                onOpen={() => navigate(href)}
+                                onDelete={() => void onDelete(project.id)}
+                              />
+                            </div>
                           </div>
                         </li>
                       );
