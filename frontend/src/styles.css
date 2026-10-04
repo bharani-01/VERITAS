@@ -5292,6 +5292,30 @@ tbody tr:last-child td {
 .scan-hist-icon.pending {
   background: var(--accent-soft);
   color: var(--accent);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.18);
+}
+
+.scan-hist-icon.pending .scan-hist-spinner {
+  width: 0.78rem;
+  height: 0.78rem;
+  animation: scan-spinner 0.85s linear infinite;
+  transform-origin: center;
+  display: block;
+}
+
+@keyframes scan-spinner {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan-hist-icon.pending .scan-hist-spinner {
+    animation: none;
+  }
 }
 
 .scan-hist-copy {

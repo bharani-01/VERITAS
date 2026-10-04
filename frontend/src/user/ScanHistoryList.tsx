@@ -1,5 +1,4 @@
 import { Link, useNavigate } from "react-router-dom";
-import { LoadingMark } from "../components/LoadingMark";
 import { formatStatus } from "../lib/avatars";
 import {
   findingsCountLabel,
@@ -55,7 +54,15 @@ function StatusIcon({ status }: { status: string }) {
   }
   return (
     <span className="scan-hist-icon pending" aria-label={formatStatus(status)} title={formatStatus(status)}>
-      <LoadingMark variant="scan" size="xs" label="" />
+      <svg className="scan-hist-spinner" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.75" strokeOpacity="0.25" />
+        <path
+          d="M12 3a9 9 0 0 1 9 9"
+          stroke="currentColor"
+          strokeWidth="2.75"
+          strokeLinecap="round"
+        />
+      </svg>
     </span>
   );
 }
