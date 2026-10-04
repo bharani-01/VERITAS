@@ -5001,90 +5001,21 @@ tbody tr:last-child td {
   justify-content: flex-end;
 }
 
-/* Action Dropdown Menu */
-.project-menu {
-  position: relative;
+.projects-chevron {
   display: inline-flex;
-}
-
-.project-menu-trigger {
-  display: grid;
-  place-items: center;
-  width: 1.85rem;
-  height: 1.85rem;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all 0.12s var(--ease);
-}
-
-.project-menu-trigger:hover,
-.project-menu.open .project-menu-trigger {
-  color: var(--ink);
-  background: var(--nav-hover);
-  border-color: var(--line);
-}
-
-.project-menu-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  right: 0;
-  z-index: 50;
-  min-width: 8.5rem;
-  padding: 0.3rem;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.04);
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  animation: menu-pop 0.15s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes menu-pop {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-.project-menu-item {
-  display: flex;
   align-items: center;
-  gap: 0.5rem;
-  width: 100%;
-  padding: 0.45rem 0.65rem;
-  border: none;
-  background: transparent;
-  color: var(--ink-soft);
-  font-size: 0.82rem;
-  font-weight: 500;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s var(--ease), color 0.1s var(--ease);
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  color: var(--line-strong);
+  opacity: 0;
+  transition: opacity 0.12s var(--ease), color 0.12s var(--ease), transform 0.12s var(--ease);
 }
 
-.project-menu-item:hover {
-  background: var(--nav-hover);
-  color: var(--ink);
-}
-
-.project-menu-item.danger {
-  color: var(--danger);
-}
-
-.project-menu-item.danger:hover {
-  background: var(--danger-soft);
-  color: var(--danger);
+.projects-row:hover .projects-chevron {
+  opacity: 1;
+  color: var(--muted);
+  transform: translateX(2px);
 }
 
 .projects-card-empty {

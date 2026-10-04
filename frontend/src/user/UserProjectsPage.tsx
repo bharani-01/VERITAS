@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import { findingsCountLabel, relativeTime, shortCommit } from "../lib/scanDisplay";
@@ -26,97 +26,9 @@ function SearchIcon({ className }: { className?: string }) {
   );
 }
 
-function ProjectRowMenu({
-  projectName,
-  onOpen,
-  onDelete,
-}: {
-  projectName: string;
-  onOpen: () => void;
-  onDelete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  return (
-    <div className={`project-menu ${open ? "open" : ""}`} ref={wrapRef}>
-      <button
-        type="button"
-        className="project-menu-trigger"
-        aria-label={`Actions for ${projectName}`}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
-      >
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="12" cy="5" r="1.6" fill="currentColor" />
-          <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-          <circle cx="12" cy="19" r="1.6" fill="currentColor" />
-        </svg>
-      </button>
-      {open ? (
-        <div className="project-menu-panel" role="menu" aria-label={`Actions for ${projectName}`}>
-          <button
-            type="button"
-            className="project-menu-item"
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen(false);
-              onOpen();
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-              <polyline points="15 3 21 3 21 9" />
-              <line x1="10" y1="14" x2="21" y2="3" />
-            </svg>
-            <span>Open</span>
-          </button>
-          <button
-            type="button"
-            className="project-menu-item danger"
-            role="menuitem"
-            onClick={(e) => {
-              e.stopPropagation();
-              setOpen(false);
-              onDelete();
-            }}
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="3 6 5 6 21 6" />
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-            </svg>
-            <span>Delete</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 /** Flat Render-style projects index — same language as New project. */
 export function UserProjectsPage() {
-  const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [recentScans, setRecentScans] = useState<Scan[]>([]);
   const [query, setQuery] = useState("");
@@ -147,15 +59,6 @@ export function UserProjectsPage() {
     return () => window.clearInterval(id);
   }, [recentScans]);
 
-  async function onDelete(id: string) {
-    if (!confirm("Delete this project and its scans?")) return;
-    try {
-      await api(`/workspace/projects/${id}`, { method: "DELETE" });
-      await load();
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
 
   const latestByProject = useMemo(() => {
     const map = new Map<string, Scan>();
@@ -363,12 +266,19 @@ export function UserProjectsPage() {
                               )}
                             </div>
 
-                            <div className="projects-col-action">
-                              <ProjectRowMenu
-                                projectName={project.name}
-                                onOpen={() => navigate(href)}
-                                onDelete={() => void onDelete(project.id)}
-                              />
+                            <div className="projects-col-action" aria-hidden="true">
+                              <span className="projects-chevron">
+                                <svg viewBox="0 0 24 24" width="16" height="16">
+                                  <path
+                                    d="M9 18l6-6-6-6"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </span>
                             </div>
                           </div>
                         </li>

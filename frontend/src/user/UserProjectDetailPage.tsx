@@ -755,6 +755,33 @@ export function UserProjectDetailPage() {
                 </div>
               </div>
             </section>
+
+            <section className="np-block rr-row">
+              <div className="rr-meta">
+                <h2 className="rr-title" style={{ color: "var(--danger)" }}>Danger zone</h2>
+                <p className="rr-desc">Permanently remove this project and all associated scan history.</p>
+              </div>
+              <div className="rr-controls">
+                <button
+                  type="button"
+                  className="btn ghost danger"
+                  onClick={async () => {
+                    if (!project) return;
+                    if (!confirm(`Delete project "${project.name}" and all its scans? This cannot be undone.`)) {
+                      return;
+                    }
+                    try {
+                      await api(`/workspace/projects/${project.id}`, { method: "DELETE" });
+                      navigate("/user/projects");
+                    } catch (err) {
+                      setError((err as Error).message);
+                    }
+                  }}
+                >
+                  Delete project
+                </button>
+              </div>
+            </section>
           </>
         ) : null}
 
