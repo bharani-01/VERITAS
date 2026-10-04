@@ -541,7 +541,7 @@ def test_git_refs_403_does_not_mark_needs_reauth():
             assert conn.needs_reauth is False
 
 
-def test_github_webhook_signature_and_push_scan():
+def test_github_webhook_signature_and_push_scan(tmp_path):
     import hashlib
     import hmac
     import json
@@ -595,7 +595,37 @@ def test_github_webhook_signature_and_push_scan():
                 },
             )
         assert ok.status_code == 200
-        assert ok.json().get("scan_id")
+        scan_id = ok.json().get("scan_id")
+        assert scan_id
+
+        with db.SessionLocal() as session:
+            from app.models import Scan
+            scan = session.get(Scan, scan_id)
+            assert scan is not None
+            assert scan.source == "github_push"
+            assert scan.target == "tester/hook"
+            assert scan.ref == "main"
+            assert scan.commit_sha == "abc123def456abc123def456abc123def456abcd"
+
+        with patch("app.services.scan_runner.clone_project_repo") as mock_clone:
+            mock_clone.return_value = (
+                str(tmp_path),
+                {
+                    "commit_sha": "abc123def456abc123def456abc123def456abcd",
+                    "commit_short": "abc123d",
+                    "commit_message": "feat",
+                    "commit_author": "Dev",
+                    "history": [],
+                },
+            )
+            from app.services.scan_runner import run_scan_job
+            run_scan_job(scan_id)
+            assert mock_clone.called
+            with db.SessionLocal() as session:
+                scan = session.get(Scan, scan_id)
+                assert scan.status in ("completed", "failed")
+                summary = json.loads(scan.summary_json or "{}")
+                assert not any(e.get("engine") == "clone" and "manual target" in e.get("skipped", "") for e in summary.get("engines", []))
 
         # Other branch ignored
         other = dict(payload)

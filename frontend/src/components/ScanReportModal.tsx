@@ -5,7 +5,7 @@ import { MarkdownReport } from "./MarkdownReport";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
-import { formatScanDuration, shortCommit } from "../lib/scanDisplay";
+import { formatScanDuration, scanTriggerLabel, shortCommit } from "../lib/scanDisplay";
 import { scanProgressLabel } from "../lib/scanProgress";
 import type { Finding, Scan } from "../lib/workspace";
 
@@ -283,6 +283,7 @@ export function ScanReportModal({
             <div>
               <b>{scan.target}</b>
             </div>
+            {scan.source ? <div className="muted small">{scanTriggerLabel(scan)}</div> : null}
           </div>
           <div>
             <span className="muted">Git version</span>

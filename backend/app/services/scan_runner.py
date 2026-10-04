@@ -494,14 +494,21 @@ def run_scan_job(scan_id: str) -> None:
                 workdir = prepare_workdir(scan.id)
                 repo_path: Path | None = None
                 changed_paths: list[str] | None = None
-                if scan.source == "github_repo" and project.github_repo_full_name:
-                    repo_dir, git_meta = clone_project_repo(session, user, project, workdir, ref=scan.ref)
+                if scan.source in ("github_repo", "github_push") and project.github_repo_full_name:
+                    repo_dir, git_meta = clone_project_repo(
+                        session, user, project, workdir, ref=scan.ref, commit_sha=scan.commit_sha
+                    )
                     repo_path = Path(repo_dir)
-                    scan.commit_sha = git_meta.get("commit_sha")
-                    scan.commit_short = git_meta.get("commit_short")
-                    scan.commit_message = git_meta.get("commit_message")
-                    scan.commit_author = git_meta.get("commit_author")
-                    scan.git_history_json = json.dumps(git_meta.get("history") or [])
+                    scan.commit_sha = git_meta.get("commit_sha") or scan.commit_sha
+                    scan.commit_short = (
+                        git_meta.get("commit_short")
+                        or (scan.commit_sha[:7] if scan.commit_sha else None)
+                        or scan.commit_short
+                    )
+                    scan.commit_message = git_meta.get("commit_message") or scan.commit_message
+                    scan.commit_author = git_meta.get("commit_author") or scan.commit_author
+                    if git_meta.get("history"):
+                        scan.git_history_json = json.dumps(git_meta.get("history") or [])
                     session.add(scan)
                     session.commit()
                     short = scan.commit_short or (scan.commit_sha or "")[:7]

@@ -146,7 +146,14 @@ def read_git_version(repo_path: Path) -> dict:
     return meta
 
 
-def clone_project_repo(db: Session, user: User, project: Project, workdir: Path, ref: str | None = None) -> tuple[str, dict]:
+def clone_project_repo(
+    db: Session,
+    user: User,
+    project: Project,
+    workdir: Path,
+    ref: str | None = None,
+    commit_sha: str | None = None,
+) -> tuple[str, dict]:
     if not project.github_repo_full_name or project.github_repo_id is None:
         raise CloneError("Project has no linked GitHub repository.")
     try:
@@ -192,6 +199,44 @@ def clone_project_repo(db: Session, user: User, project: Project, workdir: Path,
     if proc.returncode != 0 or not dest.exists():
         err = (proc.stderr or proc.stdout or "git clone failed")[:400].replace(token, "***")
         raise CloneError(err)
+    if commit_sha:
+        try:
+            head_sha = (
+                subprocess.run(
+                    [git, "-C", str(dest), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                    check=False,
+                ).stdout
+                or ""
+            ).strip()
+            if head_sha != commit_sha:
+                chk = subprocess.run(
+                    [git, "-C", str(dest), "checkout", commit_sha],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                if chk.returncode != 0:
+                    subprocess.run(
+                        [git, "-C", str(dest), "fetch", "--depth", "12", "origin", commit_sha],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                        env=env,
+                    )
+                    subprocess.run(
+                        [git, "-C", str(dest), "checkout", commit_sha],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                        check=False,
+                    )
+        except Exception:
+            pass
     return str(dest), read_git_version(dest)
 
 
@@ -224,8 +269,19 @@ def list_changed_files(repo_path: Path, *, base_branch: str) -> list[str]:
                 timeout=60,
                 check=False,
             )
-        if proc.returncode != 0:
-            return []
-        return [line.strip().replace("\\", "/") for line in (proc.stdout or "").splitlines() if line.strip()]
+        files = []
+        if proc.returncode == 0 and proc.stdout:
+            files = [line.strip().replace("\\", "/") for line in proc.stdout.splitlines() if line.strip()]
+        if not files:
+            p = subprocess.run(
+                [git, "-C", str(repo_path), "diff", "--name-only", "HEAD~1..HEAD"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+            if p.returncode == 0 and p.stdout:
+                files = [line.strip().replace("\\", "/") for line in p.stdout.splitlines() if line.strip()]
+        return files
     except Exception:
         return []

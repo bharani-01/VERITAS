@@ -77,6 +77,6 @@ async def github_webhook(
     if not matched:
         raise HTTPException(status_code=401, detail="Invalid webhook signature.")
 
-    result = project_svc.handle_github_push_event(db, payload=payload)
+    result = project_svc.handle_github_push_event(db, payload=payload, project=matched)
     result["delivery"] = x_github_delivery
     return result

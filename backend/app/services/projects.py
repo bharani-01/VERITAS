@@ -907,7 +907,7 @@ def create_scan(
     return scan
 
 
-def handle_github_push_event(db: Session, *, payload: dict) -> dict:
+def handle_github_push_event(db: Session, *, payload: dict, project: Project | None = None) -> dict:
     """Create a scan for push to the project's configured auto-scan branch."""
     repo = payload.get("repository") or {}
     repo_id = repo.get("id")
@@ -919,12 +919,13 @@ def handle_github_push_event(db: Session, *, payload: dict) -> dict:
         return {"ok": True, "skipped": "not_branch"}
     branch = ref.removeprefix("refs/heads/")
 
-    project = db.scalar(
-        select(Project).where(
-            Project.github_repo_id == int(repo_id),
-            Project.auto_scan_on_push.is_(True),
+    if project is None:
+        project = db.scalar(
+            select(Project).where(
+                Project.github_repo_id == int(repo_id),
+                Project.auto_scan_on_push.is_(True),
+            )
         )
-    )
     if not project:
         return {"ok": True, "skipped": "no_project"}
 
@@ -942,7 +943,11 @@ def handle_github_push_event(db: Session, *, payload: dict) -> dict:
         return {"ok": True, "skipped": "no_commit"}
 
     existing = db.scalar(
-        select(Scan).where(Scan.project_id == project.id, Scan.commit_sha == head).limit(1)
+        select(Scan).where(
+            Scan.project_id == project.id,
+            Scan.commit_sha == head,
+            Scan.status.notin_(("failed", "cancelled")),
+        ).limit(1)
     )
     if existing:
         return {"ok": True, "skipped": "duplicate", "scan_id": existing.id}
@@ -1126,3 +1131,291 @@ def workspace_dashboard(db: Session, user: User) -> dict:
         "projects": [public_project(p) for p in projects[:6]],
         "charts": _dashboard_charts(db, user),
     }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
