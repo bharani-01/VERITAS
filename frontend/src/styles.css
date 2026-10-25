@@ -9017,19 +9017,37 @@ a.scan-git-link code {
   align-items: center;
   gap: 0.5rem;
   margin-top: 0.2rem;
+  min-height: 1.4rem;
 }
 
 .report-meta-scanning-label {
   font-size: 0.85rem;
   font-weight: 550;
   color: var(--ink-soft);
+  line-height: 1;
 }
 
 .scan-hist-findings-scanning {
   display: inline-flex;
   align-items: center;
-  justify-content: flex-start;
-  min-height: 1.4rem;
+  justify-content: center;
+  min-height: 1.5rem;
+  margin-right: 1.65rem;
+  vertical-align: middle;
 }
+
+.scan-duration-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--accent);
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+.scan-duration-live svg {
+  flex-shrink: 0;
+}
+
 
 
