@@ -1,0 +1,1612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VERITAS — DevSecOps Vulnerability Intelligence Platform Presentation</title>
+  <style>
+    :root {
+      --bg-page: #f8fafc;
+      --bg-card: #ffffff;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+      --text-main: #0f172a;
+      --text-body: #334155;
+      --text-muted: #64748b;
+      --navy: #1e3a8a;
+      --blue: #0284c7;
+      --crimson: #b91c1c;
+      --amber: #b45309;
+      --green: #15803d;
+      --table-header: #f1f5f9;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Presentation Viewport */
+    #presentation {
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .slide-viewport {
+      width: 95vw;
+      max-width: 1480px;
+      height: 90vh;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(8px);
+      transition: opacity 0.25s ease, transform 0.25s ease, visibility 0.25s;
+      display: flex;
+      flex-direction: column;
+      padding: 2.2rem 3rem 4.5rem 3rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    /* Slide Header */
+    .slide-header {
+      margin-bottom: 1.4rem;
+      padding-bottom: 0.9rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .section-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--navy);
+      margin-bottom: 0.25rem;
+      display: block;
+    }
+
+    .slide-title {
+      font-size: 1.85rem;
+      font-weight: 700;
+      line-height: 1.25;
+      color: var(--text-main);
+      letter-spacing: -0.01em;
+    }
+
+    .slide-subtitle {
+      font-size: 0.98rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+      font-weight: 400;
+    }
+
+    /* Content Layouts */
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.2rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.2rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    /* Structural Cards */
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1.2rem 1.3rem;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .card-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card-body {
+      color: var(--text-body);
+      font-size: 0.9rem;
+      line-height: 1.55;
+    }
+
+    .bullet-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .bullet-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.88rem;
+      line-height: 1.5;
+      color: var(--text-body);
+    }
+
+    .bullet-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      margin-top: 7px;
+      flex-shrink: 0;
+      background: var(--navy);
+    }
+
+    .strong-term {
+      color: var(--text-main);
+      font-weight: 600;
+    }
+
+    /* Process Flow Line & Steps */
+    .flow-container {
+      display: flex;
+      align-items: stretch;
+      gap: 10px;
+      margin-bottom: 1.2rem;
+    }
+
+    .flow-step {
+      flex: 1;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    .flow-step-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+
+    .flow-step-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-bottom: 6px;
+    }
+
+    .flow-step-desc {
+      font-size: 0.83rem;
+      color: var(--text-body);
+      line-height: 1.45;
+    }
+
+    /* Tables */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      border: 1px solid var(--border);
+    }
+
+    .data-table th {
+      background: var(--table-header);
+      text-align: left;
+      padding: 9px 14px;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border-dark);
+      border-right: 1px solid var(--border);
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .data-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      color: var(--text-body);
+      line-height: 1.45;
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background: #fafafa;
+    }
+
+    .code-term {
+      font-family: SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 0.8rem;
+      background: #f1f5f9;
+      border: 1px solid #e2e8f0;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: #0f172a;
+    }
+
+    /* Clean Meta Box */
+    .meta-box {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.9rem 1.2rem;
+      font-size: 0.88rem;
+      color: var(--text-body);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1rem;
+    }
+
+    /* Progress Bar */
+    #progress-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: #e2e8f0;
+      z-index: 100;
+    }
+
+    #progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--navy);
+      transition: width 0.25s ease;
+    }
+
+    /* Minimal Navigation Bar */
+    #nav-controls {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #ffffff;
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      padding: 6px 14px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-body);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      transition: all 0.15s ease;
+    }
+
+    .nav-btn:hover {
+      background: #f1f5f9;
+      color: var(--text-main);
+      border-color: var(--border);
+    }
+
+    .nav-btn.primary {
+      background: var(--navy);
+      color: #ffffff;
+    }
+
+    .nav-btn.primary:hover {
+      background: #172554;
+    }
+
+    #slide-indicator {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-main);
+      padding: 0 8px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .nav-divider {
+      width: 1px;
+      height: 16px;
+      background: var(--border);
+    }
+
+    /* Speaker Notes Drawer */
+    #speaker-notes-panel {
+      position: fixed;
+      right: -420px;
+      top: 0;
+      width: 400px;
+      height: 100vh;
+      background: #ffffff;
+      border-left: 1px solid var(--border-dark);
+      z-index: 150;
+      transition: right 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      box-shadow: -5px 0 25px rgba(0, 0, 0, 0.06);
+    }
+
+    #speaker-notes-panel.open {
+      right: 0;
+    }
+
+    .notes-header {
+      padding: 1.2rem 1.4rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #f8fafc;
+    }
+
+    .notes-title {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--navy);
+    }
+
+    .notes-body {
+      padding: 1.4rem;
+      flex: 1;
+      overflow-y: auto;
+      color: var(--text-body);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .notes-body strong {
+      color: var(--text-main);
+    }
+
+    /* Slide Overview Modal */
+    #overview-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(2px);
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      padding: 2.5rem;
+    }
+
+    #overview-modal.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .overview-wrapper {
+      background: #ffffff;
+      border-radius: 8px;
+      padding: 1.8rem;
+      max-width: 1300px;
+      margin: 0 auto;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+
+    .overview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.2rem;
+      padding-bottom: 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 1rem;
+      overflow-y: auto;
+      flex: 1;
+      padding-right: 8px;
+    }
+
+    .overview-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.9rem;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .overview-card:hover {
+      border-color: var(--navy);
+      background: #f8fafc;
+    }
+
+    .overview-card.current {
+      border-color: var(--navy);
+      background: #f1f5f9;
+      border-width: 2px;
+    }
+
+    .overview-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--navy);
+      margin-bottom: 3px;
+    }
+
+    .overview-title {
+      font-size: 0.88rem;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Print Styles */
+    @media print {
+      body {
+        overflow: visible !important;
+        height: auto !important;
+        background: #ffffff !important;
+      }
+      #progress-container, #nav-controls, #speaker-notes-panel, #overview-modal {
+        display: none !important;
+      }
+      #presentation {
+        display: block !important;
+        height: auto !important;
+        width: 100% !important;
+      }
+      .slide-viewport {
+        width: 100% !important;
+        max-width: none !important;
+        height: auto !important;
+      }
+      .slide {
+        position: relative !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        transform: none !important;
+        page-break-after: always;
+        break-after: page;
+        height: 100vh !important;
+        margin: 0 !important;
+        border-radius: 0 !important;
+        border: none !important;
+        padding: 3rem !important;
+        box-shadow: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Progress Bar -->
+  <div id="progress-container">
+    <div id="progress-bar"></div>
+  </div>
+
+  <!-- Presentation Main Viewport -->
+  <main id="presentation">
+    <div class="slide-viewport">
+
+      <!-- ================= SLIDE 1: Title ================= -->
+      <section class="slide active" data-slide="1">
+        <div class="content-area" style="justify-content: center; height: 100%;">
+          <div style="border-left: 4px solid var(--navy); padding-left: 2rem;">
+            <span class="section-tag">Information Security  |  Semester 5 Capstone</span>
+            <h1 class="slide-title" style="font-size: 3.2rem; margin: 0.4rem 0 0.8rem 0;">VERITAS</h1>
+            <h2 style="font-size: 1.35rem; font-weight: 600; color: var(--blue); margin-bottom: 1.2rem;">
+              Automated DevSecOps Vulnerability Intelligence & Multi-Engine Repository Security Platform
+            </h2>
+            <p style="color: var(--text-body); font-size: 1.02rem; max-width: 950px; line-height: 1.6; margin-bottom: 2rem;">
+              A zero-trust repository security architecture integrating 12 deterministic static analysis engines, 
+              dual-tier LLM triage and remediations, automated GitHub push CI/CD webhooks, and live HTTP intrusion detection.
+            </p>
+            
+            <table class="data-table" style="max-width: 950px;">
+              <tr>
+                <td style="font-weight: 700; width: 25%;">Candidate</td>
+                <td style="width: 25%;">Bharani Sri</td>
+                <td style="font-weight: 700; width: 25%;">Domain</td>
+                <td style="width: 25%;">DevSecOps & Code Security</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700;">Architecture</td>
+                <td>FastAPI + React 18 SPA</td>
+                <td style="font-weight: 700;">Target Host</td>
+                <td style="font-weight: 600; color: var(--navy);">veritas.trackifyapp.co.in</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 1 Talking Points:</strong><br>
+          Good morning/afternoon respected evaluators. Today I present VERITAS, an enterprise-grade DevSecOps vulnerability intelligence platform.<br><br>
+          Modern software development moves rapidly, but security testing is frequently relegated to an afterthought right before release. VERITAS delivers true Shift-Left security: inspecting repositories at the code and commit level, identifying hardcoded credentials, scanning third-party dependency vulnerabilities, executing multi-language static analysis, and synthesizing actionable remediations.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 2: Problem Statement ================= -->
+      <section class="slide" data-slide="2">
+        <div class="slide-header">
+          <span class="section-tag">Problem Statement & Motivation</span>
+          <h2 class="slide-title">Systemic Security Gaps in Modern Engineering</h2>
+          <p class="slide-subtitle">Analysis of critical vulnerabilities in modern software supply chains and developer workflows</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-2">
+            <div class="card" style="border-top: 3px solid var(--crimson);">
+              <h3 class="card-title">1. Secret Leakage in Persistent Git Trees</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--crimson);"></span><div><strong class="strong-term">Accidental Commits:</strong> Developers push API tokens, private keys, and cloud credentials directly into version control.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--crimson);"></span><div><strong class="strong-term">Persistent History:</strong> Deleting a token in a later commit does not purge it from git history; attackers easily extract objects from commit graphs.</div></li>
+              </ul>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--amber);">
+              <h3 class="card-title">2. Open-Source Supply Chain Risks (SCA)</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--amber);"></span><div><strong class="strong-term">High Dependency Ratio:</strong> Over 85-90% of modern software consists of third-party open-source libraries.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--amber);"></span><div><strong class="strong-term">Transitive CVEs:</strong> Deep dependency trees hide critical unpatched vulnerabilities (Log4Shell, prototype pollution) without developer awareness.</div></li>
+              </ul>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--navy);">
+              <h3 class="card-title">3. Developer Alert Fatigue & Unactionable Output</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">High False Positives:</strong> Traditional static analysis tools dump hundreds of unranked warnings lacking business context.</div></li>
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">Missing Remediations:</strong> Tools flag what is broken, but fail to provide contextual, copy-paste code patches.</div></li>
+              </ul>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--blue);">
+              <h3 class="card-title">4. Tool Fragmentation & Runtime Blindness</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">Tooling Silos:</strong> Separate CLI scripts for secrets, SCA, and SAST prevent centralized governance and immutable audit trails.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">Runtime Gap:</strong> Static analysis evaluates code at rest, leaving running servers blind to live HTTP reconnaissance attacks.</div></li>
+              </ul>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 2 Talking Points:</strong><br>
+          Why did we build VERITAS? We analyzed the pain points developers face in DevSecOps:<br>
+          1) Developers accidentally leak credentials into git commits, where they remain in the commit log forever.<br>
+          2) Modern apps inherit CVEs from nested third-party packages.<br>
+          3) Existing tools produce extreme alert fatigue: engineers receive hundreds of vague errors with zero advice on how to patch them.<br>
+          4) Finally, tools are disjointed CLI scripts with no zero-trust access control, no push webhooks, and no live threat visibility.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 3: Architectural Scope & Phase Matrix ================= -->
+      <section class="slide" data-slide="3">
+        <div class="slide-header">
+          <span class="section-tag">System Scope & Architecture</span>
+          <h2 class="slide-title">System Delivery Matrix: Phases 1 Through 5</h2>
+          <p class="slide-subtitle">Structured roadmap and verified functional implementations across platform evolution</p>
+        </div>
+        <div class="content-area">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 18%;">Phase</th>
+                <th style="width: 27%;">Functional Scope</th>
+                <th style="width: 40%;">Security & Technical Controls</th>
+                <th style="width: 15%;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Phase 1: IAM</td>
+                <td>Identity & User Lifecycle</td>
+                <td>Argon2 password hashing, HttpOnly session cookies, Admin approval gate, Geolocation audit trail</td>
+                <td style="font-weight: 600; color: var(--green);">Verified Production</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Phase 2: Workspace</td>
+                <td>Projects & GitHub OAuth</td>
+                <td>User-owned workspaces, GitHub OAuth integration, Server-side repo ownership re-verification</td>
+                <td style="font-weight: 600; color: var(--green);">Verified Production</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Phase 3: Engines</td>
+                <td>12-Engine Static Suite</td>
+                <td>Gitleaks, TruffleHog, Semgrep (9 languages), OSV-Scanner, pip-audit, Trivy, Bandit, Checkov</td>
+                <td style="font-weight: 600; color: var(--green);">Verified Production</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Phase 4: Triage & AI</td>
+                <td>Operational Controls & AI</td>
+                <td>OpenRouter code review, Groq Llama-3 synthesis, Fingerprint suppressions, Scan diff, SARIF 2.1.0</td>
+                <td style="font-weight: 600; color: var(--green);">Verified Production</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Phase 5: Push CI/CD</td>
+                <td>Automated Push Webhooks</td>
+                <td>Render-style auto-scan on push, HMAC SHA-256 signature verification, 7-char short SHA tracking</td>
+                <td style="font-weight: 600; color: var(--green);">Verified Production</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 3 Talking Points:</strong><br>
+          This table delineates our project scope across five coherent phases:<br>
+          Phase 1 delivered zero-trust identity with Argon2 and mandatory admin approval gating.<br>
+          Phase 2 introduced workspaces and GitHub OAuth with strict server-side repo ownership verification.<br>
+          Phase 3 integrated our 12 deterministic static analysis engines.<br>
+          Phase 4 delivered operational controls, suppression fingerprinting, and dual-tier LLM remediation.<br>
+          Phase 5 completed the DevSecOps loop with automated push webhooks verified via HMAC SHA-256 signatures.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 4: System Architecture ================= -->
+      <section class="slide" data-slide="4">
+        <div class="slide-header">
+          <span class="section-tag">System Architecture</span>
+          <h2 class="slide-title">Single-Origin FastAPI & React SPA Request Architecture</h2>
+          <p class="slide-subtitle">Eliminating cross-origin vulnerabilities while maintaining strict boundary separation</p>
+        </div>
+        <div class="content-area">
+          <div style="display: flex; flex-direction: column; gap: 0.9rem;">
+            <div class="card" style="border-left: 4px solid var(--navy);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                <h3 class="card-title" style="color: var(--navy); margin-bottom: 0;">Tier 1: Presentation Layer (Vite + React 18 SPA)</h3>
+                <span class="code-term">frontend/src</span>
+              </div>
+              <p class="card-body" style="font-size: 0.88rem;">
+                • <strong>Strict Route Isolation:</strong> Completely separated routing shells for <span class="code-term">/admin/</span> (Directory, Audit, Security Dashboard, Filesystem) and <span class="code-term">/user/</span> (Workspace, Projects, Scans). No shared navigation components.<br>
+                • <strong>Path Separation Principle:</strong> UI page routes (<span class="code-term">/admin/directory</span>) are strictly decoupled from JSON API endpoints (<span class="code-term">/admin/users</span>).<br>
+                • <strong>Client-side Visualizations:</strong> ApexCharts telemetry graphs, finding detail side-drawers, and live scan progress indicators.
+              </p>
+            </div>
+
+            <div class="card" style="border-left: 4px solid var(--blue);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                <h3 class="card-title" style="color: var(--blue); margin-bottom: 0;">Tier 2: API Gateway & Security Middleware (FastAPI)</h3>
+                <span class="code-term">backend/app</span>
+              </div>
+              <p class="card-body" style="font-size: 0.88rem;">
+                • <strong>Single-Origin Serving:</strong> FastAPI serves both the JSON API routes and the compiled React SPA assets from a single port (8000), eliminating CORS attack surfaces.<br>
+                • <strong>Auth & Session Guard:</strong> Enforces <span class="code-term">veritas_session</span> cookie verification, role-based access control, and in-memory rate limiting (429).<br>
+                • <strong>Passive HTTP Telemetry:</strong> Middleware inspects paths, query parameters, and headers for SQLi, XSS, SSRF heuristics (never stores request bodies).<br>
+                • <strong>Webhook Gateway:</strong> Validates <span class="code-term">X-Hub-Signature-256</span> HMAC signatures on incoming GitHub push notifications.
+              </p>
+            </div>
+
+            <div class="card" style="border-left: 4px solid var(--text-main);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+                <h3 class="card-title" style="color: var(--text-main); margin-bottom: 0;">Tier 3: Execution & Persistence Layer (Async Runner + DB)</h3>
+                <span class="code-term">services/ & models/</span>
+              </div>
+              <p class="card-body" style="font-size: 0.88rem;">
+                • <strong>Ephemeral Sandboxes:</strong> Short-lived workdirs (<span class="code-term">/tmp/veritas-scans</span>) automatically wiped clean upon scan completion or cancellation.<br>
+                • <strong>Multi-Engine Dispatcher:</strong> Orchestrates 12 CLI security tools with normalized output schemas (severity, CWE, file, line, fingerprint).<br>
+                • <strong>Dual-Tier AI Pipeline:</strong> OpenRouter hot-file contextual code review + Groq Llama-3 synthesis with fail-open fallback.<br>
+                • <strong>Persistence:</strong> SQLAlchemy 2.0 with SQLite in development and PostgreSQL in production. SHA-256 tokens and Fernet-encrypted GitHub secrets.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 4 Talking Points:</strong><br>
+          Let's look at the software architecture. VERITAS employs a unified single-origin model: FastAPI serves both the backend APIs and the compiled React frontend. Why? Because hosting the SPA on the same origin completely eliminates CORS exposure and allows secure HttpOnly session cookies to work natively without cross-domain leakage.<br><br>
+          Notice the strict boundary: Admin routes and User routes have completely separate navigation trees. In the backend, our background runner executes scans inside temporary sandboxes and purges them immediately after completion.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 5: Zero-Trust Identity ================= -->
+      <section class="slide" data-slide="5">
+        <div class="slide-header">
+          <span class="section-tag">Security Pillar 1: IAM & Governance</span>
+          <h2 class="slide-title">Zero-Trust Identity Lifecycle & Geolocation Auditing</h2>
+          <p class="slide-subtitle">Cryptographically hardened authentication, approval gating, and immutable event tracking</p>
+        </div>
+        <div class="content-area">
+          <!-- Flow diagram -->
+          <div class="flow-container">
+            <div class="flow-step">
+              <span class="flow-step-num">01. Signup</span>
+              <div class="flow-step-title">Argon2 Hash</div>
+              <div class="flow-step-desc">Memory-hard password hashing via argon2-cffi.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">02. Verify</span>
+              <div class="flow-step-title">Email Token</div>
+              <div class="flow-step-desc">Single-use token hashed with SHA-256 in database.</div>
+            </div>
+            <div class="flow-step" style="border: 2px solid var(--amber);">
+              <span class="flow-step-num" style="color: var(--amber);">03. Gate</span>
+              <div class="flow-step-title">Admin Approval</div>
+              <div class="flow-step-desc">Login strictly blocked until approved in /admin/directory.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">04. Session</span>
+              <div class="flow-step-title">HttpOnly Cookie</div>
+              <div class="flow-step-desc">veritas_session with SameSite=Lax and Secure flags.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">05. Audit</span>
+              <div class="flow-step-title">IP Consensus</div>
+              <div class="flow-step-desc">Multi-provider geolocation stored in audit_events.</div>
+            </div>
+          </div>
+
+          <div class="grid-3" style="margin-top: 0.5rem;">
+            <div class="card">
+              <h3 class="card-title">Cryptographic Defense</h3>
+              <p class="card-body">
+                • <strong>Argon2 Hashing:</strong> Memory-hard parameters resistant to GPU/ASIC cracking.<br>
+                • <strong>SHA-256 Hashes:</strong> Sessions, verify tokens, and reset tokens stored exclusively as hashes.<br>
+                • <strong>Fernet Encryption:</strong> GitHub OAuth access tokens encrypted at rest via AES-128-CBC + HMAC.
+              </p>
+            </div>
+            <div class="card">
+              <h3 class="card-title">Authorization Guardrails</h3>
+              <p class="card-body">
+                • <strong>Fail-Closed Gate:</strong> Users cannot bypass admin approval to access workspace APIs.<br>
+                • <strong>Anti-Demotion Lock:</strong> System blocks deactivating or demoting the last active administrator.<br>
+                • <strong>No Self-Role Changes:</strong> Administrators cannot alter their own roles to prevent privilege escalation.
+              </p>
+            </div>
+            <div class="card">
+              <h3 class="card-title">Geolocation Audit Trail</h3>
+              <p class="card-body">
+                • <strong>Immutable Trail:</strong> Append-only table logging logins, failures, approvals, and scans.<br>
+                • <strong>IP Consensus:</strong> Resolves client location across <span class="code-term">ip-api</span>, <span class="code-term">ipwho.is</span>, and <span class="code-term">ipapi.co</span>.<br>
+                • <strong>Rich Context:</strong> Captures HTTP response status codes (200, 401, 429) for forensic tracing.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 5 Talking Points:</strong><br>
+          Identity is the security perimeter. VERITAS implements a zero-trust model:<br>
+          Passwords use Argon2, recommended by OWASP for its memory-hard properties. All tokens are stored as SHA-256 hashes.<br>
+          Notice our 5-stage lifecycle: even after email verification, users cannot access the platform until an administrator approves them.<br>
+          Every security event is logged in an immutable audit trail enriched with multi-provider IP geolocation consensus.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 6: 12-Engine Scanning Suite ================= -->
+      <section class="slide" data-slide="6">
+        <div class="slide-header">
+          <span class="section-tag">Security Pillar 2: Scanning Suite</span>
+          <h2 class="slide-title">12-Engine Static Analysis & Vulnerability Matrix</h2>
+          <p class="slide-subtitle">Deterministic coverage spanning Secrets, Software Composition (SCA), SAST, and IaC Linters</p>
+        </div>
+        <div class="content-area">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 20%;">Security Domain</th>
+                <th style="width: 25%;">Integrated Engines</th>
+                <th style="width: 40%;">Technical Methodology & Scope</th>
+                <th style="width: 15%;">Finding Target</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: var(--crimson);">Secrets Detection</td>
+                <td>Gitleaks, TruffleHog, detect-secrets</td>
+                <td>Analyzes git commit tree history, entropy-based token detection, and regex pattern matching for API credentials.</td>
+                <td>Normalized Finding</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--amber);">SCA Dependencies</td>
+                <td>Google OSV-Scanner, pip-audit, Trivy</td>
+                <td>Matches package manifests and lockfiles against Google OSV CVE database, PyPI security advisories, and container packages.</td>
+                <td>Normalized Finding</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Polyglot SAST</td>
+                <td>Semgrep (Basic/Strict), Bandit, njsscan</td>
+                <td>Semantic AST rules across 9 programming languages (Python, JS/TS, Go, Java, Rust), Python OWASP flaw detection, Node.js analysis.</td>
+                <td>Normalized Finding</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--blue);">IaC & Linters</td>
+                <td>Checkov, Hadolint, ShellCheck</td>
+                <td>Policy-as-code for Terraform and Kubernetes, Dockerfile container hygiene enforcement, bash injection flaw detection.</td>
+                <td>Normalized Finding</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="meta-box">
+            <div>
+              <strong style="color: var(--text-main);">Unified Normalization Schema:</strong> All 12 tools emit into a single schema (<span class="code-term">severity</span>, <span class="code-term">cwe</span>, <span class="code-term">file_path</span>, <span class="code-term">line_start</span>, <span class="code-term">snippet</span>, <span class="code-term">fingerprint</span>).
+            </div>
+            <span style="font-weight: 700; font-size: 0.82rem; color: var(--navy);">DEEP MODE DEFAULT</span>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 6 Talking Points:</strong><br>
+          Here is our scanning engine matrix. Instead of relying on a single tool, VERITAS coordinates 12 industry-standard engines:<br>
+          - Secrets: Gitleaks, TruffleHog, and detect-secrets analyze git history and high-entropy strings.<br>
+          - SCA: Google OSV-Scanner, pip-audit, and Trivy analyze lockfiles and package manifests.<br>
+          - SAST: Semgrep with basic, standard, and strict packs across 9 languages, alongside Bandit for Python and njsscan for Node.js.<br>
+          - IaC: Checkov, Hadolint, and ShellCheck ensure Dockerfiles and cloud configs are safe.<br>
+          All findings are mapped into a single, normalized database schema.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 7: Hybrid AI Pipeline ================= -->
+      <section class="slide" data-slide="7">
+        <div class="slide-header">
+          <span class="section-tag">Security Pillar 3: AI Augmentation</span>
+          <h2 class="slide-title">Deterministic Engines + Dual-Tier LLM Intelligence</h2>
+          <p class="slide-subtitle">Combining exact syntax pattern matching with contextual reasoning and actionable code patches</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-3">
+            <div class="card" style="border-top: 3px solid var(--navy);">
+              <span class="section-tag">Stage 1</span>
+              <h3 class="card-title">Deterministic Execution</h3>
+              <p class="card-body">
+                Executes rule-based scanners (Semgrep, OSV, Gitleaks) to detect exact pattern matches with zero risk of AI hallucination.<br><br>
+                • Generates exact line numbers and rule IDs.<br>
+                • High-speed AST and regex evaluation.<br>
+                • Identifies candidate high-risk "hot files".<br><br>
+                <span class="code-term">Output: Standardized findings</span>
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--blue);">
+              <span class="section-tag">Stage 2</span>
+              <h3 class="card-title">OpenRouter Code Review</h3>
+              <p class="card-body">
+                Dispatches candidate hot-file code to LLMs via OpenRouter API (<span class="code-term">ai_code_review.py</span>) for semantic evaluation.<br><br>
+                • Identifies complex business logic bugs.<br>
+                • Detects subtle authorization bypass flaws.<br>
+                • Emits structured JSON finding objects with <span class="code-term">engine: openrouter_review</span>.<br><br>
+                <span class="code-term">Output: Logic flaw findings</span>
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--green);">
+              <span class="section-tag">Stage 3</span>
+              <h3 class="card-title">Groq LLM Synthesis</h3>
+              <p class="card-body">
+                Ultra-low latency inference via Groq Llama-3 execution (<span class="code-term">ai_report.py</span>) synthesizes all findings.<br><br>
+                • Synthesizes executive risk posture report.<br>
+                • Generates context-aware, copy-paste code patches.<br>
+                • <strong>Fail-Open Architecture:</strong> Scans succeed even if API keys are missing or rate-limited.<br><br>
+                <span class="code-term">Output: AI executive report</span>
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 7 Talking Points:</strong><br>
+          A standout contribution of VERITAS is our hybrid AI architecture. Scanners alone only flag symptoms. LLMs alone hallucinate.<br><br>
+          We unite them: Stage 1 runs deterministic engines for exact syntax matches. Stage 2 passes high-risk hot files to OpenRouter for deep semantic analysis of business logic flaws. Stage 3 uses Groq's high-speed Llama-3 to generate an executive posture report and context-specific remediation code patches.<br><br>
+          Crucially, our pipeline is fail-open: if AI keys are not configured, deterministic scan results still complete smoothly.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 8: CI/CD & Push Webhooks ================= -->
+      <section class="slide" data-slide="8">
+        <div class="slide-header">
+          <span class="section-tag">Security Pillar 4: CI/CD Automation</span>
+          <h2 class="slide-title">Render-Style GitHub Push Webhooks & Ephemeral Sandboxes</h2>
+          <p class="slide-subtitle">Automated continuous security scanning without developer friction or credential exposure</p>
+        </div>
+        <div class="content-area">
+          <div class="flow-container">
+            <div class="flow-step">
+              <span class="flow-step-num">Step 1</span>
+              <div class="flow-step-title">Git Push</div>
+              <div class="flow-step-desc">Developer pushes commit to watched branch.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">Step 2</span>
+              <div class="flow-step-title">Webhook Delivered</div>
+              <div class="flow-step-desc">GitHub delivers JSON payload to /webhooks/github.</div>
+            </div>
+            <div class="flow-step" style="border: 2px solid var(--navy);">
+              <span class="flow-step-num" style="color: var(--navy);">Step 3</span>
+              <div class="flow-step-title">HMAC Verification</div>
+              <div class="flow-step-desc">Verifies X-Hub-Signature-256 using project secret.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">Step 4</span>
+              <div class="flow-step-title">Ephemeral Clone</div>
+              <div class="flow-step-desc">Clones repo to /tmp/veritas-scans sandbox.</div>
+            </div>
+            <div class="flow-step">
+              <span class="flow-step-num">Step 5</span>
+              <div class="flow-step-title">Scan & Cleanup</div>
+              <div class="flow-step-desc">Runs engines, tags 7-char SHA, and wipes workdir.</div>
+            </div>
+          </div>
+
+          <div class="grid-3" style="margin-top: 0.5rem;">
+            <div class="card">
+              <h3 class="card-title">GitHub OAuth & Ownership</h3>
+              <p class="card-body">
+                • <strong>Owned Repositories Only:</strong> Users can attach only repositories verified as owned by their connected GitHub identity.<br>
+                • <strong>Server-Side Validation:</strong> Live GitHub API ownership check on every attach eliminates forged <span class="code-term">github_repo_id</span> injection.<br>
+                • <strong>Encrypted Tokens:</strong> GitHub tokens encrypted at rest via Fernet; never exposed to the client.
+              </p>
+            </div>
+            <div class="card">
+              <h3 class="card-title">Push Webhooks (Phase 5)</h3>
+              <p class="card-body">
+                • <strong>Auto-Scan on Push:</strong> Toggleable per-project. Automatically provisions repository webhook on GitHub.<br>
+                • <strong>HMAC Signature:</strong> Validates <span class="code-term">X-Hub-Signature-256</span> with encrypted per-project secret to prevent spoofing.<br>
+                • <strong>Commit Tracking:</strong> Records 7-character short commit SHA and commit message for every scan trigger.
+              </p>
+            </div>
+            <div class="card">
+              <h3 class="card-title">Ephemeral Sandboxing</h3>
+              <p class="card-body">
+                • <strong>Short-Lived Workdirs:</strong> Repositories cloned into isolated directories under <span class="code-term">/tmp/veritas-scans</span>.<br>
+                • <strong>Automatic Cleanup:</strong> Sandbox directories are destroyed immediately upon completion, preventing disk leaks.<br>
+                • <strong>Diff Targeting:</strong> <span class="code-term">scan_scope: changed</span> limits Semgrep to changed files for fast PR scans.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 8 Talking Points:</strong><br>
+          Security tools must fit seamlessly into developer habits. In Phase 5, we introduced Render/Vercel-style push scanning.<br><br>
+          A user links their GitHub repository, turns on auto-scan, and VERITAS automatically registers a repository webhook verified with HMAC SHA-256 signatures. Every push to the watched branch triggers an automated scan. We track the 7-character commit SHA, clone the repository into an isolated ephemeral sandbox, execute the engines, and wipe the disk immediately afterward.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 9: Operational Quality Controls ================= -->
+      <section class="slide" data-slide="9">
+        <div class="slide-header">
+          <span class="section-tag">Operational Controls</span>
+          <h2 class="slide-title">Triage Workflow, Diff Scans, Suppressions & Quotas</h2>
+          <p class="slide-subtitle">Granular developer control to eliminate duplicate alert fatigue and enforce policy gates</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-2">
+            <div class="card">
+              <h3 class="card-title">1. Finding Status Lifecycle & GitHub Blobs</h3>
+              <p class="card-body">
+                • <strong>4 Strict Statuses:</strong> <span class="code-term">open</span>, <span class="code-term">triage</span>, <span class="code-term">fixed</span>, <span class="code-term">false_positive</span>.<br>
+                • <strong>Slide-out Finding Drawer:</strong> Inspect vulnerability severity, engine source, code snippets, and remediation instructions.<br>
+                • <strong>Direct GitHub Blob Links:</strong> One-click navigation directly to the vulnerable line: <span class="code-term">github.com/{repo}/blob/{sha}/{path}#L{line}</span>.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">2. Cryptographic Suppression Fingerprints</h3>
+              <p class="card-body">
+                • <strong>Fingerprint Formula:</strong> <span class="code-term">SHA-256(engine|rule_id|file_path|line_start|title)</span>.<br>
+                • <strong>Cross-Scan Memory:</strong> Once marked suppressed, re-scans automatically classify matching fingerprints as <span class="code-term">false_positive</span>.<br>
+                • Eliminates annoying re-triaging of previously resolved or accepted risks.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">3. Scan Compare / Diffing Engine</h3>
+              <p class="card-body">
+                • <strong>Side-by-Side Commit Comparison:</strong> Compare Scan A vs. Scan B across any two branch commits.<br>
+                • <strong>Tri-State Diff:</strong> Instantly categorizes findings into <strong>Newly Introduced</strong>, <strong>Resolved</strong>, and <strong>Unchanged</strong>.<br>
+                • <strong>Severity Policy Gates:</strong> Configurable <span class="code-term">fail_severity</span> (critical, high, medium) auto-fails scans violating quality thresholds.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">4. Compute Quotas & Cooperative Cancellation</h3>
+              <p class="card-body">
+                • <strong>Compute Quotas:</strong> Enforces <span class="code-term">SCAN_RATE_LIMIT</span> (10/hr) and <span class="code-term">SCAN_CONCURRENT_LIMIT</span> (2) to prevent host exhaustion.<br>
+                • <strong>Cooperative Cancellation:</strong> Users can cancel scans; workers evaluate cancellation flags between engine stages.<br>
+                • <strong>Ops Alerts:</strong> Automatic email alerts dispatched to admins when engine binaries are missing or clone fails.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 9 Talking Points:</strong><br>
+          Scanning is easy; managing vulnerabilities at scale is hard. VERITAS provides complete operational governance:<br>
+          1) Finding lifecycle: A developer can triage findings and click directly into the exact line in GitHub's code viewer.<br>
+          2) Cryptographic suppressions: Using SHA-256 fingerprinting, once a false positive is suppressed, the system permanently remembers it on future scans.<br>
+          3) Scan compare: Security teams can compare two scans to see exactly which bugs were fixed or added in a release.<br>
+          4) Rate limits and cooperative cancellation prevent server exhaustion.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 10: Runtime HTTP Telemetry ================= -->
+      <section class="slide" data-slide="10">
+        <div class="slide-header">
+          <span class="section-tag">Runtime Defense</span>
+          <h2 class="slide-title">Live HTTP Traffic Heuristics & AI Threat Intelligence</h2>
+          <p class="slide-subtitle">Bridging static code analysis with real-time runtime intrusion detection</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-3">
+            <div class="card" style="border-top: 3px solid var(--crimson);">
+              <h3 class="card-title">Passive Heuristics Classifier</h3>
+              <p class="card-body">
+                • <strong>Middleware Inspection:</strong> Passively parses paths, query params, and headers on every API request.<br>
+                • <strong>Attack Vector Coverage:</strong> Detects SQLi, XSS, Command Injection, Path Traversal, SSRF, SSTI, and auth anomalies.<br>
+                • <strong>Zero Body Storage:</strong> Captures only metadata (method, route, classification, status, IP); never records request bodies or passwords.
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--amber);">
+              <h3 class="card-title">Admin Security Dashboard</h3>
+              <p class="card-body">
+                • <strong>ApexCharts Telemetry:</strong> Live graphs of request volume, HTTP status breakdown, and severity tiers (Safe, Warning, Critical).<br>
+                • <strong>Reconnaissance Filtering:</strong> Filter by threat classification, status codes (401, 403, 429), or client IP addresses.<br>
+                • <strong>Capped Retention:</strong> Rolling window (~50k events / 7 days) ensures zero database bloat.
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--navy);">
+              <h3 class="card-title">AI Security Analyst Panel</h3>
+              <p class="card-body">
+                • <strong>On-Demand AI Synthesis:</strong> Invokes Groq / OpenRouter to evaluate recent attack patterns.<br>
+                • <strong>Incident Explanation:</strong> Translates raw suspicious URI queries into human-readable attack hypotheses.<br>
+                • <strong>Actionable Mitigation:</strong> Generates concrete Nginx or AWS WAF firewall rule configurations to block threats.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 10 Talking Points:</strong><br>
+          A unique innovation in VERITAS is that we don't just scan code at rest; we defend the running application. Our lightweight HTTP classifier inspects live traffic for SQL injection, XSS, SSRF, and directory traversal attempts.<br><br>
+          On the Admin Security Dashboard, administrators monitor live ApexCharts telemetry. With one click, an administrator can trigger our AI Security Analyst, which inspects recent traffic anomalies and generates concrete Nginx or AWS WAF rules to block attackers.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 11: Compliance & Reporting ================= -->
+      <section class="slide" data-slide="11">
+        <div class="slide-header">
+          <span class="section-tag">Compliance & Reporting</span>
+          <h2 class="slide-title">Enterprise SARIF 2.1.0 & Multi-Format Reporting</h2>
+          <p class="slide-subtitle">Delivering compliance-ready artifacts for developers, executives, and security auditors</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-2">
+            <div class="card">
+              <h3 class="card-title">1. OASIS SARIF 2.1.0 Standard Export</h3>
+              <p class="card-body">
+                • <strong>Industry Standard:</strong> Generates Static Analysis Results Interchange Format (SARIF 2.1.0).<br>
+                • <strong>Native GitHub Integration:</strong> Upload SARIF directly into GitHub Actions or GitLab Security Dashboards.<br>
+                • <strong>SIEM / IDE Ingestion:</strong> Directly importable into VS Code, SonarQube, and enterprise vulnerability management systems.<br>
+                • <strong>Full Traceability:</strong> Retains exact rule IDs, CWE mappings, physical code locations, and snippets.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">2. Public Tokenized Report Links</h3>
+              <p class="card-body">
+                • <strong>Shareable URL:</strong> <span class="code-term">/report/{token}</span> allows external stakeholders to view findings without logging in.<br>
+                • <strong>Read-Only Finding Drawer:</strong> Auditors view code snippets, severity distribution, and remediations.<br>
+                • <strong>Cryptographic Isolation:</strong> Scoped strictly to that specific scan record; zero project data leakage.<br>
+                • <strong>High Utility:</strong> Ideal for client demonstrations, bug bounty triage, and third-party security audits.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">3. Multi-Format Client Exports</h3>
+              <p class="card-body">
+                • <strong>Markdown:</strong> Clean GitHub-Flavored Markdown for repository READMEs and security advisories.<br>
+                • <strong>JSON & CSV:</strong> Full structured telemetry for data pipelines, compliance sheets, and Excel audits.<br>
+                • <strong>Self-Contained HTML:</strong> Portable, interactive standalone HTML report file.
+              </p>
+            </div>
+
+            <div class="card">
+              <h3 class="card-title">4. Executive AI Posture Summary</h3>
+              <p class="card-body">
+                • <strong>High-Level Risk Scoring:</strong> Groq Llama-3 evaluates repository security posture for non-technical executives.<br>
+                • <strong>Top-3 Priority Vulnerabilities:</strong> Pinpoints the most urgent security remediation requirements.<br>
+                • <strong>Actionable Next Steps:</strong> Provides concrete steps for engineering leadership to allocate refactoring sprints.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 11 Talking Points:</strong><br>
+          Security reports must serve both engineers and executives. VERITAS supports 5 export formats:<br>
+          - SARIF 2.1.0: The OASIS industry standard, allowing native integration with GitHub Code Scanning alerts and IDEs.<br>
+          - Tokenized Public Links: Share a read-only report with an external client or auditor without giving them a user account.<br>
+          - Markdown, CSV, JSON, and standalone HTML.<br>
+          - Executive AI Summaries: Clear, high-level posture reviews generated by Groq for management stakeholders.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 12: Platform Hardening ================= -->
+      <section class="slide" data-slide="12">
+        <div class="slide-header">
+          <span class="section-tag">Defensive Engineering</span>
+          <h2 class="slide-title">Platform Security Posture & Fail-Closed Safeguards</h2>
+          <p class="slide-subtitle">Practicing what we preach: robust hardening of the VERITAS application itself</p>
+        </div>
+        <div class="content-area">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 22%;">Security Domain</th>
+                <th style="width: 40%;">Implementation & Mechanism</th>
+                <th style="width: 38%;">Threat Mitigated & Defensive Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Session Security</td>
+                <td><span class="code-term">veritas_session</span> with <span class="code-term">HttpOnly</span>, <span class="code-term">SameSite=Lax</span>, and <span class="code-term">Secure</span> flags. SHA-256 hashed DB tokens.</td>
+                <td>Prevents XSS session theft and eliminates exposure of valid sessions if database backups are compromised.</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Account Recovery</td>
+                <td>Password resets immediately revoke all active session rows across all user devices.</td>
+                <td>Eliminates lingering sessions if an account was compromised prior to password reset.</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--crimson);">Authorization Guardrails</td>
+                <td>Fail-closed role checks. Blocks demoting the last active admin; admins cannot alter own role.</td>
+                <td>Mitigates privilege escalation attacks and prevents accidental platform lockout.</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Filesystem Protection</td>
+                <td><span class="code-term">/admin/files</span> restricts traversal; blocks <span class="code-term">/proc</span>, <span class="code-term">/sys</span>, <span class="code-term">/dev</span>, <span class="code-term">/etc/shadow</span>, and <span class="code-term">.env</span>.</td>
+                <td>Prevents Local File Inclusion (LFI) and accidental disclosure of server credentials.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 12 Talking Points:</strong><br>
+          As a cybersecurity platform, VERITAS must be thoroughly hardened itself. We built this following defense-in-depth principles:<br>
+          - Session security: HttpOnly cookies, SHA-256 database token hashing, and instant session invalidation upon password reset.<br>
+          - Authorization guardrails: Unauthenticated requests fail closed, and administrators cannot escalate their own roles or delete the last admin.<br>
+          - Workspace security: Host filesystem exploration restricts system paths, and git clones are destroyed immediately after scanning.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 13: Live Demonstration Workflow ================= -->
+      <section class="slide" data-slide="13">
+        <div class="slide-header">
+          <span class="section-tag">Demonstration Flow</span>
+          <h2 class="slide-title">End-to-End User & Security Operations Walkthrough</h2>
+          <p class="slide-subtitle">Step-by-step verification of user onboarding, push scanning, and vulnerability triage</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-4">
+            <div class="card" style="border-top: 3px solid var(--navy);">
+              <span class="section-tag">Step 1</span>
+              <h3 class="card-title">Onboarding & Approval</h3>
+              <p class="card-body" style="font-size: 0.85rem;">
+                1. User signs up via /auth/signup with Argon2.<br>
+                2. Verifies email token.<br>
+                3. Account enters pending_approval.<br>
+                4. Admin reviews audit log and approves account in /admin/directory.<br>
+                5. Geolocation consensus records IP origin.
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--blue);">
+              <span class="section-tag">Step 2</span>
+              <h3 class="card-title">GitHub Link & Push</h3>
+              <p class="card-body" style="font-size: 0.85rem;">
+                1. User logs into /user/ and connects GitHub via OAuth.<br>
+                2. Selects owned repository; server verifies ownership.<br>
+                3. Enables auto_scan_on_push in project advanced settings.<br>
+                4. Webhook provisioned with HMAC SHA-256 secret.<br>
+                5. Developer pushes a git commit to the watched branch.
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--amber);">
+              <span class="section-tag">Step 3</span>
+              <h3 class="card-title">Automated Scan Run</h3>
+              <p class="card-body" style="font-size: 0.85rem;">
+                1. Webhook catches commit; verifies HMAC signature.<br>
+                2. Clones repo to ephemeral sandbox under /tmp/veritas-scans.<br>
+                3. Runs Semgrep, OSV, Gitleaks, Bandit.<br>
+                4. OpenRouter reviews hot files.<br>
+                5. Groq Llama-3 writes executive summary.<br>
+                6. Sandbox purged immediately.
+              </p>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--green);">
+              <span class="section-tag">Step 4</span>
+              <h3 class="card-title">Triage & Remediate</h3>
+              <p class="card-body" style="font-size: 0.85rem;">
+                1. Opens finding slide-drawer.<br>
+                2. Inspects AI code patch and clicks direct GitHub blob link.<br>
+                3. Suppresses false positive with SHA-256 fingerprint.<br>
+                4. Compares scan against baseline.<br>
+                5. Exports report in SARIF 2.1.0.
+              </p>
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 13 Talking Points:</strong><br>
+          Here is how we demonstrate the live platform during evaluation:<br>
+          1. We register a new user; they verify their email and get gated. The admin logs in, reviews the geocoded audit trail, and approves the account.<br>
+          2. The user connects their GitHub account and enables auto-scan on push.<br>
+          3. We make a git push containing a mock test commit. VERITAS catches the webhook and launches the scan pipeline automatically.<br>
+          4. When the scan finishes, the user inspects the finding drawer, reviews the AI remediation patch, clicks the GitHub line link, and exports the SARIF file.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 14: Tech Stack & Metrics ================= -->
+      <section class="slide" data-slide="14">
+        <div class="slide-header">
+          <span class="section-tag">Implementation & Metrics</span>
+          <h2 class="slide-title">Full-Stack Technology Suite & Engineering Metrics</h2>
+          <p class="slide-subtitle">Engineered for performance, modular maintainability, and enterprise security</p>
+        </div>
+        <div class="content-area">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 22%;">System Tier</th>
+                <th style="width: 48%;">Technologies & Components</th>
+                <th style="width: 30%;">Key Specification / Verified Metric</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Backend Gateway</td>
+                <td>FastAPI (Python 3.12 Asynchronous), SQLAlchemy 2.0 ORM</td>
+                <td>Sub-millisecond route dispatch, pure async I/O</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Database Engine</td>
+                <td>SQLite (Development) / PostgreSQL (Production)</td>
+                <td>UTC ISO-8601 timestamps, additive schema migrations</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Cryptographic Suite</td>
+                <td>Argon2-cffi, Fernet (AES-128-CBC + HMAC), SHA-256</td>
+                <td>Zero plaintext secret or token storage in DB</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Frontend UI</td>
+                <td>React 18, Vite, TypeScript, Minimal CSS</td>
+                <td>Zero CORS exposure, independent admin/user routing</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 700; color: var(--navy);">Scanning & AI</td>
+                <td>12 Deterministic Tools + OpenRouter & Groq Llama-3</td>
+                <td>Sub-minute diff scan execution, fail-open design</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 14 Talking Points:</strong><br>
+          Here is our complete technical stack. The backend is built on asynchronous FastAPI and SQLAlchemy, utilizing Argon2 and Fernet cryptography. The frontend is built on React 18, Vite, and TypeScript with responsive CSS and interactive ApexCharts.<br><br>
+          We orchestrate 12 security scanning engines alongside OpenRouter and Groq LLMs. Our metrics include 100% server-side authorization enforcement, 5 export formats including SARIF 2.1.0, and sub-minute scan execution.
+        </aside>
+      </section>
+
+      <!-- ================= SLIDE 15: Conclusion & Q&A ================= -->
+      <section class="slide" data-slide="15">
+        <div class="slide-header">
+          <span class="section-tag">Conclusion & Evaluation</span>
+          <h2 class="slide-title">Summary of Contributions & Academic Defense</h2>
+          <p class="slide-subtitle">Transforming code security from a developer roadblock into an automated accelerator</p>
+        </div>
+        <div class="content-area">
+          <div class="grid-2">
+            <div class="card" style="border-top: 3px solid var(--navy);">
+              <h3 class="card-title">Summary of Key Contributions</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">Eliminated Alert Fatigue:</strong> Uniting 12 deterministic engines with dual-tier LLM triage delivers actionable, copy-paste code remediations.</div></li>
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">Robust Zero-Trust IAM:</strong> Argon2, HttpOnly sessions, admin approval gating, and multi-provider geolocation audit logs.</div></li>
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">Automated DevSecOps:</strong> Render-style auto-scan on push webhooks with HMAC signatures and ephemeral sandboxes.</div></li>
+                <li class="bullet-item"><span class="bullet-dot"></span><div><strong class="strong-term">Live Threat Telemetry:</strong> Real-time HTTP heuristics for SQLi/XSS with AI Security Analyst countermeasures.</div></li>
+              </ul>
+            </div>
+
+            <div class="card" style="border-top: 3px solid var(--blue);">
+              <h3 class="card-title">Future Scope & Roadmap</h3>
+              <ul class="bullet-list">
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">Dynamic Testing (DAST):</strong> Automated web application crawling and HTTP fuzzing engines.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">IDE Extension:</strong> Real-time inline linting in VS Code powered by VERITAS backend rules.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">Automated PR Remediation:</strong> Auto-generating pull requests that fix detected vulnerabilities.</div></li>
+                <li class="bullet-item"><span class="bullet-dot" style="background: var(--blue);"></span><div><strong class="strong-term">Enterprise RBAC:</strong> Multi-tenant organizational teams and role hierarchies.</div></li>
+              </ul>
+            </div>
+          </div>
+
+          <div class="meta-box" style="justify-content: center; text-align: center; margin-top: 1.2rem; background: #f1f5f9;">
+            <div style="font-weight: 700; color: var(--navy); font-size: 0.98rem;">
+              Open for Questions & Oral Defense Evaluation
+            </div>
+          </div>
+        </div>
+        <aside class="speaker-note-content" style="display:none;">
+          <strong>Slide 15 Talking Points:</strong><br>
+          In conclusion, VERITAS proves that security does not have to be a bottleneck for modern engineering teams. By combining 12 deterministic engines, dual-tier LLM triage, zero-trust account lifecycle gating, automated GitHub push CI/CD, and live HTTP threat telemetry, we deliver an end-to-end security platform.<br><br>
+          Thank you very much for your time and guidance. I am now delighted to take your questions and provide live demonstrations of the system.
+        </aside>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- Minimal Floating Navigation Controls -->
+  <nav id="nav-controls">
+    <button class="nav-btn" id="btn-prev" title="Previous Slide (Left Arrow, J, H)">Prev</button>
+    <div id="slide-indicator">01 / 15</div>
+    <button class="nav-btn primary" id="btn-next" title="Next Slide (Right Arrow, Space, L, K)">Next</button>
+    <div class="nav-divider"></div>
+    <button class="nav-btn" id="btn-notes" title="Toggle Speaker Notes [N]">Notes [N]</button>
+    <button class="nav-btn" id="btn-overview" title="Slide Overview Grid [O]">Overview [O]</button>
+    <button class="nav-btn" id="btn-fullscreen" title="Toggle Fullscreen [F]">Fullscreen [F]</button>
+    <button class="nav-btn" id="btn-print" title="Print to PDF [P]">Print [P]</button>
+  </nav>
+
+  <!-- Speaker Notes Side Drawer -->
+  <aside id="speaker-notes-panel">
+    <div class="notes-header">
+      <div class="notes-title">Speaker Script & Notes</div>
+      <button class="nav-btn" id="btn-close-notes" style="padding: 2px 6px;">&times;</button>
+    </div>
+    <div class="notes-body" id="notes-content">
+      <!-- Dynamically filled with active slide notes -->
+    </div>
+  </aside>
+
+  <!-- Slide Overview Grid Modal -->
+  <div id="overview-modal">
+    <div class="overview-wrapper">
+      <div class="overview-header">
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-main);">Presentation Slides Overview</h2>
+        <button class="nav-btn" id="btn-close-overview" style="font-size: 1.2rem; padding: 2px 8px;">&times;</button>
+      </div>
+      <div class="overview-grid" id="overview-container">
+        <!-- Dynamically generated from slides -->
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const slides = document.querySelectorAll('.slide');
+      const totalSlides = slides.length;
+      let currentIndex = 0;
+
+      const progressBar = document.getElementById('progress-bar');
+      const slideIndicator = document.getElementById('slide-indicator');
+      const notesPanel = document.getElementById('speaker-notes-panel');
+      const notesContent = document.getElementById('notes-content');
+      const overviewModal = document.getElementById('overview-modal');
+      const overviewContainer = document.getElementById('overview-container');
+
+      function updateSlide(index) {
+        if (index < 0) index = 0;
+        if (index >= totalSlides) index = totalSlides - 1;
+        currentIndex = index;
+
+        slides.forEach((s, idx) => {
+          if (idx === currentIndex) {
+            s.classList.add('active');
+          } else {
+            s.classList.remove('active');
+          }
+        });
+
+        // Update indicator
+        const currentStr = String(currentIndex + 1).padStart(2, '0');
+        const totalStr = String(totalSlides).padStart(2, '0');
+        slideIndicator.textContent = `${currentStr} / ${totalStr}`;
+
+        // Update progress bar
+        const progress = ((currentIndex + 1) / totalSlides) * 100;
+        progressBar.style.width = `${progress}%`;
+
+        // Update speaker notes
+        const activeSlide = slides[currentIndex];
+        const noteEl = activeSlide.querySelector('.speaker-note-content');
+        if (noteEl) {
+          notesContent.innerHTML = noteEl.innerHTML;
+        } else {
+          notesContent.innerHTML = '<p style="color: var(--text-muted);">No speaker notes for this slide.</p>';
+        }
+
+        // Highlight in overview grid
+        document.querySelectorAll('.overview-card').forEach((card, idx) => {
+          if (idx === currentIndex) {
+            card.classList.add('current');
+          } else {
+            card.classList.remove('current');
+          }
+        });
+      }
+
+      function nextSlide() {
+        if (currentIndex < totalSlides - 1) {
+          updateSlide(currentIndex + 1);
+        }
+      }
+
+      function prevSlide() {
+        if (currentIndex > 0) {
+          updateSlide(currentIndex - 1);
+        }
+      }
+
+      function toggleNotes() {
+        notesPanel.classList.toggle('open');
+      }
+
+      function toggleOverview() {
+        overviewModal.classList.toggle('open');
+      }
+
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen();
+          }
+        }
+      }
+
+      // Build Overview Cards
+      slides.forEach((slide, idx) => {
+        const titleEl = slide.querySelector('.slide-title');
+        const title = titleEl ? titleEl.textContent : `Slide ${idx + 1}`;
+        const card = document.createElement('div');
+        card.className = `overview-card ${idx === 0 ? 'current' : ''}`;
+        card.innerHTML = `
+          <div class="overview-num">SLIDE ${String(idx + 1).padStart(2, '0')}</div>
+          <div class="overview-title">${title}</div>
+        `;
+        card.addEventListener('click', () => {
+          updateSlide(idx);
+          overviewModal.classList.remove('open');
+        });
+        overviewContainer.appendChild(card);
+      });
+
+      // Event Listeners
+      document.getElementById('btn-next').addEventListener('click', nextSlide);
+      document.getElementById('btn-prev').addEventListener('click', prevSlide);
+      document.getElementById('btn-notes').addEventListener('click', toggleNotes);
+      document.getElementById('btn-close-notes').addEventListener('click', toggleNotes);
+      document.getElementById('btn-overview').addEventListener('click', toggleOverview);
+      document.getElementById('btn-close-overview').addEventListener('click', toggleOverview);
+      document.getElementById('btn-fullscreen').addEventListener('click', toggleFullscreen);
+      document.getElementById('btn-print').addEventListener('click', () => window.print());
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (overviewModal.classList.contains('open')) {
+          if (e.key === 'Escape' || e.key === 'o' || e.key === 'O') {
+            overviewModal.classList.remove('open');
+          }
+          return;
+        }
+
+        switch (e.key) {
+          case 'ArrowRight':
+          case 'Space':
+          case 'PageDown':
+          case 'l':
+          case 'L':
+            nextSlide();
+            break;
+          case 'ArrowLeft':
+          case 'PageUp':
+          case 'h':
+          case 'H':
+            prevSlide();
+            break;
+          case 'Home':
+            updateSlide(0);
+            break;
+          case 'End':
+            updateSlide(totalSlides - 1);
+            break;
+          case 'n':
+          case 'N':
+            toggleNotes();
+            break;
+          case 'o':
+          case 'O':
+            toggleOverview();
+            break;
+          case 'f':
+          case 'F':
+            toggleFullscreen();
+            break;
+          case 'p':
+          case 'P':
+            window.print();
+            break;
+          case 'Escape':
+            if (notesPanel.classList.contains('open')) notesPanel.classList.remove('open');
+            break;
+        }
+      });
+
+      // Touch / Swipe
+      let touchStartX = 0;
+      let touchEndX = 0;
+      window.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+      }, false);
+
+      window.addEventListener('touchend', (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        if (touchEndX < touchStartX - 50) nextSlide();
+        if (touchEndX > touchStartX + 50) prevSlide();
+      }, false);
+
+      // Initialize
+      updateSlide(0);
+    })();
+  </script>
+</body>
+</html>

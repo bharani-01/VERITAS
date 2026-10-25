@@ -16,3 +16,6 @@ dist/
 .openai/
 .DS_Store
 Thumbs.db
+*.pptx
+extracted_netguard_images/
+

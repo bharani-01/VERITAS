@@ -127,6 +127,58 @@ function severityTone(sev: string | null | undefined): string {
   return "info";
 }
 
+function statusCodeLabel(code: number | null | undefined): string {
+  if (code == null) return "—";
+  const messages: Record<number, string> = {
+    200: "200 OK",
+    201: "201 Created",
+    204: "204 No Content",
+    301: "301 Moved",
+    302: "302 Found",
+    400: "400 Bad Request",
+    401: "401 Unauthorized",
+    403: "403 Forbidden",
+    404: "404 Not Found",
+    422: "422 Unprocessable",
+    429: "429 Rate Limited",
+    500: "500 Server Error",
+    502: "502 Bad Gateway",
+    503: "503 Unavailable",
+  };
+  return messages[code] || String(code);
+}
+
+function parseUserAgent(ua: string | null | undefined): { browser: string; os: string } {
+  if (!ua) return { browser: "Unknown client", os: "Unknown OS" };
+  let os = "Unknown OS";
+  if (/windows nt 10/i.test(ua)) os = "Windows 10/11";
+  else if (/windows nt/i.test(ua)) os = "Windows";
+  else if (/macintosh|mac os x/i.test(ua)) os = "macOS";
+  else if (/android/i.test(ua)) os = "Android";
+  else if (/iphone|ipad|ipod/i.test(ua)) os = "iOS";
+  else if (/linux/i.test(ua)) os = "Linux";
+
+  let browser = "Web Browser";
+  if (/edg\//i.test(ua)) browser = "Microsoft Edge";
+  else if (/chrome\//i.test(ua)) browser = "Google Chrome";
+  else if (/firefox\//i.test(ua)) browser = "Mozilla Firefox";
+  else if (/safari\//i.test(ua) && !/chrome\//i.test(ua)) browser = "Apple Safari";
+  else if (/postman/i.test(ua)) browser = "Postman";
+  else if (/curl/i.test(ua)) browser = "cURL";
+  else if (/python-requests/i.test(ua)) browser = "Python Requests";
+
+  return { browser, os };
+}
+
+function getInitials(name: string | null | undefined, fallback: string = "U"): string {
+  if (!name || name === "—") return fallback;
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
+
 function formatTime(iso: string) {
   const d = parseUtc(iso) || new Date(NaN);
   return {
@@ -150,6 +202,14 @@ export function AdminAuditPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<AuditEvent | null>(null);
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyText = useCallback((text: string, field: string) => {
+    if (!text) return;
+    void navigator.clipboard?.writeText(text);
+    setCopiedField(field);
+    window.setTimeout(() => setCopiedField((curr) => (curr === field ? null : curr)), 2000);
+  }, []);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -248,134 +308,306 @@ export function AdminAuditPage() {
   const modal =
     selected &&
     createPortal(
-      <div className="modal-root" role="presentation">
+      <div className="modal-root audit-modal-root" role="presentation">
         <button type="button" className="modal-backdrop" aria-label="Close" onClick={() => setSelected(null)} />
         <div className="modal-panel audit-modal" role="dialog" aria-modal="true" aria-labelledby="audit-detail-title">
-          <div className="modal-head">
-            <div>
-              <div className="modal-kicker">Event details</div>
-              <h2 id="audit-detail-title">{selected.summary || selected.action.replace(/_/g, " ")}</h2>
-              <p className="audit-modal-sub">
-                <span className={`audit-tone tone-${actionTone(selected.action)}`}>{selected.action}</span>
-                <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
-                  {(selected.severity || "info").toUpperCase()}
-                </span>
-                <span className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
-                  {selected.status_code ?? selected.how?.status_code ?? "—"}
-                </span>
-                <span>{formatTime(selected.created_at).full}</span>
-              </p>
-            </div>
-            <button type="button" className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>
-              ×
-            </button>
-          </div>
+          {(() => {
+            const uaInfo = parseUserAgent(selected.user_agent);
+            const ispName =
+              selected.geo?.providers?.find((p) => p.isp)?.isp ||
+              (selected.location_label?.includes("·") ? selected.location_label.split("·")[1]?.trim() : null);
+            const providerList = selected.geo?.providers?.length ? selected.geo.providers : null;
+            const actorName = displayName(selected.actor, selected.actor_user_id);
+            const targetName = displayName(selected.target, selected.target_user_id);
+            const method = (selected.how?.method || "HTTP").toUpperCase();
 
-          <div className="audit-modal-body">
-            <div className="audit-detail-rows">
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Severity</div>
-                <div className="audit-detail-value">
-                  <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
-                    {(selected.severity || "info").toUpperCase()}
-                  </span>
+            return (
+              <>
+                <div className="audit-modal-head">
+                  <div className="audit-modal-head-main">
+                    <div className="audit-modal-kicker-row">
+                      <span className="modal-kicker">Event details</span>
+                      <span className="audit-modal-dot" />
+                      <span className="audit-modal-time">{formatTime(selected.created_at).full}</span>
+                    </div>
+                    <h2 id="audit-detail-title">{selected.summary || selected.action.replace(/_/g, " ")}</h2>
+                    <div className="audit-modal-chips">
+                      <span className={`audit-tone tone-${actionTone(selected.action)}`}>{selected.action}</span>
+                      <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
+                        {(selected.severity || "info").toUpperCase()}
+                      </span>
+                      <span className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
+                        {statusCodeLabel(selected.status_code ?? selected.how?.status_code)}
+                      </span>
+                      {selected.ip_address && (
+                        <span className="audit-chip-outline">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20" />
+                          </svg>
+                          {selected.ip_address}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button type="button" className="modal-close" aria-label="Close" onClick={() => setSelected(null)}>
+                    ×
+                  </button>
                 </div>
-              </div>
 
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Response code</div>
-                <div className="audit-detail-value">
-                  <b className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
-                    {selected.status_code ?? selected.how?.status_code ?? "—"}
-                  </b>
+                <div className="audit-modal-body">
+                  {/* 1. Identity & Principals Card Grid */}
+                  <div className="audit-cards-grid">
+                    <div className="audit-card">
+                      <div className="audit-card-label">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                          <circle cx="12" cy="7" r="4" />
+                        </svg>
+                        Actor (Initiated by)
+                      </div>
+                      <div className="audit-principal-box">
+                        <div className="audit-avatar-circle actor">
+                          {getInitials(actorName, "A")}
+                        </div>
+                        <div className="audit-principal-info">
+                          <div className="audit-principal-name-row">
+                            <b>{actorName}</b>
+                            {(selected.who?.actor_is_admin || selected.actor?.role === "admin") && (
+                              <span className="audit-role-badge admin">admin</span>
+                            )}
+                          </div>
+                          <div className="audit-principal-sub">
+                            <span>{displayHandle(selected.actor) || "No handle"}</span>
+                            {selected.actor_user_id && (
+                              <code className="audit-sub-id" title={selected.actor_user_id}>
+                                ID: {selected.actor_user_id.slice(0, 8)}…
+                              </code>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="audit-card">
+                      <div className="audit-card-label">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                          <circle cx="12" cy="12" r="10" />
+                          <circle cx="12" cy="12" r="4" />
+                        </svg>
+                        Target (Subject)
+                      </div>
+                      <div className="audit-principal-box">
+                        <div className="audit-avatar-circle target">
+                          {getInitials(targetName, "T")}
+                        </div>
+                        <div className="audit-principal-info">
+                          <div className="audit-principal-name-row">
+                            <b>{targetName}</b>
+                            {selected.actor_user_id && selected.actor_user_id === selected.target_user_id && (
+                              <span className="audit-role-badge self">self</span>
+                            )}
+                          </div>
+                          <div className="audit-principal-sub">
+                            <span>{displayHandle(selected.target) || "No handle"}</span>
+                            {selected.target_user_id && (
+                              <code className="audit-sub-id" title={selected.target_user_id}>
+                                ID: {selected.target_user_id.slice(0, 8)}…
+                              </code>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 2. Request & Client Details */}
+                  <div className="audit-card">
+                    <div className="audit-card-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M4 17l6-6-6-6M12 19h8" />
+                      </svg>
+                      Request & Client Details
+                    </div>
+
+                    <div className="audit-request-bar">
+                      <div className="audit-request-endpoint">
+                        <span className={`audit-method-tag method-${method.toLowerCase()}`}>
+                          {method}
+                        </span>
+                        <code className="audit-request-path">
+                          {selected.how?.path || "Direct operation"}
+                        </code>
+                      </div>
+                      <div className="audit-request-code-pill">
+                        <span className="audit-request-code-label">Response</span>
+                        <span className={`audit-status status-${statusTone(selected.status_code ?? selected.how?.status_code)}`}>
+                          {statusCodeLabel(selected.status_code ?? selected.how?.status_code)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="audit-client-split">
+                      <div className="audit-client-col">
+                        <span className="audit-item-kicker">Device & Browser</span>
+                        <b className="audit-item-val">{uaInfo.browser} on {uaInfo.os}</b>
+                      </div>
+                      <div className="audit-client-col">
+                        <span className="audit-item-kicker">Severity Classification</span>
+                        <div>
+                          <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
+                            {(selected.severity || "info").toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {selected.user_agent && (
+                      <div className="audit-ua-box">
+                        <div className="audit-ua-top">
+                          <span className="audit-item-kicker">User-Agent String</span>
+                          <button
+                            type="button"
+                            className="audit-copy-btn"
+                            onClick={() => copyText(selected.user_agent!, "ua")}
+                          >
+                            {copiedField === "ua" ? "Copied!" : "Copy UA"}
+                          </button>
+                        </div>
+                        <code className="audit-ua-text">{selected.user_agent}</code>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Network & Location Intelligence */}
+                  <div className="audit-card">
+                    <div className="audit-card-label">
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                      </svg>
+                      Network & Location Intelligence
+                    </div>
+
+                    <div className="audit-geo-grid">
+                      <div className="audit-geo-cell">
+                        <span className="audit-item-kicker">IP Address</span>
+                        <div className="audit-cell-val-row">
+                          <b className="audit-mono audit-ip-main">{selected.ip_address || "Not captured"}</b>
+                          {selected.ip_address && (
+                            <button
+                              type="button"
+                              className="audit-copy-btn"
+                              onClick={() => copyText(selected.ip_address!, "ip")}
+                            >
+                              {copiedField === "ip" ? "Copied!" : "Copy"}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="audit-geo-cell">
+                        <span className="audit-item-kicker">Geographic Location</span>
+                        <b className="audit-item-val">{selected.location_label || "Location unavailable"}</b>
+                      </div>
+
+                      <div className="audit-geo-cell">
+                        <span className="audit-item-kicker">Network / ISP</span>
+                        <b className="audit-item-val">{ispName || "Internal / Private network"}</b>
+                      </div>
+
+                      <div className="audit-geo-cell">
+                        <span className="audit-item-kicker">Provider Verification</span>
+                        <div className="audit-provider-tags">
+                          {providerList ? (
+                            providerList.map((p) => (
+                              <span key={p.provider} className="audit-provider-tag" title={p.provider}>
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                {p.provider}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="audit-provider-tag">
+                              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                <polyline points="20 6 9 17 4 12" />
+                              </svg>
+                              GeoIP
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. State Transition Diffs (if present) */}
+                  {(selected.before_state || selected.after_state) && (
+                    <div className="audit-cards-grid">
+                      {selected.before_state && (
+                        <div className="audit-card">
+                          <div className="audit-ua-top">
+                            <span className="audit-item-kicker">State before change</span>
+                            <button
+                              type="button"
+                              className="audit-copy-btn"
+                              onClick={() => copyText(parseState(selected.before_state), "before")}
+                            >
+                              {copiedField === "before" ? "Copied!" : "Copy JSON"}
+                            </button>
+                          </div>
+                          <pre className="audit-diff-pre">{parseState(selected.before_state)}</pre>
+                        </div>
+                      )}
+                      {selected.after_state && (
+                        <div className="audit-card">
+                          <div className="audit-ua-top">
+                            <span className="audit-item-kicker">State after change</span>
+                            <button
+                              type="button"
+                              className="audit-copy-btn"
+                              onClick={() => copyText(parseState(selected.after_state), "after")}
+                            >
+                              {copiedField === "after" ? "Copied!" : "Copy JSON"}
+                            </button>
+                          </div>
+                          <pre className="audit-diff-pre">{parseState(selected.after_state)}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-              </div>
 
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Actor</div>
-                <div className="audit-detail-value">
-                  <b>{displayName(selected.actor, selected.actor_user_id)}</b>
-                  <span>
-                    {displayHandle(selected.actor) || "No handle"}
-                    {selected.who?.actor_is_admin || selected.actor?.role === "admin" ? " · admin" : ""}
-                  </span>
-                </div>
-              </div>
-
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Target</div>
-                <div className="audit-detail-value">
-                  <b>{displayName(selected.target, selected.target_user_id)}</b>
-                  <span>{displayHandle(selected.target) || "No handle"}</span>
-                </div>
-              </div>
-
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">IP address</div>
-                <div className="audit-detail-value">
-                  <b className="audit-mono">{selected.ip_address || "Not captured"}</b>
-                </div>
-              </div>
-
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Location</div>
-                <div className="audit-detail-value">
-                  <b>{selected.location_label || "Not available"}</b>
-                </div>
-              </div>
-
-              <div className="audit-detail-row">
-                <div className="audit-detail-label">Request</div>
-                <div className="audit-detail-value">
-                  <b className="audit-mono">
-                    {selected.how?.method && selected.how?.path
-                      ? `${selected.how.method} ${selected.how.path}`
-                      : "HTTP request"}
-                    {selected.status_code != null || selected.how?.status_code != null
-                      ? ` → ${selected.status_code ?? selected.how?.status_code}`
-                      : ""}
-                  </b>
-                  <span className="audit-ua">{selected.user_agent || "User-agent not captured"}</span>
-                </div>
-              </div>
-
-              {selected.geo?.providers?.map((p) => (
-                <div className="audit-detail-row" key={`${selected.id}-${p.provider}`}>
-                  <div className="audit-detail-label">{p.provider}</div>
-                  <div className="audit-detail-value">
-                    <span>
-                      {[p.city, p.region, p.country].filter(Boolean).join(", ") || "No place data"}
-                      {p.isp ? ` · ${p.isp}` : ""}
-                    </span>
+                {/* Footer */}
+                <div className="audit-modal-footer">
+                  <div className="audit-footer-id-box">
+                    <span className="audit-item-kicker">Event ID</span>
+                    <button
+                      type="button"
+                      className="audit-id-copy"
+                      onClick={() => copyText(selected.id, "id")}
+                      title="Click to copy full event ID"
+                    >
+                      <code className="audit-mono">{selected.id}</code>
+                      <span className="audit-copy-tag">{copiedField === "id" ? "Copied!" : "Copy"}</span>
+                    </button>
+                  </div>
+                  <div className="audit-footer-actions">
+                    <button
+                      type="button"
+                      className="btn ghost"
+                      onClick={() => copyText(JSON.stringify(selected, null, 2), "json")}
+                    >
+                      {copiedField === "json" ? "JSON Copied!" : "Copy Event JSON"}
+                    </button>
+                    <button type="button" className="btn primary" onClick={() => setSelected(null)}>
+                      Close
+                    </button>
                   </div>
                 </div>
-              ))}
-
-              {selected.before_state ? (
-                <div className="audit-detail-row audit-detail-row-stack">
-                  <div className="audit-detail-label">Before</div>
-                  <div className="audit-detail-value">
-                    <pre>{parseState(selected.before_state)}</pre>
-                  </div>
-                </div>
-              ) : null}
-
-              {selected.after_state ? (
-                <div className="audit-detail-row audit-detail-row-stack">
-                  <div className="audit-detail-label">After</div>
-                  <div className="audit-detail-value">
-                    <pre>{parseState(selected.after_state)}</pre>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="modal-actions">
-            <button type="button" className="modal-btn-primary" onClick={() => setSelected(null)}>
-              Close
-            </button>
-          </div>
+              </>
+            );
+          })()}
         </div>
       </div>,
       document.body
