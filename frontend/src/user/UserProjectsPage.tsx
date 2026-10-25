@@ -586,9 +586,9 @@ export function UserProjectsPage() {
             <section className="projects-table-section" aria-label="Projects list">
               <div className="projects-grid projects-head">
                 <span className="projects-h-main">Project</span>
-                <span className="projects-h-col">Latest Commit</span>
-                <span className="projects-h-col">Security Status</span>
-                <span className="projects-h-col">Activity</span>
+                <span className="projects-h-col projects-h-commit">Latest Commit</span>
+                <span className="projects-h-col projects-h-status">Security Status</span>
+                <span className="projects-h-col projects-h-time">Activity</span>
                 <span className="projects-h-action">
                   <span className="sr-only">Actions</span>
                 </span>
@@ -631,7 +631,7 @@ export function UserProjectsPage() {
 
                             <div className="project-info">
                               <div className="project-info-top">
-                                <span className="project-name">{project.name}</span>
+                                <span className="project-name" title={project.name}>{project.name}</span>
                                 {project.auto_scan_on_push ? (
                                   <span className="project-auto-chip" title="Auto-scan on push enabled">
                                     <span className="project-auto-dot" />
@@ -649,6 +649,23 @@ export function UserProjectsPage() {
                                 ) : (
                                   <span className="project-repo-tag muted">No repository linked</span>
                                 )}
+                                {sha ? (
+                                  <span className="project-sha-tablet-inline">
+                                    {" · "}
+                                    <code>{sha}</code>
+                                  </span>
+                                ) : null}
+                                {when ? (
+                                  <span className="project-time-tablet-inline">
+                                    {" · "}
+                                    {when}
+                                  </span>
+                                ) : null}
+                                {scanning ? (
+                                  <span className="project-status-mobile-inline">
+                                    {" · Scanning…"}
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
                           </div>
