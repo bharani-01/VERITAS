@@ -219,15 +219,6 @@ export function ScanHistoryList({
                       </button>
                     )}
                   </span>
-
-                  {scanning ? (
-                    <div className="scan-hist-bottom-track" aria-hidden="true">
-                      <div
-                        className="scan-hist-bottom-fill"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
-                  ) : null}
                 </div>
               </li>
             );

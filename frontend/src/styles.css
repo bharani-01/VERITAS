@@ -4905,9 +4905,7 @@ tbody tr:last-child td {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-.project-avatar.is-scanning {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
-}
+
 
 .project-avatar-scan-dot {
   position: absolute;
@@ -6057,55 +6055,10 @@ tbody tr:last-child td {
   word-break: break-word;
 }
 
-/* Redesigned Active Scan Live UI */
-.scan-hist-row.is-scanning {
-  background: color-mix(in srgb, var(--accent) 3.5%, transparent);
-}
-
-.scan-hist-row.is-scanning:hover {
-  background: color-mix(in srgb, var(--accent) 6.5%, transparent);
-}
-
 .scan-live-percent {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   color: var(--accent);
-}
-
-/* Glowing Bottom Progress Track along the Active Row */
-.scan-hist-bottom-track {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2.5px;
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  overflow: hidden;
-  z-index: 3;
-}
-
-.scan-hist-bottom-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #2563eb, #3b82f6, #38bdf8);
-  box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
-  transition: width 0.45s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-}
-
-.scan-hist-bottom-fill::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent);
-  animation: scan-shimmer 1.8s infinite;
-}
-
-@keyframes scan-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(200%); }
 }
 
 .scan-duration-live {
