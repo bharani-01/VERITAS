@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { LoadingMark } from "./LoadingMark";
 import { MarkdownReport } from "./MarkdownReport";
+import { OrbitLoader } from "./OrbitLoader";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
@@ -301,19 +302,30 @@ export function ScanReportModal({
           </div>
           <div>
             <span className="muted">Risk</span>
-            <div>
-              <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
-              <span className="muted">
-                {" "}
-                ·{" "}
-                {findingsLoading
-                  ? `${scan.summary?.findings_count ?? "…"} findings`
-                  : `${sorted.length} findings`}
-              </span>
-            </div>
-            {scan.summary?.policy_failed ? (
-              <div className="muted small">Policy failed (≥ {scan.summary.fail_severity})</div>
-            ) : null}
+            {scanning ? (
+              <div className="report-meta-scanning-risk" title="Assessing risk and counting findings…">
+                <OrbitLoader size="sm" />
+                <span className="report-meta-scanning-label">
+                  {findingsSoFar > 0 ? `${findingsSoFar} finding${findingsSoFar === 1 ? "" : "s"} so far` : "Assessing…"}
+                </span>
+              </div>
+            ) : (
+              <>
+                <div>
+                  <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
+                  <span className="muted">
+                    {" "}
+                    ·{" "}
+                    {findingsLoading
+                      ? `${scan.summary?.findings_count ?? "…"} findings`
+                      : `${sorted.length} findings`}
+                  </span>
+                </div>
+                {scan.summary?.policy_failed ? (
+                  <div className="muted small">Policy failed (≥ {scan.summary.fail_severity})</div>
+                ) : null}
+              </>
+            )}
           </div>
         </div>
       </div>

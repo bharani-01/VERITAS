@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { formatStatus } from "../lib/avatars";
 import { HamsterLoader } from "../components/HamsterLoader";
+import { OrbitLoader } from "../components/OrbitLoader";
 import {
   findingsCountLabel,
   formatScanDuration,
@@ -144,7 +145,13 @@ export function ScanHistoryList({
                           {" · "}
                           {scanTriggerLabel(scan)}
                           {" · "}
-                          {findings === "—" || findings === "…" ? findings : `${findings} findings`}
+                          {scanning ? (
+                            <OrbitLoader size="sm" />
+                          ) : findings === "—" || findings === "…" ? (
+                            findings
+                          ) : (
+                            `${findings} findings`
+                          )}
                           {" · "}
                           {formatScanDuration(scan)}
                         </span>
@@ -155,7 +162,11 @@ export function ScanHistoryList({
                   <span className="scan-hist-col scan-hist-col-trigger">{scanTriggerLabel(scan)}</span>
 
                   <span className="scan-hist-col scan-hist-col-findings scan-hist-findings">
-                    {findings === "—" || findings === "…" ? (
+                    {scanning ? (
+                      <span className="scan-hist-findings-scanning" title="Scanning in progress…">
+                        <OrbitLoader size="sm" />
+                      </span>
+                    ) : findings === "—" || findings === "…" ? (
                       findings
                     ) : (
                       <>
