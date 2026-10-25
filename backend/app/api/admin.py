@@ -297,6 +297,12 @@ def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
         if not location_label and geo.get("skipped"):
             location_label = "Local network" if geo.get("reason") == "private_or_local" else "Unavailable"
     severity = audit_severity(event.action, status_code if isinstance(status_code, int) else None)
+    payload = None
+    if isinstance(context, dict):
+        payload = context.get("what", {}).get("payload") or context.get("payload")
+    if not payload and event.after_state and (event.action.startswith("api_") or not event.before_state):
+        payload = event.after_state
+
     return {
         "id": event.id,
         "actor_user_id": event.actor_user_id,
@@ -307,6 +313,7 @@ def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
         "summary": summary or event.action.replace("_", " "),
         "status_code": status_code,
         "severity": severity,
+        "payload": payload,
         "before_state": event.before_state,
         "after_state": event.after_state,
         "ip_address": event.ip_address,
@@ -402,6 +409,8 @@ def list_audit_events(
                 ]
             )
         )
+    elif category == "api":
+        query = query.where(AuditEvent.action.like("api_%"))
     if since:
         try:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))

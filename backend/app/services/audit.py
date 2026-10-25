@@ -38,6 +38,19 @@ _ACTION_SUMMARIES = {
     "rate_limited": "Request rate limited",
     "fs_list": "Admin listed host filesystem",
     "fs_download": "Admin downloaded a host file",
+    "api_request": "API HTTP request",
+    "api_sqli": "SQL injection detected in API request",
+    "api_xss": "XSS attack pattern detected in API request",
+    "api_cmd_inject": "Command injection attempt detected",
+    "api_path_traversal": "Path traversal attempt detected",
+    "api_ssrf": "SSRF attack pattern detected",
+    "api_ssti": "Server-side template injection attempt",
+    "api_open_redirect": "Open redirect parameter detected",
+    "api_header_abuse": "Header injection / CRLF abuse detected",
+    "api_csrf": "CSRF origin / referer anomaly detected",
+    "api_scanner": "Security scanner probing detected",
+    "api_auth_anomaly": "Authentication path anomaly detected",
+    "api_weak_headers": "Weak security response headers detected",
 }
 
 
@@ -69,11 +82,32 @@ def public_user(user: User) -> dict:
 
 
 def action_summary(action: str) -> str:
-    return _ACTION_SUMMARIES.get(action, action.replace("_", " ").capitalize())
+    if action in _ACTION_SUMMARIES:
+        return _ACTION_SUMMARIES[action]
+    if action.startswith("api_"):
+        kind = action[4:].replace("_", " ").upper()
+        return f"API Security Event ({kind})"
+    return action.replace("_", " ").capitalize()
 
 
 def audit_severity(action: str, status_code: int | None = None) -> str:
-    """Derive display severity for audit events (identity trail, not HTTP corpus)."""
+    """Derive display severity for audit events."""
+    if action in ("api_sqli", "api_cmd_inject"):
+        return "critical"
+    if action in ("api_xss", "api_path_traversal", "api_ssrf", "api_ssti", "api_header_abuse", "api_csrf"):
+        return "high"
+    if action in ("api_scanner", "api_open_redirect", "api_auth_anomaly"):
+        return "medium"
+    if action == "api_weak_headers":
+        return "low"
+    if action == "api_request":
+        if status_code is not None:
+            if status_code >= 500:
+                return "high"
+            if status_code >= 400:
+                return "medium"
+        return "info"
+
     if action in ("login_failed", "login_blocked_status", "github_oauth_failed", "github_repo_rejected"):
         return "high"
     if action == "rate_limited":
@@ -179,7 +213,16 @@ def audit(
     before: dict | None = None,
     after: dict | None = None,
     status_code: int | None = None,
+    payload: str | dict | None = None,
 ) -> None:
+    if request:
+        try:
+            request.state.audit_logged = True
+            if not payload:
+                payload = getattr(request.state, "audit_payload", None)
+        except Exception:
+            pass
+
     ip_address, forwarded_for = _client_ip(request)
     user_agent = (request.headers.get("user-agent") if request else None)
     context = build_context(
@@ -194,15 +237,95 @@ def audit(
         user_agent=user_agent,
         status_code=status_code,
     )
+    payload_str: str | None = None
+    if payload:
+        payload_str = json.dumps(payload, indent=2) if isinstance(payload, (dict, list)) else str(payload)
+        context["what"]["payload"] = payload_str
+        context["payload"] = payload_str
+
+    after_state = json.dumps(after) if after else payload_str
+
     db.add(
         AuditEvent(
             actor_user_id=actor.id if actor else None,
             target_user_id=target.id if target else None,
             action=action,
             before_state=json.dumps(before) if before else None,
-            after_state=json.dumps(after) if after else None,
+            after_state=after_state,
             ip_address=ip_address,
             user_agent=user_agent,
             context_json=json.dumps(context),
         )
     )
+
+
+def record_audit_api_event(
+    db: Session,
+    *,
+    request: Request | None,
+    method: str,
+    path: str,
+    query: str | None,
+    status_code: int,
+    ip_address: str | None,
+    user_agent: str | None,
+    session_cookie: str | None,
+    payload: str | None = None,
+) -> None:
+    from app.services.http_traffic import resolve_actor_id
+    from app.services.http_classifier import classify_request
+
+    actor_id = resolve_actor_id(db, session_cookie)
+    actor_user = db.get(User, actor_id) if actor_id else None
+
+    # Classify request with security heuristics
+    classification, _, signals = classify_request(
+        method=method,
+        path=path,
+        query=query,
+        status_code=status_code,
+        has_session_cookie=bool(session_cookie),
+        origin=request.headers.get("origin") if request else None,
+        referer=request.headers.get("referer") if request else None,
+        request_host=request.headers.get("host") if request else None,
+        user_agent=user_agent,
+    )
+
+    if classification != "clean":
+        action = f"api_{classification}"
+    else:
+        action = "api_request"
+
+    context = build_context(
+        request=request,
+        action=action,
+        actor=actor_user,
+        target=None,
+        before=None,
+        after=None,
+        ip_address=ip_address,
+        forwarded_for=None,
+        user_agent=user_agent,
+        status_code=status_code,
+    )
+
+    if signals:
+        context["what"]["signals"] = signals
+    if payload:
+        context["what"]["payload"] = payload
+        context["payload"] = payload
+
+    db.add(
+        AuditEvent(
+            actor_user_id=actor_id,
+            target_user_id=None,
+            action=action,
+            before_state=None,
+            after_state=payload,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            context_json=json.dumps(context),
+        )
+    )
+    db.commit()
+

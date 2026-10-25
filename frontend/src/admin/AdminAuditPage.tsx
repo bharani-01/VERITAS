@@ -38,6 +38,7 @@ export type AuditEvent = {
   summary: string;
   status_code: number | null;
   severity?: string | null;
+  payload?: string | null;
   before_state: string | null;
   after_state: string | null;
   ip_address: string | null;
@@ -57,7 +58,7 @@ type AuditResponse = {
   server_time: string;
 };
 
-type Category = "" | "auth" | "auth_failures" | "admin" | "workspace";
+type Category = "" | "auth" | "auth_failures" | "admin" | "workspace" | "api";
 type SeverityFilter = "" | "info" | "low" | "medium" | "high" | "critical";
 
 const PAGE_SIZE = 40;
@@ -68,6 +69,7 @@ const FILTERS = [
   ["auth", "Auth"],
   ["admin", "Admin"],
   ["workspace", "Workspace"],
+  ["api", "API Calls"],
 ] as const;
 
 const SEVERITY_FILTERS = [
@@ -93,7 +95,7 @@ function displayHandle(person: AuditUser | null | undefined) {
   return null;
 }
 
-function parseState(raw: string | null): string {
+function parseState(raw: string | null | undefined): string {
   if (!raw) return "";
   try {
     return JSON.stringify(JSON.parse(raw), null, 2);
@@ -198,6 +200,7 @@ export function AdminAuditPage() {
   const [category, setCategory] = useState<Category>("");
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("");
   const [actionFilter, setActionFilter] = useState("");
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,6 +258,31 @@ export function AdminAuditPage() {
   useEffect(() => {
     void resetAndLoad();
   }, [category, severityFilter, actionFilter, resetAndLoad]);
+
+  // Real-time automatic polling when on first page and autoRefresh is active
+  useEffect(() => {
+    if (!autoRefresh || page !== 1) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const data = await api<AuditResponse>(buildQuery(1));
+        setItems((prev) => {
+          if (
+            prev.length === data.items.length &&
+            prev[0]?.id === data.items[0]?.id &&
+            prev[prev.length - 1]?.id === data.items[data.items.length - 1]?.id
+          ) {
+            return prev;
+          }
+          return data.items;
+        });
+        setTotal(data.total);
+      } catch {
+        // Silently skip transient errors during background poll
+      }
+    }, 3500);
+
+    return () => window.clearInterval(timer);
+  }, [autoRefresh, page, buildQuery]);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading || !hasMore) return;
@@ -541,8 +569,30 @@ export function AdminAuditPage() {
                     </div>
                   </div>
 
-                  {/* 4. State Transition Diffs (if present) */}
-                  {(selected.before_state || selected.after_state) && (
+                  {/* 4. Captured Request & Event Payload (if present) */}
+                  {selected.payload && (
+                    <div className="audit-card audit-payload-card">
+                      <div className="audit-ua-top">
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                          <span className="audit-item-kicker">Captured Request & Event Payload</span>
+                          <span className="audit-chip-outline" style={{ fontSize: "11px", padding: "2px 8px" }}>
+                            Redacted
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="audit-copy-btn"
+                          onClick={() => copyText(parseState(selected.payload), "payload")}
+                        >
+                          {copiedField === "payload" ? "Copied!" : "Copy Payload"}
+                        </button>
+                      </div>
+                      <pre className="audit-diff-pre audit-payload-pre">{parseState(selected.payload)}</pre>
+                    </div>
+                  )}
+
+                  {/* 5. State Transition Diffs (if present) */}
+                  {(selected.before_state || (selected.after_state && selected.after_state !== selected.payload)) && (
                     <div className="audit-cards-grid">
                       {selected.before_state && (
                         <div className="audit-card">
@@ -559,7 +609,7 @@ export function AdminAuditPage() {
                           <pre className="audit-diff-pre">{parseState(selected.before_state)}</pre>
                         </div>
                       )}
-                      {selected.after_state && (
+                      {selected.after_state && selected.after_state !== selected.payload && (
                         <div className="audit-card">
                           <div className="audit-ua-top">
                             <span className="audit-item-kicker">State after change</span>
@@ -621,6 +671,15 @@ export function AdminAuditPage() {
           <h1>Audit log</h1>
         </div>
         <div className="audit-console-actions">
+          <button
+            type="button"
+            className={`audit-live-btn ${autoRefresh ? "active" : ""}`}
+            onClick={() => setAutoRefresh((prev) => !prev)}
+            title={autoRefresh ? "Auto-refresh active (3.5s). Click to pause." : "Auto-refresh paused. Click to resume."}
+          >
+            <span className={`audit-live-dot ${autoRefresh ? "pulse" : ""}`} />
+            <span>{autoRefresh ? "Live (3.5s)" : "Paused"}</span>
+          </button>
           <button type="button" className="btn ghost" onClick={() => void resetAndLoad()} disabled={loading}>
             Refresh
           </button>
@@ -730,7 +789,18 @@ export function AdminAuditPage() {
                       <td>
                         <span className="audit-action-cell">
                           <span className={`audit-tone tone-${tone}`}>{event.summary}</span>
-                          <code>{event.action}</code>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                            <code>{event.action}</code>
+                            {event.payload && (
+                              <span
+                                className="audit-chip-outline"
+                                style={{ fontSize: "10px", padding: "1px 5px", lineHeight: "1.2" }}
+                                title="Contains captured request/event payload"
+                              >
+                                Payload
+                              </span>
+                            )}
+                          </span>
                         </span>
                       </td>
                       <td>
