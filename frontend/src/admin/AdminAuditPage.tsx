@@ -73,19 +73,6 @@ export type AuditStatsResponse = {
   server_time: string;
 };
 
-type HttpItem = {
-  id: string;
-  method: string;
-  path: string;
-  status_code: number;
-  duration_ms: number;
-  ip_address: string | null;
-  classification: string;
-  severity: string;
-  signals: string[];
-  created_at: string;
-};
-
 type Overview = {
   status: "safe" | "warning" | "critical";
   reason: string;
@@ -97,7 +84,6 @@ type Overview = {
     by_classification: Record<string, number>;
   };
   volume_60m: { t: string; count: number }[];
-  recent_suspicious?: HttpItem[];
   server_time: string;
 };
 
@@ -117,31 +103,29 @@ type AiAnalyze = {
   sample_size?: number;
 };
 
-export type DashboardWidgetsConfig = {
-  showPosture: boolean;
-  showKpi: boolean;
-  showVelocityChart: boolean;
-  showClassification: boolean;
-  showAiAgent: boolean;
-  showLiveStream: boolean;
-  showAuditTable: boolean;
-  density: "comfortable" | "compact";
-  defaultTimeframe: "24h" | "7d";
+export type WidgetId = "posture" | "kpi" | "velocity_chart" | "threat_vectors" | "ai_copilot" | "audit_ledger";
+export type WidgetColSpan = 4 | 5 | 6 | 7 | 8 | 12;
+export type WidgetHeight = "compact" | "normal" | "tall";
+
+export type WidgetState = {
+  id: WidgetId;
+  title: string;
+  span: WidgetColSpan;
+  height: WidgetHeight;
+  visible: boolean;
+  collapsed: boolean;
 };
 
-const DEFAULT_CONFIG: DashboardWidgetsConfig = {
-  showPosture: true,
-  showKpi: true,
-  showVelocityChart: true,
-  showClassification: true,
-  showAiAgent: true,
-  showLiveStream: true,
-  showAuditTable: true,
-  density: "comfortable",
-  defaultTimeframe: "24h",
-};
+const DEFAULT_WIDGETS: WidgetState[] = [
+  { id: "posture", title: "Threat Posture & Health", span: 4, height: "normal", visible: true, collapsed: false },
+  { id: "kpi", title: "Operational Metric Horizon", span: 8, height: "normal", visible: true, collapsed: false },
+  { id: "velocity_chart", title: "60m Attack Velocity Curve", span: 7, height: "normal", visible: true, collapsed: false },
+  { id: "threat_vectors", title: "Attack Classification Matrix", span: 5, height: "normal", visible: true, collapsed: false },
+  { id: "ai_copilot", title: "AI Security Copilot & Remediation", span: 12, height: "normal", visible: true, collapsed: false },
+  { id: "audit_ledger", title: "Live Security & Audit Ledger", span: 12, height: "tall", visible: true, collapsed: false },
+];
 
-const STORAGE_KEY = "veritas_security_audit_dashboard_v2";
+const STORAGE_KEY = "veritas_draggable_dashboard_v3";
 
 type Category = "" | "attacks" | "api" | "auth_failures" | "auth" | "admin" | "workspace";
 type SeverityFilter = "" | "info" | "low" | "medium" | "high" | "critical";
@@ -182,61 +166,6 @@ const CLASS_META: { key: string; label: string; color: string }[] = [
   { key: "auth_anomaly", label: "Auth", color: "#0284c7" },
   { key: "weak_headers", label: "Weak resp", color: "#64748b" },
 ];
-
-const PRESETS: Record<string, { label: string; desc: string; config: Partial<DashboardWidgetsConfig> }> = {
-  soc: {
-    label: "All-in-One SOC",
-    desc: "Complete operational defense console with all telemetry and ledger widgets active.",
-    config: {
-      showPosture: true,
-      showKpi: true,
-      showVelocityChart: true,
-      showClassification: true,
-      showAiAgent: true,
-      showLiveStream: true,
-      showAuditTable: true,
-    },
-  },
-  hunter: {
-    label: "Threat Hunter",
-    desc: "Optimized for threat hunting: velocity spikes, attack vectors, AI triage, and live stream.",
-    config: {
-      showPosture: true,
-      showKpi: true,
-      showVelocityChart: true,
-      showClassification: true,
-      showAiAgent: true,
-      showLiveStream: true,
-      showAuditTable: false,
-    },
-  },
-  audit: {
-    label: "Audit & Compliance",
-    desc: "Focus on user actions, security ledger, state diffs, and compliance verification.",
-    config: {
-      showPosture: true,
-      showKpi: true,
-      showVelocityChart: false,
-      showClassification: false,
-      showAiAgent: false,
-      showLiveStream: false,
-      showAuditTable: true,
-    },
-  },
-  live: {
-    label: "Live Monitor",
-    desc: "High-throughput live event ticker and primary KPI metrics.",
-    config: {
-      showPosture: true,
-      showKpi: true,
-      showVelocityChart: true,
-      showClassification: true,
-      showAiAgent: false,
-      showLiveStream: true,
-      showAuditTable: false,
-    },
-  },
-};
 
 function displayName(person: AuditUser | null | undefined, fallbackId: string | null) {
   if (person?.display_name) return person.display_name;
@@ -357,23 +286,37 @@ function formatTime(iso: string) {
   };
 }
 
-/** Unified Security Command Center & Audit Intelligence Console. */
+/**
+ * Supreme Interactive Security & Audit Dashboard with Draggable & Resizable Widgets.
+ */
 export function AdminAuditPage() {
-  // Widget configuration with localStorage persistence
-  const [widgets, setWidgets] = useState<DashboardWidgetsConfig>(() => {
+  // Widget Grid Configuration
+  const [widgets, setWidgets] = useState<WidgetState[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return { ...DEFAULT_CONFIG, ...JSON.parse(saved) };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Merge with defaults to pick up any new fields
+          return DEFAULT_WIDGETS.map((def) => {
+            const found = parsed.find((p: WidgetState) => p.id === def.id);
+            return found ? { ...def, ...found } : def;
+          });
+        }
+      }
     } catch {
-      // ignore JSON errors
+      // fallback
     }
-    return DEFAULT_CONFIG;
+    return DEFAULT_WIDGETS;
   });
 
-  const [customizerOpen, setCustomizerOpen] = useState(false);
-  const [timeframe, setTimeframe] = useState<"24h" | "7d">(widgets.defaultTimeframe || "24h");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [draggedWidgetId, setDraggedWidgetId] = useState<WidgetId | null>(null);
+  const [dragOverWidgetId, setDragOverWidgetId] = useState<WidgetId | null>(null);
+  const [addWidgetOpen, setAddWidgetOpen] = useState(false);
 
-  // Core Data States
+  // Timeframe and Telemetry States
+  const [timeframe, setTimeframe] = useState<"24h" | "7d">("24h");
   const [items, setItems] = useState<AuditEvent[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -385,7 +328,7 @@ export function AdminAuditPage() {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("");
   const [actionFilter, setActionFilter] = useState("");
 
-  // Live Stream & Interaction
+  // Live Stream & State
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [wsConnected, setWsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -394,40 +337,100 @@ export function AdminAuditPage() {
   const [selected, setSelected] = useState<AuditEvent | null>(null);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
-  // AI Security Agent
+  // AI Copilot
   const [ai, setAi] = useState<AiAnalyze | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
-  // Persistence handler
-  const updateWidgets = useCallback((next: Partial<DashboardWidgetsConfig>) => {
-    setWidgets((prev) => {
-      const merged = { ...prev, ...next };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-      } catch {
-        // ignore storage quota
-      }
-      return merged;
-    });
-  }, []);
-
-  const applyPreset = useCallback(
-    (key: string) => {
-      const preset = PRESETS[key];
-      if (preset) updateWidgets(preset.config);
-    },
-    [updateWidgets]
-  );
-
-  const resetWidgetsToDefault = useCallback(() => {
-    setWidgets(DEFAULT_CONFIG);
+  // Persist widgets layout whenever changed
+  const saveWidgets = useCallback((next: WidgetState[]) => {
+    setWidgets(next);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_CONFIG));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
     } catch {
       // ignore
     }
   }, []);
+
+  const resetLayout = useCallback(() => {
+    setWidgets(DEFAULT_WIDGETS);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_WIDGETS));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Drag and drop handlers
+  const handleDragStart = (id: WidgetId) => {
+    setDraggedWidgetId(id);
+  };
+
+  const handleDragOver = (e: React.DragEvent, id: WidgetId) => {
+    e.preventDefault();
+    if (draggedWidgetId && draggedWidgetId !== id) {
+      setDragOverWidgetId(id);
+    }
+  };
+
+  const handleDrop = (targetId: WidgetId) => {
+    if (!draggedWidgetId || draggedWidgetId === targetId) {
+      setDraggedWidgetId(null);
+      setDragOverWidgetId(null);
+      return;
+    }
+
+    const current = [...widgets];
+    const fromIndex = current.findIndex((w) => w.id === draggedWidgetId);
+    const toIndex = current.findIndex((w) => w.id === targetId);
+
+    if (fromIndex !== -1 && toIndex !== -1) {
+      const [moved] = current.splice(fromIndex, 1);
+      current.splice(toIndex, 0, moved);
+      saveWidgets(current);
+    }
+
+    setDraggedWidgetId(null);
+    setDragOverWidgetId(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedWidgetId(null);
+    setDragOverWidgetId(null);
+  };
+
+  // Widget Actions: Resize, Collapse, Remove, Reorder
+  const updateWidgetSpan = (id: WidgetId, span: WidgetColSpan) => {
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, span } : w)));
+  };
+
+  const updateWidgetHeight = (id: WidgetId, height: WidgetHeight) => {
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, height } : w)));
+  };
+
+  const toggleWidgetCollapse = (id: WidgetId) => {
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, collapsed: !w.collapsed } : w)));
+  };
+
+  const hideWidget = (id: WidgetId) => {
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, visible: false } : w)));
+  };
+
+  const showWidget = (id: WidgetId) => {
+    saveWidgets(widgets.map((w) => (w.id === id ? { ...w, visible: true } : w)));
+  };
+
+  const moveWidget = (id: WidgetId, direction: "prev" | "next") => {
+    const current = [...widgets];
+    const idx = current.findIndex((w) => w.id === id);
+    if (idx === -1) return;
+    const targetIdx = direction === "prev" ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= current.length) return;
+    const temp = current[idx];
+    current[idx] = current[targetIdx];
+    current[targetIdx] = temp;
+    saveWidgets(current);
+  };
 
   const copyText = useCallback((text: string, field: string) => {
     if (!text) return;
@@ -459,13 +462,12 @@ export function AdminAuditPage() {
     return `/admin/audit-events?${params.toString()}`;
   }, []);
 
-  // Fetch Telemetry & Stats
   const fetchStats = useCallback(async () => {
     try {
       const data = await api<AuditStatsResponse>("/admin/audit-stats");
       setStats(data);
     } catch {
-      // transient poll error
+      // transient
     }
   }, []);
 
@@ -474,7 +476,7 @@ export function AdminAuditPage() {
       const data = await api<Overview>("/admin/security-overview");
       setOverview(data);
     } catch {
-      // transient poll error
+      // transient
     }
   }, []);
 
@@ -522,7 +524,6 @@ export function AdminAuditPage() {
     void resetAndLoad();
   }, [category, severityFilter, actionFilter, resetAndLoad]);
 
-  // Periodic polling for stats & overview
   useEffect(() => {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => {
@@ -532,7 +533,7 @@ export function AdminAuditPage() {
     return () => window.clearInterval(timer);
   }, [autoRefresh, fetchStats, fetchOverview]);
 
-  // Real-time instant WebSocket live stream
+  // WebSocket Live Stream
   useEffect(() => {
     if (!autoRefresh) {
       setWsConnected(false);
@@ -571,7 +572,7 @@ export function AdminAuditPage() {
             if (data.type === "audit_event" && data.event) {
               const newEvent: AuditEvent = data.event;
 
-              // Optimistically bump stats in real time
+              // Increment KPI stats in real time
               setStats((prev) => {
                 if (!prev) return prev;
                 const isAttack =
@@ -595,7 +596,6 @@ export function AdminAuditPage() {
                 };
               });
 
-              // Also bump overview in real time
               setOverview((prev) => {
                 if (!prev) return prev;
                 const isAttack =
@@ -657,7 +657,6 @@ export function AdminAuditPage() {
               if (matchesCat && matchesSev && matchesAct) {
                 setItems((prev) => {
                   const filtered = prev.filter((e) => e.id !== newEvent.id);
-                  // Keep up to 300 live items in buffer so user can see all 300-500 requests as they stream in!
                   return [newEvent, ...filtered].slice(0, 300);
                 });
                 setTotal((t) => t + 1);
@@ -695,7 +694,7 @@ export function AdminAuditPage() {
     };
   }, [autoRefresh]);
 
-  // Infinite scroll loader
+  // Infinite Scroll
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading || !hasMore) return;
     loadingMoreRef.current = true;
@@ -731,14 +730,11 @@ export function AdminAuditPage() {
     return () => observer.disconnect();
   }, [loadMore, items.length, hasMore]);
 
-  // Modal keyboard handling
+  // Key handling for modal
   useEffect(() => {
-    if (!selected && !customizerOpen) return;
+    if (!selected) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setSelected(null);
-        setCustomizerOpen(false);
-      }
+      if (e.key === "Escape") setSelected(null);
     }
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -747,7 +743,7 @@ export function AdminAuditPage() {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [selected, customizerOpen]);
+  }, [selected]);
 
   // Visual calculations
   const peakVolume = useMemo(
@@ -762,13 +758,17 @@ export function AdminAuditPage() {
     return Math.round((clean / req) * 100);
   }, [overview]);
 
+  // Circumference for the radial gauge (radius = 38)
+  const gaugeCircumference = 2 * Math.PI * 38;
+  const gaugeOffset = gaugeCircumference - (cleanPercentage / 100) * gaugeCircumference;
+
   const volumeOptions: ApexOptions = useMemo(() => {
     const max = Math.max(1, ...(overview?.volume_60m || []).map((b) => b.count));
     return {
       chart: {
         type: "area",
         toolbar: { show: false },
-        animations: { enabled: true, speed: 350 },
+        animations: { enabled: true, speed: 300 },
         zoom: { enabled: false },
         fontFamily: "inherit",
         background: "transparent",
@@ -870,15 +870,7 @@ export function AdminAuditPage() {
 
   const currentStats = stats ? (timeframe === "24h" ? stats.timeframe_24h : stats.timeframe_7d) : null;
   const status = overview?.status || "safe";
-  const activeWidgetCount = [
-    widgets.showPosture,
-    widgets.showKpi,
-    widgets.showVelocityChart,
-    widgets.showClassification,
-    widgets.showAiAgent,
-    widgets.showLiveStream,
-    widgets.showAuditTable,
-  ].filter(Boolean).length;
+  const hiddenWidgets = widgets.filter((w) => !w.visible);
 
   // Deep Event Detail Inspector Modal
   const detailModal =
@@ -1119,230 +1111,385 @@ export function AdminAuditPage() {
       document.body
     );
 
-  // Customizer Drawer / Modal
-  const customizerModal =
-    customizerOpen &&
-    createPortal(
-      <div className="modal-root audit-modal-root" role="presentation">
-        <button type="button" className="modal-backdrop" aria-label="Close" onClick={() => setCustomizerOpen(false)} />
-        <div
-          className="modal-panel sec-customizer-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="customizer-modal-title"
-        >
-          <div className="audit-modal-head">
-            <div className="audit-modal-head-main">
-              <span className="modal-kicker">Dashboard Personalization</span>
-              <h2 id="customizer-modal-title">Customize Security & Audit Workspace</h2>
-              <p className="sec-customizer-desc">
-                Enable or rearrange widgets, tune display density, and select operational presets for your console.
-              </p>
+  // Render individual visual widgets
+  const renderWidgetContent = (widget: WidgetState) => {
+    switch (widget.id) {
+      case "posture":
+        return (
+          <div className={`sec-widget-posture sec-posture-${status}`}>
+            <div className="sec-gauge-wrap">
+              <svg className="sec-radial-gauge" viewBox="0 0 96 96">
+                <circle className="sec-gauge-bg" cx="48" cy="48" r="38" />
+                <circle
+                  className={`sec-gauge-progress sec-gauge-${status}`}
+                  cx="48"
+                  cy="48"
+                  r="38"
+                  strokeDasharray={gaugeCircumference}
+                  strokeDashoffset={gaugeOffset}
+                />
+              </svg>
+              <div className="sec-gauge-center">
+                <span className="sec-gauge-val">{cleanPercentage}%</span>
+                <span className="sec-gauge-sub">Clean</span>
+              </div>
             </div>
-            <button
-              type="button"
-              className="modal-close"
-              aria-label="Close"
-              onClick={() => setCustomizerOpen(false)}
-            >
-              ×
-            </button>
-          </div>
 
-          <div className="sec-customizer-body">
-            {/* Presets */}
-            <div className="sec-customizer-block">
-              <h3 className="sec-customizer-heading">Operational Presets</h3>
-              <div className="sec-preset-grid">
-                {Object.entries(PRESETS).map(([key, item]) => (
+            <div className="sec-posture-details">
+              <div className="sec-posture-badge-row">
+                <span className={`sec-posture-badge sec-posture-badge-${status}`}>
+                  <span className="sec-posture-dot" />
+                  {status.toUpperCase()}
+                </span>
+                <span className="sec-posture-tag">{overview?.totals_15m.requests ?? 0} req / 15m</span>
+              </div>
+              <p className="sec-posture-desc">{overview?.reason || "Operational telemetry stream nominal."}</p>
+              <div className="sec-posture-mini-meta">
+                <span>Suspicious: <b>{overview?.totals_15m.suspicious ?? 0}</b></span>
+                <span>Peak: <b>{peakVolume}/min</b></span>
+              </div>
+            </div>
+          </div>
+        );
+
+      case "kpi":
+        return (
+          <div className="sec-widget-kpi">
+            <div className="sec-kpi-subhead-row">
+              <span className="sec-kpi-subtext">
+                {timeframe === "24h" ? "Real-time rolling 24-hour baseline" : "Aggregated 7-day threat history"}
+              </span>
+              <div className="audit-kpi-toggle-group">
+                <button
+                  type="button"
+                  className={`audit-kpi-toggle-btn ${timeframe === "24h" ? "active" : ""}`}
+                  onClick={() => setTimeframe("24h")}
+                >
+                  24h
+                </button>
+                <button
+                  type="button"
+                  className={`audit-kpi-toggle-btn ${timeframe === "7d" ? "active" : ""}`}
+                  onClick={() => setTimeframe("7d")}
+                >
+                  7d
+                </button>
+              </div>
+            </div>
+
+            <div className="sec-kpi-quad-grid">
+              <div className="sec-kpi-tile">
+                <div className="sec-kpi-tile-top">
+                  <span>TOTAL REQUESTS</span>
+                  <div className="audit-kpi-icon icon-blue">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="2" y1="12" x2="22" y2="12" />
+                    </svg>
+                  </div>
+                </div>
+                <strong className="sec-kpi-tile-num">{currentStats ? currentStats.http_requests.toLocaleString() : "—"}</strong>
+                <small>HTTP telemetry & API calls</small>
+              </div>
+
+              <div className="sec-kpi-tile">
+                <div className="sec-kpi-tile-top">
+                  <span>FLAGGED THREATS</span>
+                  <div className="audit-kpi-icon icon-red">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    </svg>
+                  </div>
+                </div>
+                <strong className="sec-kpi-tile-num text-red">
+                  {currentStats ? currentStats.attacks_flagged.toLocaleString() : "—"}
+                </strong>
+                <small>SQLi, XSS, SSRF, LFI, Cmd</small>
+              </div>
+
+              <div className="sec-kpi-tile">
+                <div className="sec-kpi-tile-top">
+                  <span>AUTH FAILURES</span>
+                  <div className="audit-kpi-icon icon-amber">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                    </svg>
+                  </div>
+                </div>
+                <strong className="sec-kpi-tile-num text-amber">
+                  {currentStats ? currentStats.auth_failures.toLocaleString() : "—"}
+                </strong>
+                <small>Failed logins & probes</small>
+              </div>
+
+              <div className="sec-kpi-tile">
+                <div className="sec-kpi-tile-top">
+                  <span>UNIQUE CLIENT IPS</span>
+                  <div className="audit-kpi-icon icon-emerald">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                      <circle cx="9" cy="7" r="4" />
+                    </svg>
+                  </div>
+                </div>
+                <strong className="sec-kpi-tile-num text-emerald">
+                  {currentStats ? currentStats.unique_ips.toLocaleString() : "—"}
+                </strong>
+                <small>Active monitored endpoints</small>
+              </div>
+            </div>
+          </div>
+        );
+
+      case "velocity_chart":
+        return (
+          <div className="sec-widget-chart-wrap">
+            <div className="sec-chart-meta-bar">
+              <span>Rolling 60m request frequency & attack spikes</span>
+              <span className="sec-badge-tag">{peakVolume}/min peak</span>
+            </div>
+            <Chart options={volumeOptions} series={volumeSeries} type="area" height={210} />
+          </div>
+        );
+
+      case "threat_vectors":
+        return (
+          <div className="sec-widget-vectors-wrap">
+            <Chart options={donutOptions} series={donutSeries} type="donut" height={190} />
+            <div className="sec-class-quick-filters">
+              {CLASS_META.map((m) => {
+                const count = overview?.totals_15m.by_classification[m.key] || 0;
+                return (
                   <button
-                    key={key}
+                    key={m.key}
                     type="button"
-                    className="sec-preset-card"
-                    onClick={() => applyPreset(key)}
+                    className={`sec-class-chip ${actionFilter.includes(m.key) ? "active" : ""}`}
+                    onClick={() => {
+                      setCategory(m.key === "clean" ? "" : "attacks");
+                      setActionFilter(m.key === "clean" ? "" : `api_${m.key}`);
+                    }}
+                    title={`Filter by ${m.label} (${count})`}
                   >
-                    <b>{item.label}</b>
-                    <small>{item.desc}</small>
+                    <span className="sec-class-dot" style={{ background: m.color }} />
+                    <span>{m.label}</span>
+                    {count > 0 && <b>{count}</b>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+
+      case "ai_copilot":
+        return (
+          <div className="sec-widget-ai-wrap">
+            <div className="sec-ai-top-bar">
+              <span className="sec-ai-desc">
+                Automated threat signature correlation and tailored defensive playbooks.
+              </span>
+              <button type="button" className="btn primary" onClick={() => void runAi()} disabled={aiLoading}>
+                {aiLoading ? "Analyzing Telemetry…" : ai ? "Re-evaluate" : "Analyze Active Threats"}
+              </button>
+            </div>
+
+            {aiError && <p className="sec-ai-msg warning">{aiError}</p>}
+            {aiLoading && !ai && <p className="sec-ai-msg">AI Copilot is inspecting incoming traffic signatures…</p>}
+
+            {ai && ai.status !== "skipped_no_key" && (
+              <div className="sec-ai-body">
+                <div className="sec-ai-summary-box">
+                  <p className="sec-ai-summary">{ai.summary}</p>
+                  {ai.model && <span className="sec-ai-meta">Model: {ai.model}</span>}
+                </div>
+
+                {ai.suggestions && ai.suggestions.length > 0 ? (
+                  <div className="sec-cm-grid">
+                    {ai.suggestions.map((item) => (
+                      <div className="sec-cm-card" key={`${item.title}-${item.family}`}>
+                        <div className="sec-cm-top">
+                          <b>{item.title}</b>
+                          <span className={`audit-sev sev-${severityTone(item.priority)}`}>
+                            {item.priority.toUpperCase()}
+                          </span>
+                        </div>
+                        <span className="sec-cm-family">Family: {item.family}</span>
+                        <ul className="sec-cm-steps">
+                          {item.steps.map((s, idx) => (
+                            <li key={idx}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="sec-ai-msg">No countermeasures needed. Traffic signatures are currently nominal.</p>
+                )}
+              </div>
+            )}
+
+            {!ai && !aiLoading && !aiError && (
+              <div className="sec-ai-empty">
+                <span>Click "Analyze Active Threats" to produce intelligent triage recommendations.</span>
+              </div>
+            )}
+          </div>
+        );
+
+      case "audit_ledger":
+        return (
+          <div className="sec-widget-ledger-wrap">
+            {/* Ledger Toolbar */}
+            <div className="audit-console-toolbar">
+              <div className="audit-seg" role="group" aria-label="Category">
+                {FILTERS.map(([id, label]) => (
+                  <button
+                    key={id || "all"}
+                    type="button"
+                    aria-pressed={category === id}
+                    className={category === id ? "active" : ""}
+                    onClick={() => setCategory(id)}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>
-            </div>
 
-            {/* Widgets Toggles */}
-            <div className="sec-customizer-block">
-              <h3 className="sec-customizer-heading">Active Dashboard Widgets</h3>
-              <div className="sec-widget-toggle-list">
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>System Threat Posture Banner</b>
-                    <small>Real-time Safe / Warning / Critical threat diagnosis and clean traffic ratio.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showPosture}
-                    onChange={(e) => updateWidgets({ showPosture: e.target.checked })}
-                  />
-                </label>
+              <div className="audit-seg" role="group" aria-label="Severity">
+                {SEVERITY_FILTERS.map(([id, label]) => (
+                  <button
+                    key={id || "sev-all"}
+                    type="button"
+                    aria-pressed={severityFilter === id}
+                    className={severityFilter === id ? "active" : ""}
+                    onClick={() => setSeverityFilter(id)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
 
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>KPI Intelligence Metric Cards (24h / 7d)</b>
-                    <small>Requests, attacks flagged, auth failures, and unique origin IP counters.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showKpi}
-                    onChange={(e) => updateWidgets({ showKpi: e.target.checked })}
-                  />
-                </label>
-
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>Traffic Volume & Attack Velocity Chart</b>
-                    <small>60-minute rolling request volume and attack surge curves.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showVelocityChart}
-                    onChange={(e) => updateWidgets({ showVelocityChart: e.target.checked })}
-                  />
-                </label>
-
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>Threat Vector & Classification Breakdown</b>
-                    <small>Interactive distribution of attack families (SQLi, XSS, SSRF, LFI, Cmd).</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showClassification}
-                    onChange={(e) => updateWidgets({ showClassification: e.target.checked })}
-                  />
-                </label>
-
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>AI Security Agent & Countermeasures</b>
-                    <small>LLM/Groq-assisted threat classification and step-by-step mitigation advice.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showAiAgent}
-                    onChange={(e) => updateWidgets({ showAiAgent: e.target.checked })}
-                  />
-                </label>
-
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>Real-Time Live Security Event Stream</b>
-                    <small>Instant WebSocket event ticker streaming live traffic and attack probes.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showLiveStream}
-                    onChange={(e) => updateWidgets({ showLiveStream: e.target.checked })}
-                  />
-                </label>
-
-                <label className="sec-widget-toggle-item">
-                  <div className="sec-toggle-info">
-                    <b>Audit Ledger & Deep Event Explorer</b>
-                    <small>Complete tabular ledger with search, category filters, and deep inspector.</small>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={widgets.showAuditTable}
-                    onChange={(e) => updateWidgets({ showAuditTable: e.target.checked })}
-                  />
-                </label>
+              <div className="audit-console-toolbar-right">
+                <input
+                  type="search"
+                  className="audit-search-input"
+                  placeholder="Filter by action or endpoint…"
+                  value={actionFilter}
+                  onChange={(e) => setActionFilter(e.target.value)}
+                  aria-label="Filter audit events"
+                />
               </div>
             </div>
 
-            {/* Display Density & Defaults */}
-            <div className="sec-customizer-grid-2">
-              <div className="sec-customizer-block">
-                <h3 className="sec-customizer-heading">Display Density</h3>
-                <div className="sec-customizer-radio-group">
-                  <label className={`sec-radio-card ${widgets.density === "comfortable" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="density"
-                      value="comfortable"
-                      checked={widgets.density === "comfortable"}
-                      onChange={() => updateWidgets({ density: "comfortable" })}
-                    />
-                    <span>Comfortable</span>
-                  </label>
-                  <label className={`sec-radio-card ${widgets.density === "compact" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="density"
-                      value="compact"
-                      checked={widgets.density === "compact"}
-                      onChange={() => updateWidgets({ density: "compact" })}
-                    />
-                    <span>Compact (SOC view)</span>
-                  </label>
-                </div>
-              </div>
+            {/* Ledger Table */}
+            <div className="table-wrap sec-table-wrap" ref={scrollRef}>
+              <table className="audit-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Principal (Actor)</th>
+                    <th>Target</th>
+                    <th>Action</th>
+                    <th>Severity</th>
+                    <th>Endpoint & Status</th>
+                    <th>Origin IP</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map((event) => {
+                    const t = formatTime(event.created_at);
+                    const actorName = displayName(event.actor, event.actor_user_id);
+                    const targetName = displayName(event.target, event.target_user_id);
+                    const method = (event.how?.method || "HTTP").toUpperCase();
 
-              <div className="sec-customizer-block">
-                <h3 className="sec-customizer-heading">Default Timeframe</h3>
-                <div className="sec-customizer-radio-group">
-                  <label className={`sec-radio-card ${widgets.defaultTimeframe === "24h" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="defaultTimeframe"
-                      value="24h"
-                      checked={widgets.defaultTimeframe === "24h"}
-                      onChange={() => {
-                        updateWidgets({ defaultTimeframe: "24h" });
-                        setTimeframe("24h");
-                      }}
-                    />
-                    <span>Last 24 Hours</span>
-                  </label>
-                  <label className={`sec-radio-card ${widgets.defaultTimeframe === "7d" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="defaultTimeframe"
-                      value="7d"
-                      checked={widgets.defaultTimeframe === "7d"}
-                      onChange={() => {
-                        updateWidgets({ defaultTimeframe: "7d" });
-                        setTimeframe("7d");
-                      }}
-                    />
-                    <span>Last 7 Days</span>
-                  </label>
-                </div>
-              </div>
+                    return (
+                      <tr
+                        key={event.id}
+                        className={event.action.startsWith("api_") ? "sec-row-flag" : ""}
+                        onClick={() => setSelected(event)}
+                      >
+                        <td>
+                          <span className="audit-time" title={t.full}>
+                            <b>{t.relative}</b>
+                            <small>{t.timeOnly}</small>
+                          </span>
+                        </td>
+                        <td>
+                          <span className="audit-person">
+                            <b>{actorName}</b>
+                            <small>{displayHandle(event.actor) || "System"}</small>
+                          </span>
+                        </td>
+                        <td>
+                          <span className="audit-person">
+                            <b>{targetName}</b>
+                            <small>{displayHandle(event.target) || "—"}</small>
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`audit-tone tone-${actionTone(event.action)}`}>{event.action}</span>
+                        </td>
+                        <td>
+                          <span className={`audit-sev sev-${severityTone(event.severity)}`}>
+                            {(event.severity || "info").toUpperCase()}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="sec-cell-req">
+                            <span className={`audit-method-tag method-${method.toLowerCase()}`}>{method}</span>
+                            <span className="sec-req-path">{event.how?.path || "—"}</span>
+                            <span className={`audit-status status-${statusTone(event.status_code ?? event.how?.status_code)}`}>
+                              {event.status_code ?? event.how?.status_code ?? "—"}
+                            </span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="audit-mono">{event.ip_address || "—"}</span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn ghost sec-inspect-row-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelected(event);
+                            }}
+                          >
+                            Inspect
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <div ref={sentinelRef} className="sec-sentinel" aria-hidden="true" />
+              {loadingMore && <p className="sec-load-more">Loading more audit records…</p>}
+              {!hasMore && items.length > 0 && <p className="sec-load-more">End of audit records</p>}
+              {items.length === 0 && !loading && (
+                <p className="sec-empty">No security or audit events match your selected filters.</p>
+              )}
             </div>
           </div>
+        );
 
-          <div className="audit-modal-footer">
-            <button type="button" className="btn ghost" onClick={resetWidgetsToDefault}>
-              Reset to Defaults
-            </button>
-            <button type="button" className="btn primary" onClick={() => setCustomizerOpen(false)}>
-              Done
-            </button>
-          </div>
-        </div>
-      </div>,
-      document.body
-    );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <main className={`admin-main sec-command-center ${widgets.density === "compact" ? "sec-density-compact" : ""}`}>
-      {/* Header */}
-      <header className="sec-dash-head">
+    <main className="admin-main sec-command-canvas">
+      {/* Top Header Bar */}
+      <header className="sec-canvas-head">
         <div>
-          <div className="eyebrow">Monitoring & Threat Defense</div>
-          <h1>Security Command Center & Audit Intelligence</h1>
+          <div className="eyebrow">Interactive Security Workspace</div>
+          <h1>Security Command Center & Audit Canvas</h1>
         </div>
-        <div className="sec-dash-actions">
-          {/* Live Stream Status Toggle */}
+
+        <div className="sec-canvas-actions">
+          {/* Live WebSocket Status Toggle */}
           <button
             type="button"
             className={`audit-live-btn ${wsConnected ? "active ws" : autoRefresh ? "active" : ""}`}
@@ -1359,31 +1506,61 @@ export function AdminAuditPage() {
             <span>{autoRefresh ? "Live" : "Paused"}</span>
           </button>
 
-          {/* Customize Button */}
+          {/* Toggle Edit / Layout Mode */}
           <button
             type="button"
-            className="btn ghost sec-customize-btn"
-            onClick={() => setCustomizerOpen(true)}
-            title="Configure widgets, density, and presets"
+            className={`btn ${isEditMode ? "primary" : "ghost"} sec-edit-mode-btn`}
+            onClick={() => setIsEditMode((prev) => !prev)}
+            title="Toggle Drag & Drop and Resizing mode"
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="12" cy="12" r="3" />
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
             </svg>
-            <span>Customize</span>
-            <span className="sec-customizer-badge">{activeWidgetCount}/7</span>
+            <span>{isEditMode ? "Done Customizing" : "Customize Layout"}</span>
           </button>
 
-          {/* AI Analyze Trigger */}
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => void runAi()}
-            disabled={aiLoading}
-            title="Analyze active threats using AI security agent"
-          >
-            {aiLoading ? "Analyzing…" : "AI Triage"}
-          </button>
+          {/* Add Widget Shelf Dropdown */}
+          {hiddenWidgets.length > 0 && (
+            <div className="sec-add-widget-wrap">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setAddWidgetOpen((prev) => !prev)}
+              >
+                + Add Widget ({hiddenWidgets.length})
+              </button>
+              {addWidgetOpen && (
+                <div className="sec-add-widget-dropdown">
+                  {hiddenWidgets.map((hw) => (
+                    <button
+                      key={hw.id}
+                      type="button"
+                      className="sec-add-widget-opt"
+                      onClick={() => {
+                        showWidget(hw.id);
+                        setAddWidgetOpen(false);
+                      }}
+                    >
+                      <span>+ {hw.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Reset Canvas to Defaults */}
+          {isEditMode && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={resetLayout}
+              title="Reset widgets to default layout"
+            >
+              Reset Canvas
+            </button>
+          )}
 
           {/* Manual Refresh */}
           <button type="button" className="btn ghost" onClick={() => void resetAndLoad()} disabled={loading}>
@@ -1402,447 +1579,180 @@ export function AdminAuditPage() {
         </div>
       )}
 
-      {/* WIDGET 1: System Posture & KPI Intelligence */}
-      {(widgets.showPosture || widgets.showKpi) && (
-        <section className="sec-posture-kpi-row" aria-label="Security Posture and KPI Metrics">
-          {/* Posture Card */}
-          {widgets.showPosture && (
-            <div className={`sec-posture-card sec-posture-${status}`}>
-              <div className="sec-posture-top">
-                <span className="sec-posture-label">System Posture</span>
-                <span className={`sec-posture-badge sec-posture-badge-${status}`}>
-                  <span className="sec-posture-dot" />
-                  {status.toUpperCase()}
-                </span>
-              </div>
-              <div className="sec-posture-reason">{overview?.reason || "Operational telemetry stream nominal."}</div>
-              <div className="sec-posture-bar-wrap">
-                <div className="sec-posture-bar-label">
-                  <span>Clean traffic ratio</span>
-                  <b>{cleanPercentage}%</b>
-                </div>
-                <div className="sec-posture-bar">
-                  <div
-                    className={`sec-posture-bar-fill ${cleanPercentage < 80 ? "warn" : ""}`}
-                    style={{ width: `${cleanPercentage}%` }}
-                  />
-                </div>
-              </div>
-              <div className="sec-posture-meta">
-                <span>15m requests: {overview?.totals_15m.requests ?? 0}</span>
-                <span>Flagged: {overview?.totals_15m.suspicious ?? 0}</span>
-              </div>
-            </div>
-          )}
-
-          {/* 4 KPI Cards with 24h / 7d toggle */}
-          {widgets.showKpi && (
-            <div className="audit-kpi-section sec-kpi-flexible">
-              <div className="audit-kpi-header">
-                <div className="audit-kpi-title-box">
-                  <span className="audit-kpi-title">Traffic & Exploits Horizon</span>
-                  <span className="audit-kpi-subhead">
-                    {timeframe === "24h"
-                      ? "Real-time rolling metrics for past 24 hours"
-                      : "Aggregated activity across past 7 days"}
-                  </span>
-                </div>
-                <div className="audit-kpi-toggle-group" role="group" aria-label="Metric timeframe">
-                  <button
-                    type="button"
-                    className={`audit-kpi-toggle-btn ${timeframe === "24h" ? "active" : ""}`}
-                    onClick={() => setTimeframe("24h")}
-                  >
-                    Last 24 Hours
-                  </button>
-                  <button
-                    type="button"
-                    className={`audit-kpi-toggle-btn ${timeframe === "7d" ? "active" : ""}`}
-                    onClick={() => setTimeframe("7d")}
-                  >
-                    Last 7 Days
-                  </button>
-                </div>
-              </div>
-
-              <div className="audit-kpi-grid">
-                <div className="audit-kpi-card">
-                  <div className="audit-kpi-top">
-                    <span className="audit-kpi-label">Total Requests</span>
-                    <div className="audit-kpi-icon icon-blue">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="2" y1="12" x2="22" y2="12" />
-                        <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="audit-kpi-value">
-                    {currentStats ? currentStats.http_requests.toLocaleString() : "—"}
-                  </div>
-                  <div className="audit-kpi-sub">
-                    <span>Peak {peakVolume}/min in last hour</span>
-                  </div>
-                </div>
-
-                <div className="audit-kpi-card">
-                  <div className="audit-kpi-top">
-                    <span className="audit-kpi-label">Threats & Exploits</span>
-                    <div className="audit-kpi-icon icon-red">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                        <line x1="12" y1="9" x2="12" y2="13" />
-                        <line x1="12" y1="17" x2="12.01" y2="17" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="audit-kpi-value text-red">
-                    {currentStats ? currentStats.attacks_flagged.toLocaleString() : "—"}
-                  </div>
-                  <div className="audit-kpi-sub">
-                    <span>SQLi, XSS, SSRF, LFI, SSTI, Cmd</span>
-                  </div>
-                </div>
-
-                <div className="audit-kpi-card">
-                  <div className="audit-kpi-top">
-                    <span className="audit-kpi-label">Auth Failures</span>
-                    <div className="audit-kpi-icon icon-amber">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="audit-kpi-value text-amber">
-                    {currentStats ? currentStats.auth_failures.toLocaleString() : "—"}
-                  </div>
-                  <div className="audit-kpi-sub">
-                    <span>Failed logins & probe errors</span>
-                  </div>
-                </div>
-
-                <div className="audit-kpi-card">
-                  <div className="audit-kpi-top">
-                    <span className="audit-kpi-label">Unique IPs</span>
-                    <div className="audit-kpi-icon icon-emerald">
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                        <circle cx="9" cy="7" r="4" />
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                      </svg>
-                    </div>
-                  </div>
-                  <div className="audit-kpi-value text-emerald">
-                    {currentStats ? currentStats.unique_ips.toLocaleString() : "—"}
-                  </div>
-                  <div className="audit-kpi-sub">
-                    <span>Monitored client origins</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* WIDGET 2 & 3: Visual Analytics Row */}
-      {(widgets.showVelocityChart || widgets.showClassification) && (
-        <section className="sec-charts-grid" aria-label="Visual Security Analytics">
-          {widgets.showVelocityChart && (
-            <div className="sec-panel sec-chart-wide">
-              <div className="sec-panel-head">
-                <div>
-                  <h2 className="sec-panel-title">Request Volume & Surge Velocity</h2>
-                  <span className="sec-panel-sub">60-minute rolling HTTP request activity</span>
-                </div>
-                <span className="sec-badge-tag">{peakVolume}/min peak</span>
-              </div>
-              <Chart options={volumeOptions} series={volumeSeries} type="area" height={220} />
-            </div>
-          )}
-
-          {widgets.showClassification && (
-            <div className="sec-panel sec-chart-side">
-              <div className="sec-panel-head">
-                <div>
-                  <h2 className="sec-panel-title">Threat Classification</h2>
-                  <span className="sec-panel-sub">15-minute attack vectors distribution</span>
-                </div>
-                <span className="sec-badge-tag">{overview?.totals_15m.requests || 0} req</span>
-              </div>
-              <Chart options={donutOptions} series={donutSeries} type="donut" height={200} />
-              <div className="sec-class-quick-filters">
-                {CLASS_META.map((m) => {
-                  const count = overview?.totals_15m.by_classification[m.key] || 0;
-                  return (
-                    <button
-                      key={m.key}
-                      type="button"
-                      className={`sec-class-chip ${actionFilter.includes(m.key) ? "active" : ""}`}
-                      onClick={() => {
-                        setCategory(m.key === "clean" ? "" : "attacks");
-                        setActionFilter(m.key === "clean" ? "" : `api_${m.key}`);
-                      }}
-                      title={`Filter by ${m.label} (${count})`}
-                    >
-                      <span className="sec-class-dot" style={{ background: m.color }} />
-                      <span>{m.label}</span>
-                      {count > 0 && <b>{count}</b>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* WIDGET 4: AI Security Agent & Countermeasures */}
-      {widgets.showAiAgent && (
-        <section className="sec-panel sec-ai-section" aria-label="AI Threat Triage and Countermeasures">
-          <div className="sec-panel-head">
-            <div>
-              <h2 className="sec-panel-title">AI Threat Agent & Countermeasures</h2>
-              <span className="sec-panel-sub">
-                Heuristic and model-guided threat classification with tailored defensive steps.
-              </span>
-            </div>
-            <button type="button" className="btn primary" onClick={() => void runAi()} disabled={aiLoading}>
-              {aiLoading ? "Analyzing Telemetry…" : ai ? "Re-analyze" : "Analyze Active Traffic"}
-            </button>
+      {/* Editing Mode Indicator Banner */}
+      {isEditMode && (
+        <div className="sec-edit-banner">
+          <div className="sec-edit-banner-left">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span>
+              <b>Customization Active:</b> Drag widgets by their grip handle to reorder. Use the width controls to resize from 1/3 to Full width.
+            </span>
           </div>
+          <button type="button" className="btn primary sec-banner-done-btn" onClick={() => setIsEditMode(false)}>
+            Finish Editing
+          </button>
+        </div>
+      )}
 
-          {aiError && <p className="sec-ai-msg warning">{aiError}</p>}
-          {aiLoading && !ai && <p className="sec-ai-msg">Agent is evaluating recent attack vectors and patterns…</p>}
+      {/* 12-Column Interactive Drag & Drop / Resize Widget Grid */}
+      <div className={`sec-widget-grid ${isEditMode ? "edit-mode-active" : ""}`}>
+        {widgets
+          .filter((w) => w.visible)
+          .map((widget, index) => {
+            const isDragging = draggedWidgetId === widget.id;
+            const isDragOver = dragOverWidgetId === widget.id;
 
-          {ai && ai.status !== "skipped_no_key" && (
-            <div className="sec-ai-body">
-              <div className="sec-ai-summary-box">
-                <p className="sec-ai-summary">{ai.summary}</p>
-                {ai.model && <span className="sec-ai-meta">Model: {ai.model}</span>}
-              </div>
-
-              {ai.suggestions && ai.suggestions.length > 0 ? (
-                <div className="sec-cm-grid">
-                  {ai.suggestions.map((item) => (
-                    <div className="sec-cm-card" key={`${item.title}-${item.family}`}>
-                      <div className="sec-cm-top">
-                        <b>{item.title}</b>
-                        <span className={`audit-sev sev-${severityTone(item.priority)}`}>
-                          {item.priority.toUpperCase()}
-                        </span>
+            return (
+              <div
+                key={widget.id}
+                className={`sec-widget-card sec-col-${widget.span} sec-height-${widget.height} ${
+                  isDragging ? "is-dragging" : ""
+                } ${isDragOver ? "is-drag-over" : ""} ${widget.collapsed ? "is-collapsed" : ""}`}
+                onDragOver={(e) => isEditMode && handleDragOver(e, widget.id)}
+                onDrop={() => isEditMode && handleDrop(widget.id)}
+              >
+                {/* Widget Header with Drag Handle & Resize Tools */}
+                <div className="sec-widget-header">
+                  <div className="sec-widget-title-area">
+                    {/* Drag Handle */}
+                    {isEditMode && (
+                      <div
+                        className="sec-drag-handle"
+                        draggable
+                        onDragStart={() => handleDragStart(widget.id)}
+                        onDragEnd={handleDragEnd}
+                        title="Drag to reorder"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="9" cy="5" r="1.5" />
+                          <circle cx="15" cy="5" r="1.5" />
+                          <circle cx="9" cy="12" r="1.5" />
+                          <circle cx="15" cy="12" r="1.5" />
+                          <circle cx="9" cy="19" r="1.5" />
+                          <circle cx="15" cy="19" r="1.5" />
+                        </svg>
                       </div>
-                      <span className="sec-cm-family">Family: {item.family}</span>
-                      <ul className="sec-cm-steps">
-                        {item.steps.map((s, idx) => (
-                          <li key={idx}>{s}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="sec-ai-msg">No specific countermeasures needed. Current traffic contains no anomalous payloads.</p>
-              )}
-            </div>
-          )}
+                    )}
+                    <h2 className="sec-widget-title">{widget.title}</h2>
+                  </div>
 
-          {!ai && !aiLoading && !aiError && (
-            <div className="sec-ai-empty">
-              <span>Run the AI security agent to evaluate incoming simulator and API traffic against threat intelligence rules.</span>
-            </div>
-          )}
-        </section>
-      )}
-
-      {/* WIDGET 5: Real-Time Live Security Stream Ticker */}
-      {widgets.showLiveStream && (
-        <section className="sec-panel sec-stream-section" aria-label="Live Security Stream">
-          <div className="sec-panel-head">
-            <div className="sec-stream-head-title">
-              <span className="audit-live-dot pulse" />
-              <h2 className="sec-panel-title">Real-Time Security Event Stream</h2>
-            </div>
-            <span className="sec-badge-tag">{items.length} events buffered</span>
-          </div>
-
-          <div className="sec-stream-list">
-            {items.slice(0, 8).map((evt) => {
-              const method = (evt.how?.method || "HTTP").toUpperCase();
-              return (
-                <div className="sec-stream-row" key={`stream-${evt.id}`} onClick={() => setSelected(evt)}>
-                  <span className="sec-stream-time">{formatTime(evt.created_at).timeOnly}</span>
-                  <span className={`audit-method-tag method-${method.toLowerCase()}`}>{method}</span>
-                  <code className="sec-stream-path">{evt.how?.path || evt.summary || evt.action}</code>
-                  <span className={`audit-tone tone-${actionTone(evt.action)}`}>{evt.action}</span>
-                  <span className={`audit-sev sev-${severityTone(evt.severity)}`}>
-                    {(evt.severity || "info").toUpperCase()}
-                  </span>
-                  <span className={`audit-status status-${statusTone(evt.status_code ?? evt.how?.status_code)}`}>
-                    {evt.status_code ?? evt.how?.status_code ?? "—"}
-                  </span>
-                  <span className="sec-stream-ip">{evt.ip_address || "—"}</span>
-                  <button type="button" className="sec-stream-btn">
-                    Inspect
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* WIDGET 6: Audit Ledger & Deep Event Explorer */}
-      {widgets.showAuditTable && (
-        <section className="sec-panel sec-ledger-section" aria-label="Comprehensive Audit Ledger">
-          <div className="sec-panel-head">
-            <div>
-              <h2 className="sec-panel-title">Audit Ledger & Security Explorer</h2>
-              <span className="sec-panel-sub">Search, filter, and inspect detailed security records.</span>
-            </div>
-            <span className="sec-badge-tag">{total.toLocaleString()} total logged</span>
-          </div>
-
-          {/* Ledger Toolbar */}
-          <div className="audit-console-toolbar">
-            <div className="audit-seg" role="group" aria-label="Category">
-              {FILTERS.map(([id, label]) => (
-                <button
-                  key={id || "all"}
-                  type="button"
-                  aria-pressed={category === id}
-                  className={category === id ? "active" : ""}
-                  onClick={() => setCategory(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="audit-seg" role="group" aria-label="Severity">
-              {SEVERITY_FILTERS.map(([id, label]) => (
-                <button
-                  key={id || "sev-all"}
-                  type="button"
-                  aria-pressed={severityFilter === id}
-                  className={severityFilter === id ? "active" : ""}
-                  onClick={() => setSeverityFilter(id)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="audit-console-toolbar-right">
-              <input
-                type="search"
-                className="audit-search-input"
-                placeholder="Filter by action or endpoint…"
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-                aria-label="Filter audit events"
-              />
-            </div>
-          </div>
-
-          {/* Ledger Table */}
-          <div className="table-wrap sec-table-wrap" ref={scrollRef}>
-            <table className="audit-table">
-              <thead>
-                <tr>
-                  <th>Timestamp</th>
-                  <th>Principal (Actor)</th>
-                  <th>Target</th>
-                  <th>Action</th>
-                  <th>Severity</th>
-                  <th>Endpoint & Status</th>
-                  <th>Origin IP</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((event) => {
-                  const t = formatTime(event.created_at);
-                  const actorName = displayName(event.actor, event.actor_user_id);
-                  const targetName = displayName(event.target, event.target_user_id);
-                  const method = (event.how?.method || "HTTP").toUpperCase();
-
-                  return (
-                    <tr
-                      key={event.id}
-                      className={event.action.startsWith("api_") ? "sec-row-flag" : ""}
-                      onClick={() => setSelected(event)}
-                    >
-                      <td>
-                        <span className="audit-time" title={t.full}>
-                          <b>{t.relative}</b>
-                          <small>{t.timeOnly}</small>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="audit-person">
-                          <b>{actorName}</b>
-                          <small>{displayHandle(event.actor) || "System"}</small>
-                        </span>
-                      </td>
-                      <td>
-                        <span className="audit-person">
-                          <b>{targetName}</b>
-                          <small>{displayHandle(event.target) || "—"}</small>
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`audit-tone tone-${actionTone(event.action)}`}>{event.action}</span>
-                      </td>
-                      <td>
-                        <span className={`audit-sev sev-${severityTone(event.severity)}`}>
-                          {(event.severity || "info").toUpperCase()}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="sec-cell-req">
-                          <span className={`audit-method-tag method-${method.toLowerCase()}`}>{method}</span>
-                          <span className="sec-req-path">{event.how?.path || "—"}</span>
-                          <span className={`audit-status status-${statusTone(event.status_code ?? event.how?.status_code)}`}>
-                            {event.status_code ?? event.how?.status_code ?? "—"}
-                          </span>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="audit-mono">{event.ip_address || "—"}</span>
-                      </td>
-                      <td>
+                  {/* Widget Control Actions */}
+                  <div className="sec-widget-controls">
+                    {/* Width Resize Selector (Visible in Edit Mode) */}
+                    {isEditMode && (
+                      <div className="sec-size-segmented" title="Change widget width">
                         <button
                           type="button"
-                          className="btn ghost sec-inspect-row-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelected(event);
-                          }}
+                          className={widget.span === 4 ? "active" : ""}
+                          onClick={() => updateWidgetSpan(widget.id, 4)}
+                          title="1/3 Width"
                         >
-                          Inspect
+                          1/3
                         </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        <button
+                          type="button"
+                          className={widget.span === 6 ? "active" : ""}
+                          onClick={() => updateWidgetSpan(widget.id, 6)}
+                          title="Half Width"
+                        >
+                          1/2
+                        </button>
+                        <button
+                          type="button"
+                          className={widget.span === 8 ? "active" : ""}
+                          onClick={() => updateWidgetSpan(widget.id, 8)}
+                          title="2/3 Width"
+                        >
+                          2/3
+                        </button>
+                        <button
+                          type="button"
+                          className={widget.span === 12 ? "active" : ""}
+                          onClick={() => updateWidgetSpan(widget.id, 12)}
+                          title="Full Width"
+                        >
+                          Full
+                        </button>
+                      </div>
+                    )}
 
-            <div ref={sentinelRef} className="sec-sentinel" aria-hidden="true" />
-            {loadingMore && <p className="sec-load-more">Loading more audit records…</p>}
-            {!hasMore && items.length > 0 && <p className="sec-load-more">End of audit records</p>}
-            {items.length === 0 && !loading && (
-              <p className="sec-empty">No security or audit events match your selected filters.</p>
-            )}
-          </div>
-        </section>
-      )}
+                    {/* Height Toggle (in Edit Mode) */}
+                    {isEditMode && (
+                      <button
+                        type="button"
+                        className="sec-ctrl-btn"
+                        onClick={() =>
+                          updateWidgetHeight(
+                            widget.id,
+                            widget.height === "normal" ? "tall" : widget.height === "tall" ? "compact" : "normal"
+                          )
+                        }
+                        title={`Height: ${widget.height}. Click to cycle.`}
+                      >
+                        {widget.height === "compact" ? "S" : widget.height === "normal" ? "M" : "L"}
+                      </button>
+                    )}
+
+                    {/* Move Left / Right Buttons */}
+                    {isEditMode && (
+                      <>
+                        <button
+                          type="button"
+                          className="sec-ctrl-btn"
+                          disabled={index === 0}
+                          onClick={() => moveWidget(widget.id, "prev")}
+                          title="Move Left / Up"
+                        >
+                          ←
+                        </button>
+                        <button
+                          type="button"
+                          className="sec-ctrl-btn"
+                          disabled={index === widgets.filter((w) => w.visible).length - 1}
+                          onClick={() => moveWidget(widget.id, "next")}
+                          title="Move Right / Down"
+                        >
+                          →
+                        </button>
+                      </>
+                    )}
+
+                    {/* Collapse Button */}
+                    <button
+                      type="button"
+                      className="sec-ctrl-btn"
+                      onClick={() => toggleWidgetCollapse(widget.id)}
+                      title={widget.collapsed ? "Expand widget" : "Collapse widget"}
+                    >
+                      {widget.collapsed ? "+" : "—"}
+                    </button>
+
+                    {/* Hide Widget Button */}
+                    {isEditMode && (
+                      <button
+                        type="button"
+                        className="sec-ctrl-btn sec-close-btn"
+                        onClick={() => hideWidget(widget.id)}
+                        title="Remove widget from canvas"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Widget Body Content */}
+                {!widget.collapsed && <div className="sec-widget-body">{renderWidgetContent(widget)}</div>}
+              </div>
+            );
+          })}
+      </div>
 
       {detailModal}
-      {customizerModal}
     </main>
   );
 }

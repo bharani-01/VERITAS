@@ -1,1 +1,0 @@
-import{n as e,t}from"./index-CpnWL-7w.js";var n=e();function r(){return(0,n.jsx)(t,{})}export{r as AdminSecurityPage};
