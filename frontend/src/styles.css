@@ -950,6 +950,7 @@ html.nav-pref-collapsed .app-frame {
   top: 0;
   height: 100vh;
   overflow: visible;
+  z-index: 60;
 }
 
 .nav-top {
@@ -1086,6 +1087,7 @@ html.nav-pref-collapsed .app-frame {
   margin-top: auto;
   padding-top: 12px;
   border-top: 1px solid var(--nav-border);
+  z-index: 80;
 }
 
 .nav-account-chip {
@@ -1140,7 +1142,7 @@ html.nav-pref-collapsed .app-frame {
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
-  background: var(--surface-elevated);
+  background: var(--surface);
   display: grid;
   place-items: center;
   box-shadow: 0 0 0 1px var(--line);
@@ -1174,11 +1176,11 @@ html.nav-pref-collapsed .app-frame {
   left: 0;
   right: 0;
   bottom: calc(100% + 8px);
-  z-index: 40;
-  background: var(--surface-elevated);
+  z-index: 100;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-menu);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.16), 0 2px 10px rgba(0, 0, 0, 0.08);
   padding: 6px;
   animation: modal-rise 0.16s var(--ease);
 }
@@ -1189,7 +1191,7 @@ html[data-theme="miro"] .account-menu {
 }
 
 html[data-theme="light"] .account-menu {
-  background: var(--surface-elevated);
+  background: #ffffff;
   border-color: var(--line);
 }
 
@@ -1292,17 +1294,20 @@ html.nav-pref-collapsed .app-frame .nav-account-chip {
 
 .app-frame.nav-collapsed .account-menu,
 html.nav-pref-collapsed .app-frame .account-menu {
-  left: calc(100% - 2px);
+  left: calc(100% + 8px);
   right: auto;
   bottom: 0;
   width: 220px;
-  box-shadow: var(--shadow-menu);
+  z-index: 100;
+  background: var(--surface) !important;
+  border: 1px solid var(--line);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.22), 0 2px 10px rgba(0, 0, 0, 0.08);
 }
 
 .app-frame.nav-collapsed .nav-account,
 html.nav-pref-collapsed .app-frame .nav-account {
   overflow: visible;
-  z-index: 50;
+  z-index: 90;
 }
 
 .settings-section {
