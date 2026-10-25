@@ -358,6 +358,7 @@ def list_audit_events(
                 AuditEvent.action.like("user_%"),
                 AuditEvent.action.in_(["fs_list", "fs_download"]),
             )
+        )
     elif category == "workspace":
         query = query.where(
             AuditEvent.action.in_(
