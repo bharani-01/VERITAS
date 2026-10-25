@@ -4,18 +4,18 @@ import json
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
 from app.core.database import db_session
-from app.core.security import normalize_email
-from app.core.time import ensure_utc, utcnow
+from app.core.security import normalize_email, token_hash
+from app.core.time import ensure_utc, is_expired, utcnow
 from app.models import AuditEvent, AuthSession, GitHubConnection, HttpRequestEvent, Project, Scan, User
 from app.schemas import UserPatch
-from app.services.audit import audit, audit_severity, public_user, snapshot
+from app.services.audit import audit, audit_broadcaster, audit_severity, public_user, serialize_audit_event, snapshot
 from app.services.auth import active_admin_count
 from app.services.email import send_account_status, send_token_email
 from app.services.host_fs import list_dir, list_mounts, normalize_root, resolve_download
@@ -249,102 +249,47 @@ def reactivate_user(
     )
 
 
-def _user_label(user: User | None) -> dict | None:
+_serialize_audit_event = serialize_audit_event
+
+
+@router.websocket("/audit-events/ws")
+async def audit_events_ws(
+    websocket: WebSocket,
+    session: str | None = None,
+    db: Session = Depends(db_session),
+):
+    """Real-time WebSocket endpoint streaming audit events instantly to connected admin consoles."""
+    cookie_token = websocket.cookies.get("veritas_session") or session
+    user = None
+    if cookie_token:
+        auth_row = db.scalar(
+            select(AuthSession).where(
+                AuthSession.token_hash == token_hash(cookie_token),
+                AuthSession.revoked_at.is_(None),
+            )
+        )
+        if auth_row and not is_expired(auth_row.expires_at):
+            candidate = db.get(User, auth_row.user_id)
+            if candidate and candidate.status == "active" and candidate.role == "admin":
+                user = candidate
+
     if not user:
-        return None
-    return {
-        "id": user.id,
-        "display_name": user.display_name,
-        "username": user.username,
-        "email": user.email,
-        "role": user.role,
-    }
+        await websocket.close(code=1008)
+        return
 
-
-def _label_from_context(blob: dict | None) -> dict | None:
-    if not blob or not isinstance(blob, dict):
-        return None
-    if not blob.get("id") and not blob.get("email") and not blob.get("display_name"):
-        return None
-    return {
-        "id": blob.get("id"),
-        "display_name": blob.get("display_name") or blob.get("email") or "Unknown",
-        "username": blob.get("username"),
-        "email": blob.get("email"),
-        "role": blob.get("role"),
-    }
-
-
-def _serialize_audit_event(event: AuditEvent, users: dict[str, User]) -> dict:
-    context = None
-    if event.context_json:
-        try:
-            context = json.loads(event.context_json)
-        except json.JSONDecodeError:
-            context = None
-    who = (context or {}).get("who") if isinstance(context, dict) else None
-    actor = users.get(event.actor_user_id) if event.actor_user_id else None
-    target = users.get(event.target_user_id) if event.target_user_id else None
-    actor_label = _user_label(actor) or _label_from_context((who or {}).get("actor") if isinstance(who, dict) else None)
-    target_label = _user_label(target) or _label_from_context((who or {}).get("target") if isinstance(who, dict) else None)
-    geo = (context or {}).get("where", {}).get("geo") if context else None
-    how = (context or {}).get("how") if isinstance(context, dict) else None
-    summary = (context or {}).get("what", {}).get("summary") if context else None
-    status_code = (how or {}).get("status_code") if isinstance(how, dict) else None
-    location_label = None
-    if isinstance(geo, dict):
-        location_label = geo.get("label")
-        if not location_label and geo.get("skipped"):
-            location_label = "Local network" if geo.get("reason") == "private_or_local" else "Unavailable"
-    severity = audit_severity(event.action, status_code if isinstance(status_code, int) else None)
-    payload = None
-    if isinstance(context, dict):
-        payload = context.get("what", {}).get("payload") or context.get("payload")
-    if not payload and event.after_state and (event.action.startswith("api_") or not event.before_state):
-        payload = event.after_state
-
-    return {
-        "id": event.id,
-        "actor_user_id": event.actor_user_id,
-        "target_user_id": event.target_user_id,
-        "actor": actor_label,
-        "target": target_label,
-        "action": event.action,
-        "summary": summary or event.action.replace("_", " "),
-        "status_code": status_code,
-        "severity": severity,
-        "payload": payload,
-        "before_state": event.before_state,
-        "after_state": event.after_state,
-        "ip_address": event.ip_address,
-        "user_agent": event.user_agent,
-        "location_label": location_label,
-        "geo": geo,
-        "context": context,
-        "created_at": event.created_at,
-        "who": {
-            "actor": actor_label,
-            "target": target_label,
-            "actor_is_admin": bool(
-                (actor and actor.role == "admin")
-                or (actor_label and actor_label.get("role") == "admin")
-                or (isinstance(who, dict) and who.get("actor_is_admin"))
-            ),
-        },
-        "what": {"action": event.action, "summary": summary or event.action.replace("_", " ")},
-        "when": event.created_at,
-        "where": {
-            "ip": event.ip_address,
-            "location": location_label,
-            "geo": geo,
-        },
-        "how": {
-            "user_agent": event.user_agent,
-            "method": (how or {}).get("method") if isinstance(how, dict) else None,
-            "path": (how or {}).get("path") if isinstance(how, dict) else None,
-            "status_code": status_code,
-        },
-    }
+    await audit_broadcaster.connect(websocket)
+    try:
+        await websocket.send_json({"type": "connected", "message": "Subscribed to live audit events"})
+        while True:
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        audit_broadcaster.disconnect(websocket)
 
 
 @router.get("/audit-events")
@@ -368,7 +313,14 @@ def list_audit_events(
         query = query.where(AuditEvent.target_user_id == target_id)
     if action:
         query = query.where(AuditEvent.action == action)
-    if category == "auth":
+    if category in ("attacks", "security"):
+        query = query.where(
+            or_(
+                AuditEvent.action.like("api_%"),
+                AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]),
+            )
+        )
+    elif category == "auth":
         query = query.where(
             AuditEvent.action.in_(
                 [
@@ -385,7 +337,12 @@ def list_audit_events(
             )
         )
     elif category == "auth_failures":
-        query = query.where(AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]))
+        query = query.where(
+            or_(
+                AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]),
+                AuditEvent.action.like("api_%"),
+            )
+        )
     elif category == "admin":
         query = query.where(
             or_(
@@ -418,7 +375,7 @@ def list_audit_events(
             raise HTTPException(status_code=400, detail="Invalid since timestamp.") from None
         query = query.where(AuditEvent.created_at > since_dt)
 
-    limit = min(max(page_size, 1), 100)
+    limit = min(max(page_size, 1), 200)
     page = max(page, 1)
     # Severity is derived at serialize time; when filtering, over-fetch then filter in Python.
     if severity:

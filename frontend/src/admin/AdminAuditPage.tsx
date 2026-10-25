@@ -58,18 +58,19 @@ type AuditResponse = {
   server_time: string;
 };
 
-type Category = "" | "auth" | "auth_failures" | "admin" | "workspace" | "api";
+type Category = "" | "attacks" | "api" | "auth_failures" | "auth" | "admin" | "workspace";
 type SeverityFilter = "" | "info" | "low" | "medium" | "high" | "critical";
 
-const PAGE_SIZE = 40;
+const PAGE_SIZE = 50;
 
 const FILTERS = [
   ["", "All"],
+  ["attacks", "Attacks"],
+  ["api", "API Calls"],
   ["auth_failures", "Failures"],
   ["auth", "Auth"],
   ["admin", "Admin"],
   ["workspace", "Workspace"],
-  ["api", "API Calls"],
 ] as const;
 
 const SEVERITY_FILTERS = [
@@ -201,6 +202,8 @@ export function AdminAuditPage() {
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>("");
   const [actionFilter, setActionFilter] = useState("");
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
+  const [liveCount, setLiveCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -256,12 +259,109 @@ export function AdminAuditPage() {
   }, [buildQuery]);
 
   useEffect(() => {
+    setLiveCount(0);
     void resetAndLoad();
   }, [category, severityFilter, actionFilter, resetAndLoad]);
 
-  // Real-time automatic polling when on first page and autoRefresh is active
+  // Real-time instant WebSocket live stream
   useEffect(() => {
-    if (!autoRefresh || page !== 1) return;
+    if (!autoRefresh) {
+      setWsConnected(false);
+      return;
+    }
+
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | undefined;
+    let pingTimer: number | undefined;
+    let isDisposed = false;
+
+    function connect() {
+      if (isDisposed) return;
+      try {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/admin/audit-events/ws`;
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+          if (isDisposed) {
+            socket?.close();
+            return;
+          }
+          setWsConnected(true);
+          pingTimer = window.setInterval(() => {
+            if (socket?.readyState === WebSocket.OPEN) {
+              socket.send("ping");
+            }
+          }, 20000);
+        };
+
+        socket.onmessage = (event) => {
+          if (isDisposed) return;
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "audit_event" && data.event) {
+              const newEvent: AuditEvent = data.event;
+
+              const cat = categoryRef.current;
+              const matchesCat =
+                !cat ||
+                (cat === "attacks" && (newEvent.action.startsWith("api_") || ["login_failed", "login_blocked_status", "rate_limited"].includes(newEvent.action))) ||
+                (cat === "api" && newEvent.action.startsWith("api_")) ||
+                (cat === "auth_failures" && (["login_failed", "login_blocked_status", "rate_limited"].includes(newEvent.action) || newEvent.action.startsWith("api_"))) ||
+                (cat === "auth" && ["login_succeeded", "login_failed", "login_blocked_status", "logout", "user_signed_up", "email_verified", "verification_resent", "password_reset_requested", "password_reset_completed"].includes(newEvent.action)) ||
+                (cat === "admin" && (newEvent.action.startsWith("user_") || ["fs_list", "fs_download"].includes(newEvent.action))) ||
+                (cat === "workspace" && ["project_created", "project_updated", "project_deleted", "scan_started", "github_connected", "github_disconnected", "github_oauth_failed", "github_repo_attached", "github_repo_rejected"].includes(newEvent.action));
+
+              const sev = severityRef.current;
+              const matchesSev = !sev || newEvent.severity === sev;
+              const act = actionRef.current.trim().toLowerCase();
+              const matchesAct = !act || newEvent.action.toLowerCase().includes(act);
+
+              if (matchesCat && matchesSev && matchesAct) {
+                setItems((prev) => {
+                  const filtered = prev.filter((e) => e.id !== newEvent.id);
+                  // Keep up to 300 live items in buffer so user can see all 300-500 requests as they stream in!
+                  return [newEvent, ...filtered].slice(0, 300);
+                });
+                setTotal((t) => t + 1);
+                setLiveCount((c) => c + 1);
+              }
+            }
+          } catch {
+            // ignore non-json
+          }
+        };
+
+        socket.onclose = () => {
+          setWsConnected(false);
+          window.clearInterval(pingTimer);
+          if (!isDisposed && autoRefresh) {
+            reconnectTimer = window.setTimeout(connect, 2500);
+          }
+        };
+
+        socket.onerror = () => {
+          socket?.close();
+        };
+      } catch {
+        setWsConnected(false);
+      }
+    }
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(pingTimer);
+      window.clearTimeout(reconnectTimer);
+      socket?.close();
+      setWsConnected(false);
+    };
+  }, [autoRefresh]);
+
+  // Fallback periodic poller (when WebSocket is disconnected or on initial load)
+  useEffect(() => {
+    if (!autoRefresh || page !== 1 || wsConnected) return;
     const timer = window.setInterval(async () => {
       try {
         const data = await api<AuditResponse>(buildQuery(1));
@@ -279,10 +379,10 @@ export function AdminAuditPage() {
       } catch {
         // Silently skip transient errors during background poll
       }
-    }, 3500);
+    }, 4000);
 
     return () => window.clearInterval(timer);
-  }, [autoRefresh, page, buildQuery]);
+  }, [autoRefresh, page, wsConnected, buildQuery]);
 
   const loadMore = useCallback(async () => {
     if (loadingMoreRef.current || loading || !hasMore) return;
@@ -673,14 +773,33 @@ export function AdminAuditPage() {
         <div className="audit-console-actions">
           <button
             type="button"
-            className={`audit-live-btn ${autoRefresh ? "active" : ""}`}
+            className={`audit-live-btn ${wsConnected ? "active ws" : autoRefresh ? "active" : ""}`}
             onClick={() => setAutoRefresh((prev) => !prev)}
-            title={autoRefresh ? "Auto-refresh active (3.5s). Click to pause." : "Auto-refresh paused. Click to resume."}
+            title={
+              wsConnected
+                ? "Live WebSocket connected. Instant updates active. Click to pause."
+                : autoRefresh
+                ? "Auto-refresh polling active. Click to pause."
+                : "Live updates paused. Click to resume."
+            }
           >
-            <span className={`audit-live-dot ${autoRefresh ? "pulse" : ""}`} />
-            <span>{autoRefresh ? "Live (3.5s)" : "Paused"}</span>
+            <span className={`audit-live-dot ${wsConnected || autoRefresh ? "pulse" : ""}`} />
+            <span>{wsConnected ? "Live WS" : autoRefresh ? "Live (4s)" : "Paused"}</span>
           </button>
-          <button type="button" className="btn ghost" onClick={() => void resetAndLoad()} disabled={loading}>
+          {liveCount > 0 && (
+            <span className="audit-live-badge" title="Events streamed live in this session">
+              +{liveCount} live
+            </span>
+          )}
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => {
+              setLiveCount(0);
+              void resetAndLoad();
+            }}
+            disabled={loading}
+          >
             Refresh
           </button>
           <Link className="btn ghost" to="/admin/">

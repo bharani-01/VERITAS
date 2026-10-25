@@ -18,7 +18,10 @@ export default defineConfig({
     proxy: {
       "/auth": "http://127.0.0.1:8000",
       "/admin/users": "http://127.0.0.1:8000",
-      "/admin/audit-events": "http://127.0.0.1:8000",
+      "/admin/audit-events": {
+        target: "http://127.0.0.1:8000",
+        ws: true,
+      },
     },
   },
 });

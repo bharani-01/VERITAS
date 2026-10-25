@@ -33,6 +33,10 @@ DATABASE_URL = database.DATABASE_URL
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    import asyncio
+    from app.services.audit import audit_broadcaster
+
+    audit_broadcaster.set_loop(asyncio.get_running_loop())
     reload_env()
     report = github_config_report()
     print(f"[VERITAS] GitHub integration: configured={report['configured']} missing={report['missing']} env_file={report['env_file_found']}", flush=True)

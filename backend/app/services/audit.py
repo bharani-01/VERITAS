@@ -1,13 +1,64 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from fastapi import Request
 from sqlalchemy.orm import Session
+from starlette.websockets import WebSocket
 
 from app.models import AuditEvent, User
 from app.services.geoip import lookup_ip
+
+
+class AuditBroadcaster:
+    """Manages active WebSocket connections from admin consoles and broadcasts audit events live."""
+
+    def __init__(self) -> None:
+        self._active_connections: set[WebSocket] = set()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._loop = loop
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._active_connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._active_connections.discard(websocket)
+
+    async def _broadcast_async(self, data: dict[str, Any]) -> None:
+        if not self._active_connections:
+            return
+        dead: list[WebSocket] = []
+        for ws in list(self._active_connections):
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self._active_connections.discard(ws)
+
+    def broadcast(self, data: dict[str, Any]) -> None:
+        if not self._active_connections:
+            return
+        try:
+            loop = self._loop
+            if loop and loop.is_running():
+                asyncio.run_coroutine_threadsafe(self._broadcast_async(data), loop)
+            else:
+                try:
+                    cur_loop = asyncio.get_running_loop()
+                    cur_loop.create_task(self._broadcast_async(data))
+                except RuntimeError:
+                    pass
+        except Exception:
+            pass
+
+
+audit_broadcaster = AuditBroadcaster()
 
 _ACTION_SUMMARIES = {
     "login_succeeded": "Signed in successfully",
@@ -245,18 +296,24 @@ def audit(
 
     after_state = json.dumps(after) if after else payload_str
 
-    db.add(
-        AuditEvent(
-            actor_user_id=actor.id if actor else None,
-            target_user_id=target.id if target else None,
-            action=action,
-            before_state=json.dumps(before) if before else None,
-            after_state=after_state,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            context_json=json.dumps(context),
-        )
+    event = AuditEvent(
+        actor_user_id=actor.id if actor else None,
+        target_user_id=target.id if target else None,
+        action=action,
+        before_state=json.dumps(before) if before else None,
+        after_state=after_state,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        context_json=json.dumps(context),
     )
+    db.add(event)
+
+    try:
+        users = {u.id: u for u in (actor, target) if u}
+        serialized = serialize_audit_event(event, users)
+        audit_broadcaster.broadcast({"type": "audit_event", "event": serialized})
+    except Exception:
+        pass
 
 
 def record_audit_api_event(
@@ -315,17 +372,131 @@ def record_audit_api_event(
         context["what"]["payload"] = payload
         context["payload"] = payload
 
-    db.add(
-        AuditEvent(
-            actor_user_id=actor_id,
-            target_user_id=None,
-            action=action,
-            before_state=None,
-            after_state=payload,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            context_json=json.dumps(context),
-        )
+    event = AuditEvent(
+        actor_user_id=actor_id,
+        target_user_id=None,
+        action=action,
+        before_state=None,
+        after_state=payload,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        context_json=json.dumps(context),
     )
+    db.add(event)
     db.commit()
+
+    try:
+        users = {actor_user.id: actor_user} if actor_user else {}
+        serialized = serialize_audit_event(event, users)
+        audit_broadcaster.broadcast({"type": "audit_event", "event": serialized})
+    except Exception:
+        pass
+
+
+def _user_label(user: User | None) -> dict | None:
+    if not user:
+        return None
+    return {
+        "id": user.id,
+        "display_name": user.display_name,
+        "username": user.username,
+        "email": user.email,
+        "role": user.role,
+    }
+
+
+def _label_from_context(blob: dict | None) -> dict | None:
+    if not blob or not isinstance(blob, dict):
+        return None
+    if not blob.get("id") and not blob.get("email") and not blob.get("display_name"):
+        return None
+    return {
+        "id": blob.get("id"),
+        "display_name": blob.get("display_name") or blob.get("email") or "Unknown",
+        "username": blob.get("username"),
+        "email": blob.get("email"),
+        "role": blob.get("role"),
+    }
+
+
+def serialize_audit_event(event: AuditEvent, users: dict[str, Any] | None = None) -> dict[str, Any]:
+    context = None
+    if event.context_json:
+        try:
+            context = json.loads(event.context_json)
+        except Exception:
+            context = None
+
+    users = users or {}
+    actor = users.get(event.actor_user_id) if event.actor_user_id else None
+    target = users.get(event.target_user_id) if event.target_user_id else None
+
+    who = (context or {}).get("who") if isinstance(context, dict) else None
+    how = (context or {}).get("how") if isinstance(context, dict) else None
+    geo = (context or {}).get("where", {}).get("geo") if context else None
+    summary = (context or {}).get("what", {}).get("summary") if context else None
+    status_code = (how or {}).get("status_code") if isinstance(how, dict) else None
+
+    actor_label = _user_label(actor) or _label_from_context((who or {}).get("actor") if isinstance(who, dict) else None)
+    target_label = _user_label(target) or _label_from_context((who or {}).get("target") if isinstance(who, dict) else None)
+
+    location_label = None
+    if isinstance(geo, dict):
+        location_label = geo.get("label")
+        if not location_label and geo.get("skipped"):
+            location_label = "Local network" if geo.get("reason") == "private_or_local" else "Unavailable"
+
+    severity = audit_severity(event.action, status_code if isinstance(status_code, int) else None)
+
+    payload = None
+    if isinstance(context, dict):
+        payload = context.get("what", {}).get("payload") or context.get("payload")
+    if not payload and event.after_state and (event.action.startswith("api_") or not event.before_state):
+        payload = event.after_state
+
+    created_at_val = event.created_at
+    created_at_iso = created_at_val.isoformat() if hasattr(created_at_val, "isoformat") else str(created_at_val)
+
+    return {
+        "id": event.id,
+        "actor_user_id": event.actor_user_id,
+        "target_user_id": event.target_user_id,
+        "actor": actor_label,
+        "target": target_label,
+        "action": event.action,
+        "summary": summary or event.action.replace("_", " "),
+        "status_code": status_code,
+        "severity": severity,
+        "payload": payload,
+        "before_state": event.before_state,
+        "after_state": event.after_state,
+        "ip_address": event.ip_address,
+        "user_agent": event.user_agent,
+        "location_label": location_label,
+        "geo": geo,
+        "context": context,
+        "created_at": created_at_iso,
+        "who": {
+            "actor": actor_label,
+            "target": target_label,
+            "actor_is_admin": bool(
+                (actor and getattr(actor, "role", None) == "admin")
+                or (actor_label and actor_label.get("role") == "admin")
+                or (isinstance(who, dict) and who.get("actor_is_admin"))
+            ),
+        },
+        "what": {"action": event.action, "summary": summary or event.action.replace("_", " ")},
+        "when": created_at_iso,
+        "where": {
+            "ip": event.ip_address,
+            "location": location_label,
+            "geo": geo,
+        },
+        "how": {
+            "user_agent": event.user_agent,
+            "method": (how or {}).get("method") if isinstance(how, dict) else None,
+            "path": (how or {}).get("path") if isinstance(how, dict) else None,
+            "status_code": status_code,
+        },
+    }
 
