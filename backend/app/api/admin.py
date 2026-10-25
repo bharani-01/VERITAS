@@ -414,6 +414,61 @@ def list_audit_events(
     }
 
 
+@router.get("/audit-stats")
+def get_audit_stats(_: User = Depends(require_admin), db: Session = Depends(db_session)):
+    """KPI metrics for the audit console across 24h and 7d horizons."""
+    now = utcnow()
+    cutoff_24h = now - timedelta(hours=24)
+    cutoff_7d = now - timedelta(days=7)
+
+    total_24h = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h)) or 0
+    total_7d = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d)) or 0
+
+    attack_filter = or_(
+        AuditEvent.action.like("api_sqli%"),
+        AuditEvent.action.like("api_xss%"),
+        AuditEvent.action.like("api_cmd%"),
+        AuditEvent.action.like("api_path%"),
+        AuditEvent.action.like("api_ssrf%"),
+        AuditEvent.action.like("api_ssti%"),
+        AuditEvent.action.like("api_open_redirect%"),
+        AuditEvent.action.like("api_header%"),
+        AuditEvent.action.like("api_csrf%"),
+        AuditEvent.action.like("api_scanner%"),
+        AuditEvent.action.like("api_auth_anomaly%"),
+    )
+    attacks_24h = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h, attack_filter)) or 0
+    attacks_7d = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d, attack_filter)) or 0
+
+    failures_filter = AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited", "api_auth_anomaly"])
+    failures_24h = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h, failures_filter)) or 0
+    failures_7d = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d, failures_filter)) or 0
+
+    unique_ips_24h = db.scalar(select(func.count(func.distinct(AuditEvent.ip_address))).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h, AuditEvent.ip_address.is_not(None))) or 0
+    unique_ips_7d = db.scalar(select(func.count(func.distinct(AuditEvent.ip_address))).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d, AuditEvent.ip_address.is_not(None))) or 0
+
+    http_24h = db.scalar(select(func.count()).select_from(HttpRequestEvent).where(HttpRequestEvent.created_at >= cutoff_24h)) or 0
+    http_7d = db.scalar(select(func.count()).select_from(HttpRequestEvent).where(HttpRequestEvent.created_at >= cutoff_7d)) or 0
+
+    return {
+        "timeframe_24h": {
+            "total_events": total_24h,
+            "http_requests": http_24h or total_24h,
+            "attacks_flagged": attacks_24h,
+            "auth_failures": failures_24h,
+            "unique_ips": unique_ips_24h,
+        },
+        "timeframe_7d": {
+            "total_events": total_7d,
+            "http_requests": http_7d or total_7d,
+            "attacks_flagged": attacks_7d,
+            "auth_failures": failures_7d,
+            "unique_ips": unique_ips_7d,
+        },
+        "server_time": now,
+    }
+
+
 @router.get("/http-requests")
 def list_http_requests(
     severity: str | None = None,
