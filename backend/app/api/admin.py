@@ -316,10 +316,22 @@ def list_audit_events(
     if category in ("attacks", "security"):
         query = query.where(
             or_(
-                AuditEvent.action.like("api_%"),
+                AuditEvent.action.like("api_sqli%"),
+                AuditEvent.action.like("api_xss%"),
+                AuditEvent.action.like("api_cmd%"),
+                AuditEvent.action.like("api_path%"),
+                AuditEvent.action.like("api_ssrf%"),
+                AuditEvent.action.like("api_ssti%"),
+                AuditEvent.action.like("api_open_redirect%"),
+                AuditEvent.action.like("api_header%"),
+                AuditEvent.action.like("api_csrf%"),
+                AuditEvent.action.like("api_scanner%"),
+                AuditEvent.action.like("api_auth_anomaly%"),
                 AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]),
             )
         )
+    elif category == "api":
+        query = query.where(AuditEvent.action == "api_request")
     elif category == "auth":
         query = query.where(
             AuditEvent.action.in_(
@@ -338,10 +350,7 @@ def list_audit_events(
         )
     elif category == "auth_failures":
         query = query.where(
-            or_(
-                AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited"]),
-                AuditEvent.action.like("api_%"),
-            )
+            AuditEvent.action.in_(["login_failed", "login_blocked_status", "rate_limited", "api_auth_anomaly"])
         )
     elif category == "admin":
         query = query.where(
@@ -349,7 +358,6 @@ def list_audit_events(
                 AuditEvent.action.like("user_%"),
                 AuditEvent.action.in_(["fs_list", "fs_download"]),
             )
-        )
     elif category == "workspace":
         query = query.where(
             AuditEvent.action.in_(
@@ -366,8 +374,12 @@ def list_audit_events(
                 ]
             )
         )
-    elif category == "api":
-        query = query.where(AuditEvent.action.like("api_%"))
+    # Always suppress internal frontend polling telemetry from the audit feed
+    query = query.where(
+        ~AuditEvent.context_json.like('%"/admin/audit-stats"%'),
+        ~AuditEvent.context_json.like('%"/admin/rate-limits"%'),
+        ~AuditEvent.context_json.like('%"/admin/security-analyze"%'),
+    )
     if since:
         try:
             since_dt = datetime.fromisoformat(since.replace("Z", "+00:00"))
@@ -421,8 +433,14 @@ def get_audit_stats(_: User = Depends(require_admin), db: Session = Depends(db_s
     cutoff_24h = now - timedelta(hours=24)
     cutoff_7d = now - timedelta(days=7)
 
-    total_24h = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h)) or 0
-    total_7d = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d)) or 0
+    poll_exclude = and_(
+        ~AuditEvent.context_json.like('%"/admin/audit-stats"%'),
+        ~AuditEvent.context_json.like('%"/admin/rate-limits"%'),
+        ~AuditEvent.context_json.like('%"/admin/security-analyze"%'),
+    )
+
+    total_24h = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_24h, poll_exclude)) or 0
+    total_7d = db.scalar(select(func.count()).select_from(AuditEvent).where(AuditEvent.created_at >= cutoff_7d, poll_exclude)) or 0
 
     attack_filter = or_(
         AuditEvent.action.like("api_sqli%"),

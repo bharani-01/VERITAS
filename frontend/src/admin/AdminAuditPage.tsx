@@ -79,7 +79,7 @@ const PAGE_SIZE = 50;
 
 const FILTERS = [
   ["", "All Events"],
-  ["attacks", "Attacks & Exploits"],
+  ["attacks", "Security Attacks"],
   ["api", "API Traffic"],
   ["auth_failures", "Failures & 429s"],
   ["auth", "Auth"],
@@ -345,20 +345,21 @@ export function AdminAuditPage() {
             if (data.type === "audit_event" && data.event) {
               const newEvent: AuditEvent = data.event;
 
-              // Increment KPI stats in real time
+              // Increment KPI stats in real time: ONLY true attacks (not normal api_request)
+              const isRealAttack =
+                (newEvent.action.startsWith("api_") && newEvent.action !== "api_request") ||
+                newEvent.action === "rate_limited";
+
+              const isAuthFailure =
+                ["login_failed", "login_blocked_status", "rate_limited", "api_auth_anomaly"].includes(newEvent.action);
+
               setStats((prev) => {
                 if (!prev) return prev;
-                const isAttack =
-                  newEvent.action.startsWith("api_") ||
-                  ["login_failed", "login_blocked_status", "rate_limited"].includes(newEvent.action);
-                const isAuthFailure =
-                  ["login_failed", "login_blocked_status", "rate_limited", "api_auth_anomaly"].includes(newEvent.action);
-
                 const updateBucket = (b: TimeframeStats): TimeframeStats => ({
                   ...b,
                   total_events: b.total_events + 1,
                   http_requests: b.http_requests + 1,
-                  attacks_flagged: b.attacks_flagged + (isAttack ? 1 : 0),
+                  attacks_flagged: b.attacks_flagged + (isRealAttack ? 1 : 0),
                   auth_failures: b.auth_failures + (isAuthFailure ? 1 : 0),
                 });
 
@@ -373,12 +374,11 @@ export function AdminAuditPage() {
               const matchesCat =
                 !cat ||
                 (cat === "attacks" &&
-                  (newEvent.action.startsWith("api_") ||
+                  ((newEvent.action.startsWith("api_") && newEvent.action !== "api_request") ||
                     ["login_failed", "login_blocked_status", "rate_limited"].includes(newEvent.action))) ||
-                (cat === "api" && newEvent.action.startsWith("api_")) ||
+                (cat === "api" && newEvent.action === "api_request") ||
                 (cat === "auth_failures" &&
-                  (["login_failed", "login_blocked_status", "rate_limited"].includes(newEvent.action) ||
-                    newEvent.action.startsWith("api_"))) ||
+                  ["login_failed", "login_blocked_status", "rate_limited", "api_auth_anomaly"].includes(newEvent.action)) ||
                 (cat === "auth" &&
                   [
                     "login_succeeded",
@@ -505,35 +505,50 @@ export function AdminAuditPage() {
   const method = (selected?.how?.method || "HTTP").toUpperCase();
 
   return (
-    <main className="audit-console-container" tabIndex={-1}>
+    <main className="admin-main audit-console-container" tabIndex={-1}>
       {/* 1. Header Banner */}
       <header className="audit-console-head">
         <div className="audit-console-titles">
-          <div className="audit-breadcrumb">
+          <nav className="audit-breadcrumb" aria-label="Breadcrumb">
             <Link to="/admin">Admin</Link>
-            <span>/</span>
-            <span>Audit & Compliance</span>
+            <span className="audit-sep">/</span>
+            <span>Security &amp; Compliance</span>
+          </nav>
+          <div className="audit-title-row">
+            <h1 className="audit-console-title">Audit Logs</h1>
+            <div className={`sec-live-badge ${wsConnected && autoRefresh ? "active" : ""}`}>
+              <span className="sec-pulse-dot" />
+              <span>{autoRefresh ? (wsConnected ? "Live (WebSocket)" : "Connecting…") : "Stream Paused"}</span>
+            </div>
           </div>
-          <h1 className="audit-console-title">Audit Logs</h1>
           <p className="audit-console-subtitle">
-            Immutable, real-time security ledger tracking identity events, privileged administrative actions, and API telemetry.
+            Tamper-evident, real-time audit ledger tracking authentication, administrative operations, and API telemetry.
           </p>
         </div>
 
         <div className="audit-console-actions">
-          {/* Live Stream Pulse Badge */}
-          <div className={`sec-live-indicator ${wsConnected && autoRefresh ? "active" : ""}`}>
-            <span className="sec-pulse-circle" />
-            <span>{autoRefresh ? (wsConnected ? "Live" : "Connecting…") : "Paused"}</span>
-          </div>
-
           <button
             type="button"
             className="sec-btn-outline"
             onClick={() => setAutoRefresh(!autoRefresh)}
-            title={autoRefresh ? "Pause incoming live stream" : "Resume live stream"}
+            title={autoRefresh ? "Pause incoming live stream" : "Resume live streaming"}
           >
-            {autoRefresh ? "Pause Stream" : "Resume Stream"}
+            {autoRefresh ? (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1" />
+                  <rect x="14" y="4" width="4" height="16" rx="1" />
+                </svg>
+                <span>Pause Stream</span>
+              </>
+            ) : (
+              <>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3" />
+                </svg>
+                <span>Resume Stream</span>
+              </>
+            )}
           </button>
 
           <button
@@ -543,49 +558,101 @@ export function AdminAuditPage() {
             disabled={!items.length}
             title="Download displayed records as JSON"
           >
-            Export JSON
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            <span>Export JSON</span>
           </button>
 
           <button
             type="button"
-            className="btn secondary"
+            className="btn secondary audit-btn-refresh"
             onClick={() => void resetAndLoad()}
             disabled={loading}
           >
-            {loading ? "Refreshing…" : "Refresh"}
+            <svg className={loading ? "spin" : ""} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M23 4v6h-6" />
+              <path d="M1 20v-6h6" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            <span>{loading ? "Refreshing…" : "Refresh"}</span>
           </button>
         </div>
       </header>
 
-      {/* 2. Sleek, Minimalist Top Metrics Ribbon */}
+      {/* 2. Top Metrics Ribbon */}
       <section className="audit-kpi-ribbon" aria-label="Operational Metrics">
         <div className="audit-kpi-pill">
+          <div className="audit-kpi-head">
+            <span className="audit-kpi-pill-label">Total Events (24h)</span>
+            <span className="audit-kpi-ico total">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </span>
+          </div>
           <span className="audit-kpi-pill-val">{stats?.timeframe_24h.total_events?.toLocaleString() ?? total.toLocaleString()}</span>
-          <span className="audit-kpi-pill-label">Total Events (24h)</span>
+          <span className="audit-kpi-pill-sub">Recorded audit entries</span>
         </div>
+
         <div className="audit-kpi-pill alert">
+          <div className="audit-kpi-head">
+            <span className="audit-kpi-pill-label">Flagged Threats</span>
+            <span className="audit-kpi-ico alert">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+            </span>
+          </div>
           <span className="audit-kpi-pill-val">{stats?.timeframe_24h.attacks_flagged?.toLocaleString() ?? 0}</span>
-          <span className="audit-kpi-pill-label">Flagged Threats</span>
+          <span className="audit-kpi-pill-sub">SQLi, XSS, SSRF &amp; scanners</span>
         </div>
+
         <div className="audit-kpi-pill warn">
+          <div className="audit-kpi-head">
+            <span className="audit-kpi-pill-label">Auth Failures / 429s</span>
+            <span className="audit-kpi-ico warn">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
+          </div>
           <span className="audit-kpi-pill-val">{stats?.timeframe_24h.auth_failures?.toLocaleString() ?? 0}</span>
-          <span className="audit-kpi-pill-label">Auth Failures / 429s</span>
+          <span className="audit-kpi-pill-sub">Rate throttles &amp; bad logins</span>
         </div>
+
         <div className="audit-kpi-pill info">
+          <div className="audit-kpi-head">
+            <span className="audit-kpi-pill-label">Unique Client IPs</span>
+            <span className="audit-kpi-ico info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="2" y1="12" x2="22" y2="12" />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+            </span>
+          </div>
           <span className="audit-kpi-pill-val">{stats?.timeframe_24h.unique_ips?.toLocaleString() ?? 0}</span>
-          <span className="audit-kpi-pill-label">Unique Client IPs</span>
+          <span className="audit-kpi-pill-sub">Distinct client origins</span>
         </div>
       </section>
 
-      {/* 3. Toolbar: Category Filters, Severity Filters & Search Bar */}
-      <section className="audit-console-toolbar">
-        <div className="audit-seg" role="group" aria-label="Category Filters">
+      {/* 3. Two-Tier Filter & Search Toolbar */}
+      <section className="audit-toolbar-box">
+        {/* Tier 1: Category Filter Tabs */}
+        <div className="audit-cat-tabs" role="tablist" aria-label="Event Categories">
           {FILTERS.map(([id, label]) => (
             <button
               key={id || "all"}
               type="button"
-              aria-pressed={category === id}
-              className={category === id ? "active" : ""}
+              role="tab"
+              aria-selected={category === id}
+              className={`audit-cat-tab ${category === id ? "active" : ""}`}
               onClick={() => setCategory(id)}
             >
               {label}
@@ -593,41 +660,62 @@ export function AdminAuditPage() {
           ))}
         </div>
 
-        <div className="audit-seg" role="group" aria-label="Severity Filter">
-          {SEVERITY_FILTERS.map(([id, label]) => (
-            <button
-              key={id || "sev-all"}
-              type="button"
-              aria-pressed={severityFilter === id}
-              className={severityFilter === id ? "active" : ""}
-              onClick={() => setSeverityFilter(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/* Tier 2: Subbar with Severity filter, count, search & reset */}
+        <div className="audit-subbar">
+          <div className="audit-subbar-left">
+            <div className="audit-select-wrap">
+              <select
+                id="audit-severity-select"
+                className="audit-select"
+                value={severityFilter}
+                onChange={(e) => setSeverityFilter(e.target.value as SeverityFilter)}
+                aria-label="Filter by Severity"
+              >
+                {SEVERITY_FILTERS.map(([id, label]) => (
+                  <option key={id || "all-sev"} value={id}>
+                    {label === "All Severities" ? "All Severities" : `Severity: ${label}`}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-        <div className="audit-console-toolbar-right">
-          <div className="audit-search-wrap">
-            <svg className="audit-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            <input
-              type="search"
-              className="audit-search-input"
-              placeholder="Search by action, actor, endpoint, or IP…"
-              value={actionFilter}
-              onChange={(e) => setActionFilter(e.target.value)}
-              aria-label="Filter audit events"
-            />
+            <span className="audit-results-count">
+              Showing <b>{items.length}</b> {total > 0 && <>of <b>{total.toLocaleString()}</b></>} events
+            </span>
           </div>
 
-          {hasActiveFilters && (
-            <button type="button" className="audit-clear-link" onClick={clearFilters}>
-              Reset filters
-            </button>
-          )}
+          <div className="audit-subbar-right">
+            <div className="audit-search-wrap">
+              <svg className="audit-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="search"
+                className="audit-search-input"
+                placeholder="Search action, actor, path, or IP…"
+                value={actionFilter}
+                onChange={(e) => setActionFilter(e.target.value)}
+                aria-label="Filter audit events"
+              />
+              {actionFilter && (
+                <button
+                  type="button"
+                  className="audit-search-clear"
+                  onClick={() => setActionFilter("")}
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            {hasActiveFilters && (
+              <button type="button" className="audit-clear-link" onClick={clearFilters}>
+                Reset Filters
+              </button>
+            )}
+          </div>
         </div>
       </section>
 
@@ -659,14 +747,14 @@ export function AdminAuditPage() {
             <table className="audit-table">
               <thead>
                 <tr>
-                  <th>Timestamp</th>
-                  <th>Principal (Actor)</th>
-                  <th>Target</th>
-                  <th>Action & Summary</th>
-                  <th>Severity</th>
-                  <th>Endpoint & Status</th>
-                  <th>Origin IP</th>
-                  <th>Action</th>
+                  <th style={{ width: "130px" }}>Timestamp</th>
+                  <th style={{ width: "170px" }}>Actor</th>
+                  <th style={{ width: "150px" }}>Target</th>
+                  <th>Action &amp; Summary</th>
+                  <th style={{ width: "95px" }}>Severity</th>
+                  <th style={{ width: "260px" }}>Endpoint &amp; Status</th>
+                  <th style={{ width: "180px" }}>Origin IP</th>
+                  <th style={{ width: "80px", textAlign: "right" }}>Inspect</th>
                 </tr>
               </thead>
               <tbody>
@@ -676,7 +764,7 @@ export function AdminAuditPage() {
                   const tName = displayName(event.target, event.target_user_id);
                   const evMethod = (event.how?.method || "HTTP").toUpperCase();
                   const isThreat =
-                    event.action.startsWith("api_") ||
+                    (event.action.startsWith("api_") && event.action !== "api_request") ||
                     ["rate_limited", "login_failed", "login_blocked_status"].includes(event.action);
 
                   return (
@@ -688,31 +776,39 @@ export function AdminAuditPage() {
                       <td>
                         <span className="audit-time" title={t.full}>
                           <b>{t.relative}</b>
-                          <small>{t.timeOnly}</small>
+                          <small>{t.timeOnly} UTC</small>
                         </span>
                       </td>
                       <td>
-                        <div className="audit-principal-cell">
-                          <div className="audit-avatar-tiny">{getInitials(aName, "A")}</div>
-                          <div className="audit-person">
-                            <span className="audit-person-name-row">
-                              <b>{aName}</b>
-                              {(event.who?.actor_is_admin || event.actor?.role === "admin") && (
-                                <span className="audit-role-badge admin">admin</span>
-                              )}
-                            </span>
-                            <small>{displayHandle(event.actor) || "System"}</small>
+                        {event.actor ? (
+                          <div className="audit-principal-cell">
+                            <div className="audit-avatar-tiny">{getInitials(aName, "U")}</div>
+                            <div className="audit-person">
+                              <span className="audit-person-name-row">
+                                <b>{aName}</b>
+                                {(event.who?.actor_is_admin || event.actor?.role === "admin") && (
+                                  <span className="audit-role-badge admin">admin</span>
+                                )}
+                              </span>
+                              <small>{displayHandle(event.actor)}</small>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="audit-system-pill">⚙ System</span>
+                        )}
                       </td>
                       <td>
-                        <div className="audit-principal-cell">
-                          <div className="audit-avatar-tiny target">{getInitials(tName, "T")}</div>
-                          <div className="audit-person">
-                            <b>{tName}</b>
-                            <small>{displayHandle(event.target) || "System scope"}</small>
+                        {event.target ? (
+                          <div className="audit-principal-cell">
+                            <div className="audit-avatar-tiny target">{getInitials(tName, "T")}</div>
+                            <div className="audit-person">
+                              <b>{tName}</b>
+                              <small>{displayHandle(event.target)}</small>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <span className="audit-system-pill muted">System scope</span>
+                        )}
                       </td>
                       <td>
                         <span className="audit-action-cell">
@@ -727,12 +823,10 @@ export function AdminAuditPage() {
                       </td>
                       <td>
                         <div className="sec-cell-req">
-                          <div className="sec-req-top">
-                            <span className={`audit-method-tag method-${evMethod.toLowerCase()}`}>{evMethod}</span>
-                            <code className="audit-path-code" title={event.how?.path || ""}>
-                              {event.how?.path || "—"}
-                            </code>
-                          </div>
+                          <span className={`audit-method-tag method-${evMethod.toLowerCase()}`}>{evMethod}</span>
+                          <code className="audit-path-code" title={event.how?.path || ""}>
+                            {event.how?.path || "—"}
+                          </code>
                           <span className={`audit-status status-${statusTone(event.status_code ?? event.how?.status_code)}`}>
                             {statusCodeLabel(event.status_code ?? event.how?.status_code)}
                           </span>
@@ -740,11 +834,15 @@ export function AdminAuditPage() {
                       </td>
                       <td>
                         <div className="sec-ip-cell">
-                          <code className="audit-mono">{event.ip_address || "—"}</code>
-                          {event.location_label && <small className="sec-ip-loc">{event.location_label}</small>}
+                          <code className="sec-ip-code">{event.ip_address || "—"}</code>
+                          {event.location_label && (
+                            <span className="sec-ip-loc" title={event.location_label}>
+                              📍 {event.location_label}
+                            </span>
+                          )}
                         </div>
                       </td>
-                      <td>
+                      <td style={{ textAlign: "right" }}>
                         <button
                           type="button"
                           className="sec-btn-inspect"
@@ -765,7 +863,7 @@ export function AdminAuditPage() {
             {/* Infinite Scroll Sentinel */}
             <div ref={sentinelRef} className="sec-sentinel" aria-hidden="true" />
             {loadingMore && <div className="sec-load-more">Loading older events…</div>}
-            {!hasMore && items.length > 0 && <div className="sec-load-more end">All events loaded ({total.toLocaleString()} total)</div>}
+            {!hasMore && items.length > 0 && <div className="sec-load-more end">All {total.toLocaleString()} events loaded</div>}
           </div>
         )}
       </section>

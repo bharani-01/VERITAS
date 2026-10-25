@@ -19,8 +19,11 @@ from app.services.http_traffic import record_http_event
 # Paths exempted from automatic audit logging to avoid recursive loops during UI polling
 _AUDIT_EXCLUDE_PATHS = (
     "/admin/audit-events",
+    "/admin/audit-stats",
+    "/admin/rate-limits",
     "/admin/http-requests",
     "/admin/security-overview",
+    "/admin/security-analyze",
     "/health",
 )
 
