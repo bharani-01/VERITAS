@@ -789,3 +789,16 @@ def fs_download(
         filename=file_path.name,
         media_type="application/octet-stream",
     )
+
+
+@router.get("/rate-limits")
+def get_rate_limits(_: User = Depends(require_admin)):
+    """Returns active rate limiting rules, configurations, and trigger statistics."""
+    from app.core.rate_limit import rate_limiter
+
+    return {
+        "enabled": True,
+        "rules": rate_limiter.get_rules_info(),
+        "total_throttled": sum(rate_limiter.stats.values()),
+        "active_buckets": len(rate_limiter.events),
+    }

@@ -103,7 +103,7 @@ type AiAnalyze = {
   sample_size?: number;
 };
 
-export type WidgetId = "posture" | "kpi" | "velocity_chart" | "threat_vectors" | "ai_copilot" | "audit_ledger";
+export type WidgetId = "posture" | "kpi" | "velocity_chart" | "threat_vectors" | "rate_limits" | "ai_copilot" | "audit_ledger";
 export type WidgetColSpan = 4 | 5 | 6 | 7 | 8 | 12;
 export type WidgetHeight = "compact" | "normal" | "tall";
 
@@ -116,16 +116,33 @@ export type WidgetState = {
   collapsed: boolean;
 };
 
+export type RateLimitRuleInfo = {
+  name: string;
+  description: string;
+  scope: string;
+  limit: number;
+  window_seconds: number;
+  triggered_count: number;
+};
+
+export type RateLimitsResponse = {
+  enabled: boolean;
+  rules: RateLimitRuleInfo[];
+  total_throttled: number;
+  active_buckets: number;
+};
+
 const DEFAULT_WIDGETS: WidgetState[] = [
   { id: "posture", title: "Threat Posture & Health", span: 4, height: "normal", visible: true, collapsed: false },
   { id: "kpi", title: "Operational Metric Horizon", span: 8, height: "normal", visible: true, collapsed: false },
   { id: "velocity_chart", title: "60m Attack Velocity Curve", span: 7, height: "normal", visible: true, collapsed: false },
   { id: "threat_vectors", title: "Attack Classification Matrix", span: 5, height: "normal", visible: true, collapsed: false },
-  { id: "ai_copilot", title: "AI Security Copilot & Remediation", span: 12, height: "normal", visible: true, collapsed: false },
+  { id: "rate_limits", title: "Rate Limiting & Threat Shield", span: 6, height: "normal", visible: true, collapsed: false },
+  { id: "ai_copilot", title: "AI Security Copilot & Remediation", span: 6, height: "normal", visible: true, collapsed: false },
   { id: "audit_ledger", title: "Live Security & Audit Ledger", span: 12, height: "tall", visible: true, collapsed: false },
 ];
 
-const STORAGE_KEY = "veritas_draggable_dashboard_v3";
+const STORAGE_KEY = "veritas_draggable_dashboard_v4";
 
 type Category = "" | "attacks" | "api" | "auth_failures" | "auth" | "admin" | "workspace";
 type SeverityFilter = "" | "info" | "low" | "medium" | "high" | "critical";
@@ -342,6 +359,10 @@ export function AdminAuditPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Rate Limiting Multi-Tier Rules
+  const [rateLimits, setRateLimits] = useState<RateLimitsResponse | null>(null);
+  const [rateLimitsLoading, setRateLimitsLoading] = useState(false);
+
   // Persist widgets layout whenever changed
   const saveWidgets = useCallback((next: WidgetState[]) => {
     setWidgets(next);
@@ -480,6 +501,18 @@ export function AdminAuditPage() {
     }
   }, []);
 
+  const fetchRateLimits = useCallback(async () => {
+    try {
+      setRateLimitsLoading(true);
+      const data = await api<RateLimitsResponse>("/admin/rate-limits");
+      setRateLimits(data);
+    } catch {
+      // transient
+    } finally {
+      setRateLimitsLoading(false);
+    }
+  }, []);
+
   const runAi = useCallback(async () => {
     setAiLoading(true);
     setAiError(null);
@@ -502,15 +535,17 @@ export function AdminAuditPage() {
     setSelected(null);
     setPage(1);
     try {
-      const [eventsData, statsData, overviewData] = await Promise.all([
+      const [eventsData, statsData, overviewData, rateLimitsData] = await Promise.all([
         api<AuditResponse>(buildQuery(1)),
         api<AuditStatsResponse>("/admin/audit-stats").catch(() => null),
         api<Overview>("/admin/security-overview").catch(() => null),
+        api<RateLimitsResponse>("/admin/rate-limits").catch(() => null),
       ]);
       setItems(eventsData.items);
       setTotal(eventsData.total);
       if (statsData) setStats(statsData);
       if (overviewData) setOverview(overviewData);
+      if (rateLimitsData) setRateLimits(rateLimitsData);
     } catch (err) {
       setError((err as Error).message);
       setItems([]);
@@ -529,9 +564,10 @@ export function AdminAuditPage() {
     const timer = window.setInterval(() => {
       void fetchStats();
       void fetchOverview();
+      void fetchRateLimits();
     }, 15000);
     return () => window.clearInterval(timer);
-  }, [autoRefresh, fetchStats, fetchOverview]);
+  }, [autoRefresh, fetchStats, fetchOverview, fetchRateLimits]);
 
   // WebSocket Live Stream
   useEffect(() => {
@@ -611,6 +647,26 @@ export function AdminAuditPage() {
                   },
                 };
               });
+
+              if (newEvent.action === "rate_limited") {
+                setRateLimits((prev) => {
+                  if (!prev) return prev;
+                  let matchedRule = "";
+                  try {
+                    const parsed = JSON.parse(newEvent.after_state || "{}");
+                    matchedRule = parsed.rule || "";
+                  } catch {
+                    // ignore
+                  }
+                  return {
+                    ...prev,
+                    total_throttled: prev.total_throttled + 1,
+                    rules: prev.rules.map((r) =>
+                      r.name === matchedRule ? { ...r, triggered_count: r.triggered_count + 1 } : r
+                    ),
+                  };
+                });
+              }
 
               const cat = categoryRef.current;
               const matchesCat =
@@ -1332,6 +1388,62 @@ export function AdminAuditPage() {
                 <span>Click "Analyze Active Threats" to produce intelligent triage recommendations.</span>
               </div>
             )}
+          </div>
+        );
+
+      case "rate_limits":
+        return (
+          <div className="sec-rl-widget">
+            <div className="sec-rl-header">
+              <div className="sec-rl-summary">
+                <span className="sec-status-dot active" />
+                <span className="sec-rl-status-text">
+                  <b>Multi-Tier Threat Shield:</b> {rateLimits?.rules?.length ?? 10} Rules Enforced Across All Routes
+                </span>
+              </div>
+              <div className="sec-rl-meta-pills">
+                <span className={`sec-rl-badge ${(rateLimits?.total_throttled ?? 0) > 0 ? "warn" : "ok"}`}>
+                  {rateLimits?.total_throttled ?? 0} Throttled (429)
+                </span>
+                <span className="sec-rl-badge info">
+                  {rateLimits?.active_buckets ?? 0} Tracked IPs
+                </span>
+                <button
+                  type="button"
+                  className="sec-btn-compact"
+                  onClick={() => void fetchRateLimits()}
+                  disabled={rateLimitsLoading}
+                >
+                  {rateLimitsLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            <div className="sec-rl-rules-grid">
+              {(rateLimits?.rules ?? []).map((r) => (
+                <div key={r.name} className={`sec-rl-card ${r.triggered_count > 0 ? "triggered" : ""}`}>
+                  <div className="sec-rl-card-top">
+                    <div className="sec-rl-title-group">
+                      <span className="sec-rl-rule-name">
+                        {r.name === "threat_scanner" ? "🛡️ " : r.name === "auth_login" ? "🔑 " : r.name.startsWith("auth_") ? "👤 " : r.name === "global_api" ? "🌐 " : "⚙️ "}
+                        {r.name}
+                      </span>
+                      <span className="sec-rl-rule-scope">{r.scope}</span>
+                    </div>
+                    <span className={`sec-rl-quota ${r.triggered_count > 0 ? "flag" : ""}`}>
+                      {r.limit} req / {r.window_seconds >= 3600 ? `${r.window_seconds / 3600}h` : r.window_seconds >= 60 ? `${r.window_seconds / 60}m` : `${r.window_seconds}s`}
+                    </span>
+                  </div>
+                  <p className="sec-rl-rule-desc">{r.description}</p>
+                  <div className="sec-rl-card-bottom">
+                    <span className="sec-rl-window-pill">Window: {r.window_seconds}s</span>
+                    <span className={`sec-rl-triggers-pill ${r.triggered_count > 0 ? "active" : ""}`}>
+                      {r.triggered_count} blocked
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         );
 
