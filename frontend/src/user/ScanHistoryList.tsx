@@ -8,7 +8,6 @@ import {
   scanTriggerLabel,
   shortCommit,
 } from "../lib/scanDisplay";
-import { scanProgressLabel } from "../lib/scanProgress";
 import type { Scan } from "../lib/workspace";
 
 type Props = {
@@ -110,7 +109,6 @@ export function ScanHistoryList({
             const findings = findingsCountLabel(scan);
             const headline = scanHeadline(scan);
             const percent = Math.max(2, Math.min(100, Number(scan.progress?.percent ?? (scan.status === "running" ? 15 : 4))));
-            const progressLabel = scanProgressLabel(scan.progress, scan.status) || "Scanning…";
 
             return (
               <li key={scan.id} className={entering.has(scan.id) ? "scan-hist-enter" : undefined}>
@@ -119,15 +117,7 @@ export function ScanHistoryList({
                   <span className="scan-hist-main">
                     <StatusIcon status={scan.status} />
                     <span className="scan-hist-copy">
-                      <div className="scan-hist-headline-row">
-                        <span className="scan-hist-msg">{headline}</span>
-                        {scanning ? (
-                          <span className="scan-live-phase-chip" title={progressLabel}>
-                            <span className="scan-live-dot" />
-                            <span className="scan-live-phase-text">{progressLabel}</span>
-                          </span>
-                        ) : null}
-                      </div>
+                      <span className="scan-hist-msg">{headline}</span>
 
                       <span className="scan-hist-meta">
                         {showProjectName && scan.project_name ? (
@@ -172,12 +162,7 @@ export function ScanHistoryList({
                   <span className="scan-hist-col scan-hist-col-trigger">{scanTriggerLabel(scan)}</span>
 
                   <span className="scan-hist-col scan-hist-col-findings scan-hist-findings">
-                    {scanning ? (
-                      <span className="scan-analyzing-pill">
-                        <span className="badge-spinner" aria-hidden="true" />
-                        <span>Analyzing…</span>
-                      </span>
-                    ) : findings === "—" || findings === "…" ? (
+                    {findings === "—" || findings === "…" ? (
                       findings
                     ) : (
                       <>
