@@ -1,0 +1,324 @@
+{
+  "source": "https://veritas.trackifyapp.co.in",
+  "account": "neelambalguruswami",
+  "captured_at": "2026-09-26T11:56:35Z",
+  "project": {
+    "name": "NurseQuest",
+    "project_id": "ecac4867-5223-4ef5-8471-3260d937d72a",
+    "target": "Swaminathan8237/NurseQuest",
+    "scan_id": "53b5c73e-5425-42b4-a74c-b1589a3cca28",
+    "git_version": "69d678b",
+    "commit_message": "feat: add admin dashboard and class analytics with supporting backend routes"
+  },
+  "risk": {
+    "score": 8.0,
+    "findings_total": 35,
+    "by_severity": {
+      "high": 7,
+      "medium": 19,
+      "info": 9
+    }
+  },
+  "scan_status": "completed",
+  "scan_mode": "rules_only",
+  "engines_observed": [
+    "gitleaks",
+    "semgrep"
+  ],
+  "top_findings": [
+    {
+      "title": "jwt",
+      "severity": "high",
+      "engine": "gitleaks",
+      "file_path": "aero_mage/lib/config/api_config.dart",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "Avoiding SQL string concatenation: untrusted input concatenated with raw SQL query can result in SQL Injection. In order to execute raw query safely, prepared statement should be used. SQLAlchemy provides TextualSQL to easily used prepared statement with named parameters. For complex SQL composition, use SQL Expression Language or Schema Definition Language. In most cases, SQLAlchemy ORM will be a better option.",
+      "severity": "high",
+      "engine": "semgrep",
+      "file_path": "sqlite_vision_studio/db_manager.py",
+      "status": "open",
+      "risk_score": 8.0
+    },
+    {
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": ".github/workflows/playwright.yml",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": ".github/workflows/playwright.yml",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "GitHub Actions step uses a mutable tag or branch reference. Tags and branch names can be silently repointed by the action owner, enabling supply-chain attacks \u2014 as seen in the trivy-action and kics-github-action compromises. Pin the reference to a full 40-character commit SHA instead, e.g. `uses: actions/checkout@8ade135a41bc03ea155e62e844d188df1ea18608`.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": ".github/workflows/playwright.yml",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Checks for setting the environment variable NODE_TLS_REJECT_UNAUTHORIZED to 0, which disables TLS verification. This should only be used for debugging purposes. Setting the option rejectUnauthorized to false bypasses verification against the list of trusted CAs, which also leads to insecure transport. These options lead to vulnerability to MTM attacks, and should not be used.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/db/init.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "User data flows into the host portion of this manually-constructed HTML. This can introduce a Cross-Site-Scripting (XSS) vulnerability if this comes from user-provided input. Consider using a sanitization library such as DOMPurify to sanitize the HTML within.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/routes/auth.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/routes/quizzes.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Possible writing outside of the destination, make sure that the target path is nested in the intended destination",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/routes/quizzes.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Detected possible user input going into a `path.join` or `path.resolve` function. This could possibly lead to a path traversal vulnerability,  where the attacker can access arbitrary files stored in the file system. Instead, be sure to sanitize or validate user input first.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/routes/quizzes.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Checks for any usage of http servers instead of https servers. Encourages the usage of https protocol instead of http, which does not have TLS and is therefore unencrypted. Using http can lead to man-in-the-middle attacks in which the attacker is able to read sensitive information.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/scratch/verify_api.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Checks for requests sent to http:// URLs. This is dangerous as the server is attempting to connect to a website that does not encrypt traffic with TLS. Instead, only send requests to https:// URLs.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/scratch/verify_api.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Checks for any usage of http servers instead of https servers. Encourages the usage of https protocol instead of http, which does not have TLS and is therefore unencrypted. Using http can lead to man-in-the-middle attacks in which the attacker is able to read sensitive information.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "backend/server.js",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "'$http_host' and '$host' variables may contain a malicious value from attacker controlled 'Host' request header. Use an explicitly configured host value or a allow list for validation.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "nginx/skillquest.conf",
+      "status": "open",
+      "risk_score": 5.5
+    },
+    {
+      "title": "Conditions for Nginx H2C smuggling identified. H2C smuggling allows upgrading HTTP/1.1 connections to lesser-known HTTP/2 over cleartext (h2c) connections which can allow a bypass of reverse proxy access controls, and lead to long-lived, unrestricted HTTP traffic directly to back-end servers. To mitigate: WebSocket support required: Allow only the value websocket for HTTP/1.1 upgrade headers (e.g., Upgrade: websocket). WebSocket support not required: Do not forward Upgrade headers.",
+      "severity": "medium",
+      "engine": "semgrep",
+      "file_path": "nginx/skillquest.conf",
+      "status": "open",
+      "risk_score": 5.5
+    }
+  ],
+  "summary": {
+    "findings_count": 35,
+    "open_count": 35,
+    "suppressed_count": 0,
+    "by_severity": {
+      "high": 7,
+      "medium": 19,
+      "info": 9
+    },
+    "by_family": {
+      "secret": 1,
+      "other": 22,
+      "xss": 1,
+      "csrf": 1,
+      "sqli": 10
+    },
+    "engines": [
+      {
+        "engine": "gitleaks",
+        "available": true,
+        "returncode": 0,
+        "mode": "git-history",
+        "findings": 1
+      },
+      {
+        "engine": "trufflehog",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "detect_secrets",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "osv",
+        "available": true,
+        "returncode": 0,
+        "mode": "deep",
+        "findings": 0
+      },
+      {
+        "engine": "pip_audit",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "trivy",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "checkov",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "semgrep",
+        "available": true,
+        "configs": [
+          "p/default",
+          "p/ci",
+          "p/owasp-top-ten",
+          "p/security-audit",
+          "p/secrets",
+          "p/docker",
+          "p/kubernetes"
+        ],
+        "excludes": [
+          ".git",
+          "node_modules",
+          ".venv",
+          "venv",
+          "__pycache__",
+          ".tox",
+          ".mypy_cache",
+          ".pytest_cache",
+          "dist",
+          "build",
+          "coverage",
+          "*.min.js",
+          "*.map",
+          "backend/app/web/static/spa/assets",
+          "node_modules/**",
+          "vendor/**",
+          "dist/**"
+        ],
+        "invocation": "/opt/veritas/backend/.venv/bin/semgrep",
+        "mode": "deep",
+        "returncode": 0,
+        "findings": 34
+      },
+      {
+        "engine": "bandit",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "njsscan",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "hadolint",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "shellcheck",
+        "skipped": "disabled"
+      },
+      {
+        "engine": "openrouter_review",
+        "skipped": "disabled"
+      }
+    ],
+    "scan_mode": "rules_only",
+    "scan_scope": "full",
+    "security_level": "standard",
+    "options": {
+      "engines": [
+        "gitleaks",
+        "osv",
+        "semgrep"
+      ],
+      "path_excludes": [
+        "node_modules/**",
+        "vendor/**",
+        "dist/**"
+      ],
+      "fail_severity": "off",
+      "code_review": false
+    },
+    "ai_status": "skipped",
+    "ai_report": null,
+    "max_risk": 8.0,
+    "commit_short": "69d678b",
+    "commit_sha": "69d678b218da65cb4bada813279effd6f0415d73",
+    "workspace_purged": true,
+    "policy_failed": false,
+    "fail_severity": "off"
+  }
+}

@@ -6845,11 +6845,11 @@ tbody tr:last-child td {
   grid-template-columns: 5.75rem minmax(0, 1fr) 7.5rem 4.25rem 1.75rem;
   align-items: center;
   gap: 12px;
-  padding: 0.55rem 0.15rem;
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 650;
-  letter-spacing: 0.1em;
+  padding: 0.65rem 0.25rem;
+  color: var(--ink-soft, #334155);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   border-bottom: 1px solid var(--line);
 }

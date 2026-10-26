@@ -13,7 +13,7 @@ from app.models.base import Base
 class User(Base):
     __tablename__ = "users"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
-    display_name: Mapped[str] = mapped_column(String(120))
+    display_name: Mapped[str] = mapped_column(String(120), default="User")
     username: Mapped[str | None] = mapped_column(String(32), unique=True, index=True, nullable=True)
     avatar: Mapped[str] = mapped_column(String(32), default="slate")
     email: Mapped[str] = mapped_column(String(320), unique=True, index=True)
@@ -94,3 +94,16 @@ class EmailDelivery(Base):
     delivery_status: Mapped[str] = mapped_column(String(32), default="queued")
     provider_message_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BlockedIp(Base):
+    __tablename__ = "blocked_ips"
+
+    ip_address: Mapped[str] = mapped_column(String(64), primary_key=True, index=True)
+    reason: Mapped[str] = mapped_column(String(512), default="Automated IPS quarantine")
+    attack_category: Mapped[str] = mapped_column(String(64), default="unknown", index=True)
+    hit_count: Mapped[int] = mapped_column(Integer, default=1)
+    blocked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(64), default="auto_ips")
+

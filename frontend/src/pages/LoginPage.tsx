@@ -8,12 +8,12 @@ import type { User } from "../lib/api";
 /** Local demo fills — college/dev convenience only. */
 const DEMO = {
   user: {
-    email: "bharani.cyber@gmail.com",
-    password: "<Bharani@321>",
+    email: "user@veritas.example",
+    password: "VeritasLab@2026",
   },
   admin: {
-    email: "admin@bharani-01.xyz",
-    password: "VeritasDemo!2026",
+    email: "admin@veritas.example",
+    password: "VeritasLab@2026",
   },
 } as const;
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 # --- payload / path heuristics ---
 _SQLI = re.compile(
@@ -178,6 +178,8 @@ def should_track(path: str) -> bool:
         return False
     if any(lowered.startswith(p) for p in _TRACKED_PREFIXES):
         return True
+    if _PATH_TRAV.search(lowered) or _SQLI.search(lowered) or _CMD.search(lowered) or _XSS.search(lowered):
+        return True
     # Skip SPA document shells and unknown static paths
     if "." in path.rsplit("/", 1)[-1]:
         return False
@@ -255,7 +257,9 @@ def classify_request(
     Returns (classification, severity, signals).
     Priority: payload attacks > header abuse > csrf > scanner > auth > weak response headers > clean.
     """
-    haystack = f"{path}?{query or ''}"
+    raw_haystack = f"{path}?{query or ''}"
+    unquoted_haystack = unquote(raw_haystack)
+    haystack = f"{raw_haystack}\n{unquoted_haystack}"
     headers_hay = f"{header_blob or ''}\n{user_agent or ''}"
     signals: list[str] = []
     classification = "clean"

@@ -1,4 +1,4 @@
-"""ASGI middleware: collect metadata-only HTTP telemetry after each response."""
+"""ASGI middleware: collect metadata-only HTTP telemetry and enforce Active IPS quarantine."""
 
 from __future__ import annotations
 
@@ -7,14 +7,13 @@ from typing import Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp
 
 from app.core import database as database
 from app.services.http_classifier import should_track
-from app.services.http_traffic import record_http_event
+from app.services.http_traffic import is_ip_quarantined, record_http_event
 
-# Headers inspected for abuse heuristics (names + values truncated; never cookies/auth).
 _WATCH_REQUEST_HEADERS = (
     "x-forwarded-for",
     "x-forwarded-host",
@@ -58,12 +57,36 @@ def _security_response_headers(response: Response | None) -> dict[str, str] | No
     return out or {}
 
 
+def _extract_client_ip(request: Request) -> str | None:
+    forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    if forwarded:
+        return forwarded
+    real_ip = (request.headers.get("x-real-ip") or "").strip()
+    if real_ip:
+        return real_ip
+    return request.client.host if request.client else None
+
+
 class HttpTelemetryMiddleware(BaseHTTPMiddleware):
     def __init__(self, app: ASGIApp):
         super().__init__(app)
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = request.url.path or "/"
+        ip = _extract_client_ip(request)
+
+        # Enforce Active IPS Quarantine (never lock out /admin/* or /auth/* so admins can log in and unblock)
+        if ip and not path.startswith("/admin") and not path.startswith("/auth"):
+            blocked, reason = is_ip_quarantined(ip)
+            if blocked:
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "IP address temporarily quarantined by VERITAS Active IPS",
+                        "reason": reason,
+                    },
+                )
+
         if not should_track(path):
             return await call_next(request)
 
@@ -80,9 +103,6 @@ class HttpTelemetryMiddleware(BaseHTTPMiddleware):
         finally:
             duration_ms = int((time.perf_counter() - started) * 1000)
             try:
-                forwarded = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or None
-                direct = request.client.host if request.client else None
-                ip = direct or forwarded
                 with database.SessionLocal() as session:
                     record_http_event(
                         session,
@@ -101,5 +121,4 @@ class HttpTelemetryMiddleware(BaseHTTPMiddleware):
                         response_headers=_security_response_headers(response),
                     )
             except Exception:
-                # Fail-open: never break the request path for telemetry errors.
                 pass

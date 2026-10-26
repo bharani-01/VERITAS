@@ -6,7 +6,7 @@ import secrets
 from datetime import timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import case, desc, func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import (
@@ -18,16 +18,30 @@ from app.core.config import (
 )
 from app.core.crypto import decrypt_secret, encrypt_secret
 from app.core.rate_limit import rate_limiter
-from app.core.time import utcnow
-from app.models import Finding, FindingSuppression, Project, Scan, User
+from app.core.time import ensure_utc, utcnow
+from app.models import (
+    Finding,
+    FindingSuppression,
+    Project,
+    ProjectMember,
+    Scan,
+    ScanSbomArtifact,
+    User,
+)
 from app.services import github as github_svc
+from app.services.audit import record_audit_event
+from app.services.compliance import compute_finding_sla
 from app.services.engines import ALL_ENGINES, DEFAULT_ENGINES
 from app.services.engines.normalize import finding_fingerprint, public_repo_path
+from app.services.engines.trivy_sbom import analyze_cyclonedx_sbom
 from app.services.scan_runner import enqueue_scan, estimate_eta_seconds, run_scan_job
 
 FINDING_STATUSES = {"open", "triage", "fixed", "false_positive"}
+VALID_FINDING_STATUS = FINDING_STATUSES
+VALID_MEMBER_ROLES = {"security_lead", "developer", "auditor"}
 _SEVERITY_KEYS = ("critical", "high", "medium", "low", "info")
 logger = logging.getLogger(__name__)
+
 
 
 def _empty_severity() -> dict[str, int]:
@@ -227,10 +241,16 @@ def public_project(project: Project) -> dict:
         "auto_scan_on_push": bool(getattr(project, "auto_scan_on_push", False)),
         "auto_scan_branch": getattr(project, "auto_scan_branch", None)
         or project.github_default_branch,
+        "sla_critical_days": getattr(project, "sla_critical_days", 7) or 7,
+        "sla_high_days": getattr(project, "sla_high_days", 14) or 14,
+        "sla_medium_days": getattr(project, "sla_medium_days", 30) or 30,
+        "sla_low_days": getattr(project, "sla_low_days", 90) or 90,
+        "require_suppression_approval": bool(getattr(project, "require_suppression_approval", False)),
         "scan_options": opts,
         "created_at": project.created_at,
         "updated_at": project.updated_at,
     }
+
 
 
 def project_scan_options(project: Project) -> dict:
@@ -419,42 +439,202 @@ def public_finding(finding: Finding) -> dict:
         except json.JSONDecodeError:
             countermeasures = None
 
+    try:
+        matched_engines = json.loads(finding.matched_engines_json or "[]")
+        if not isinstance(matched_engines, list) or not matched_engines:
+            matched_engines = [finding.engine] if getattr(finding, "engine", None) else ["unknown"]
+    except Exception:
+        matched_engines = [finding.engine] if getattr(finding, "engine", None) else ["unknown"]
+
     return {
         "id": finding.id,
         "scan_id": finding.scan_id,
         "engine": finding.engine,
         "rule_id": finding.rule_id,
         "vuln_family": finding.vuln_family,
+        "category": getattr(finding, "category", finding.vuln_family),
         "cwe": finding.cwe,
         "owasp_category": finding.owasp_category,
+        "owasp": finding.owasp_category,
         "severity": finding.severity,
         "title": finding.title,
         "message": finding.message,
+        "description": getattr(finding, "description", finding.message or ""),
         "file_path": public_repo_path(finding.file_path),
         "line_start": finding.line_start,
         "line_end": finding.line_end,
+        "line_number": getattr(finding, "line_number", finding.line_start or 0),
         "snippet": finding.snippet,
+        "code_snippet": getattr(finding, "code_snippet", finding.snippet),
         "risk_score": finding.risk_score,
         "status": finding.status,
         "fingerprint": finding.fingerprint,
         "ai_verdict": finding.ai_verdict,
         "ai_rationale": finding.ai_rationale,
         "countermeasures": countermeasures,
+        "countermeasure": getattr(finding, "countermeasure", None),
         "created_at": finding.created_at,
+        "is_suppressed": getattr(finding, "is_suppressed", finding.status == "false_positive"),
+        # Phase 6A fields
+        "cve_id": getattr(finding, "cve_id", None),
+        "matched_engines": matched_engines,
+        "engine_count": int(getattr(finding, "engine_count", None) or len(matched_engines)),
+        "confidence_level": getattr(finding, "confidence_level", "medium"),
+        "epss_score": getattr(finding, "epss_score", None),
+        "epss_percentile": getattr(finding, "epss_percentile", None),
+        "is_kev": bool(getattr(finding, "is_kev", False)),
+        "kev_due_date": getattr(finding, "kev_due_date", None),
+        "effective_priority_score": float(getattr(finding, "effective_priority_score", 0.0) or 0.0),
+        "sla_due_at": ensure_utc(getattr(finding, "sla_due_at", None)),
+        "sla_breached": (
+            (utcnow() > ensure_utc(finding.sla_due_at))
+            if getattr(finding, "sla_due_at", None) and finding.status in ("open", "triage")
+            else False
+        ),
     }
 
 
-def get_owned_project(db: Session, user: User, project_id: str) -> Project:
-    project = db.get(Project, project_id)
-    if not project or project.owner_user_id != user.id:
+def get_project_role(db: Session, user: User, project: Project) -> str | None:
+    """
+    Returns 'owner', 'security_lead', 'developer', 'auditor', or None if the user
+    is not a member of project.
+    """
+    if project.owner_user_id == user.id:
+        return "owner"
+    member = db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    return member.role if member else None
+
+
+def get_project_with_role(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    allowed_roles: set[str] | None = None,
+    require_write: bool = False,
+) -> tuple[Project, str]:
+    project = db.scalar(select(Project).where(Project.id == project_id))
+    if not project:
         raise HTTPException(status_code=404, detail="Project not found.")
+
+    role = get_project_role(db, user, project)
+    if role is None:
+        # Preserve strict 404 isolation for non-members
+        raise HTTPException(status_code=404, detail="Project not found.")
+
+    if require_write and role == "auditor":
+        raise HTTPException(status_code=403, detail="Auditor role has read-only access.")
+
+    if allowed_roles is not None and role not in allowed_roles:
+        raise HTTPException(status_code=403, detail=f"Role '{role}' is not authorized for this action.")
+
+    return project, role
+
+
+def get_owned_project(
+    db: Session,
+    user: User,
+    project_id: str,
+    *,
+    require_write: bool = False,
+    allowed_roles: set[str] | None = None,
+) -> Project:
+    project, _ = get_project_with_role(
+        db,
+        user,
+        project_id,
+        allowed_roles=allowed_roles,
+        require_write=require_write,
+    )
     return project
 
 
-def list_projects(db: Session, user: User) -> list[Project]:
-    return list(
-        db.scalars(select(Project).where(Project.owner_user_id == user.id).order_by(Project.updated_at.desc()))
+def get_owned_scan(
+    db: Session,
+    user: User,
+    scan_id: str,
+    *,
+    require_write: bool = False,
+    allowed_roles: set[str] | None = None,
+) -> tuple[Scan, Project]:
+    scan = db.scalar(select(Scan).where(Scan.id == scan_id))
+    if not scan:
+        raise HTTPException(status_code=404, detail="Scan not found.")
+    project = get_owned_project(
+        db,
+        user,
+        scan.project_id,
+        require_write=require_write,
+        allowed_roles=allowed_roles,
     )
+    return scan, project
+
+
+def expire_stale_suppressions(db: Session, project_id: str) -> int:
+    """
+    Transitions any FindingSuppression with expires_at < utcnow() to status='expired'
+    and re-opens any findings in the project's scans that were suppressed solely by that fingerprint.
+    """
+    now = utcnow()
+    rows = list(
+        db.scalars(
+            select(FindingSuppression).where(
+                FindingSuppression.project_id == project_id,
+                FindingSuppression.status == "approved",
+                FindingSuppression.expires_at.isnot(None),
+            )
+        ).all()
+    )
+    expired_fps: set[str] = set()
+    for row in rows:
+        exp = ensure_utc(row.expires_at)
+        if exp and exp < now:
+            row.status = "expired"
+            db.add(row)
+            if row.fingerprint:
+                expired_fps.add(row.fingerprint)
+
+    if expired_fps:
+        scan_ids = list(
+            db.scalars(select(Scan.id).where(Scan.project_id == project_id)).all()
+        )
+        if scan_ids:
+            findings_to_reopen = list(
+                db.scalars(
+                    select(Finding).where(
+                        Finding.scan_id.in_(scan_ids),
+                        Finding.fingerprint.in_(sorted(expired_fps)),
+                        Finding.status == "false_positive",
+                    )
+                ).all()
+            )
+            for f in findings_to_reopen:
+                f.status = "open"
+                db.add(f)
+        db.commit()
+
+    return len(expired_fps)
+
+
+def list_projects(db: Session, user: User) -> list[Project]:
+    member_proj_ids = list(
+        db.scalars(select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)).all()
+    )
+    if member_proj_ids:
+        stmt = (
+            select(Project)
+            .where((Project.owner_user_id == user.id) | (Project.id.in_(member_proj_ids)))
+            .order_by(Project.created_at.desc())
+        )
+    else:
+        stmt = select(Project).where(Project.owner_user_id == user.id).order_by(Project.created_at.desc())
+    return list(db.scalars(stmt))
+
 
 
 def _webhook_callback_url() -> str:
@@ -561,8 +741,15 @@ def update_project(
     auto_scan_on_push: bool | None = None,
     auto_scan_branch: str | None = None,
     scan_options: dict | None = None,
+    sla_critical_days: int | None = None,
+    sla_high_days: int | None = None,
+    sla_medium_days: int | None = None,
+    sla_low_days: int | None = None,
+    require_suppression_approval: bool | None = None,
 ) -> Project:
-    project = get_owned_project(db, user, project_id)
+    project = get_owned_project(
+        db, user, project_id, allowed_roles={"owner", "security_lead"}, require_write=True
+    )
     if name is not None:
         project.name = name.strip()
     if description is not None:
@@ -585,6 +772,16 @@ def update_project(
         project.auto_scan_on_push = bool(auto_scan_on_push)
     if auto_scan_branch is not None:
         project.auto_scan_branch = auto_scan_branch.strip() or None
+    if sla_critical_days is not None:
+        project.sla_critical_days = max(1, int(sla_critical_days))
+    if sla_high_days is not None:
+        project.sla_high_days = max(1, int(sla_high_days))
+    if sla_medium_days is not None:
+        project.sla_medium_days = max(1, int(sla_medium_days))
+    if sla_low_days is not None:
+        project.sla_low_days = max(1, int(sla_low_days))
+    if require_suppression_approval is not None:
+        project.require_suppression_approval = bool(require_suppression_approval)
     if scan_options is not None:
         if not isinstance(scan_options, dict):
             raise HTTPException(status_code=400, detail="Invalid scan_options.")
@@ -651,7 +848,7 @@ def update_project(
 
 
 def delete_project(db: Session, user: User, project_id: str) -> None:
-    project = get_owned_project(db, user, project_id)
+    project = get_owned_project(db, user, project_id, allowed_roles={"owner"}, require_write=True)
     if project.github_webhook_id and project.github_repo_full_name:
         try:
             github_svc.delete_repo_webhook(
@@ -659,11 +856,15 @@ def delete_project(db: Session, user: User, project_id: str) -> None:
             )
         except Exception:  # noqa: BLE001
             pass
+    for row in db.scalars(select(ProjectMember).where(ProjectMember.project_id == project.id)):
+        db.delete(row)
     scans = list(db.scalars(select(Scan).where(Scan.project_id == project.id)))
     for scan in scans:
         for finding in db.scalars(select(Finding).where(Finding.scan_id == scan.id)):
             db.delete(finding)
         db.delete(scan)
+    for row in db.scalars(select(ScanSbomArtifact).where(ScanSbomArtifact.project_id == project.id)):
+        db.delete(row)
     for row in db.scalars(select(FindingSuppression).where(FindingSuppression.project_id == project.id)):
         db.delete(row)
     db.delete(project)
@@ -671,31 +872,118 @@ def delete_project(db: Session, user: User, project_id: str) -> None:
 
 
 def list_scans(db: Session, user: User, *, project_id: str | None = None, limit: int = 50) -> list[tuple[Scan, str]]:
-    query = (
-        select(Scan, Project.name)
-        .join(Project, Scan.project_id == Project.id)
-        .where(Project.owner_user_id == user.id)
+    member_proj_ids = list(
+        db.scalars(select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)).all()
     )
+    if member_proj_ids:
+        query = (
+            select(Scan, Project.name)
+            .join(Project, Scan.project_id == Project.id)
+            .where((Project.owner_user_id == user.id) | (Project.id.in_(member_proj_ids)))
+        )
+    else:
+        query = (
+            select(Scan, Project.name)
+            .join(Project, Scan.project_id == Project.id)
+            .where(Project.owner_user_id == user.id)
+        )
     if project_id:
         query = query.where(Scan.project_id == project_id)
     rows = db.execute(query.order_by(Scan.created_at.desc()).limit(min(max(limit, 1), 100))).all()
     return [(scan, name) for scan, name in rows]
 
 
-def get_owned_scan(db: Session, user: User, scan_id: str) -> tuple[Scan, Project]:
-    row = db.execute(
-        select(Scan, Project)
-        .join(Project, Scan.project_id == Project.id)
-        .where(Scan.id == scan_id, Project.owner_user_id == user.id)
-    ).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Scan not found.")
-    return row[0], row[1]
+
+def list_findings(
+    db: Session,
+    user: User,
+    scan_id: str,
+    *,
+    is_kev: bool | None = None,
+    min_epss: float | None = None,
+    min_engines: int | None = None,
+    category: str | None = None,
+    sort_by: str = "priority",
+) -> list[Finding]:
+    scan, project = get_owned_scan(db, user, scan_id)
+    expire_stale_suppressions(db, project.id)
+    query = select(Finding).where(Finding.scan_id == scan_id)
 
 
-def list_findings(db: Session, user: User, scan_id: str) -> list[Finding]:
-    get_owned_scan(db, user, scan_id)
-    return list(db.scalars(select(Finding).where(Finding.scan_id == scan_id).order_by(Finding.risk_score.desc())))
+    if is_kev is not None:
+        query = query.where(Finding.is_kev.is_(is_kev))
+    if min_epss is not None:
+        query = query.where(Finding.epss_score.isnot(None), Finding.epss_score >= float(min_epss))
+    if min_engines is not None:
+        query = query.where(Finding.engine_count >= int(min_engines))
+    if category:
+        cat = category.strip().lower()
+        query = query.where(Finding.vuln_family == cat)
+
+    sev_rank = case(
+        (Finding.severity == "critical", 5),
+        (Finding.severity == "high", 4),
+        (Finding.severity == "medium", 3),
+        (Finding.severity == "low", 2),
+        else_=1,
+    )
+
+    if sort_by == "severity":
+        query = query.order_by(desc(sev_rank), desc(Finding.effective_priority_score), desc(Finding.risk_score))
+    elif sort_by == "epss":
+        query = query.order_by(
+            desc(case((Finding.epss_score.is_(None), -1.0), else_=Finding.epss_score)),
+            desc(Finding.effective_priority_score),
+            desc(Finding.risk_score),
+        )
+    else:
+        query = query.order_by(
+            desc(Finding.effective_priority_score),
+            desc(Finding.is_kev),
+            desc(Finding.risk_score),
+        )
+
+    return list(db.scalars(query))
+
+
+def get_scan_sbom(db: Session, user: User, project_id: str, scan_id: str) -> ScanSbomArtifact:
+    project = get_owned_project(db, user, project_id)
+    scan, scan_proj = get_owned_scan(db, user, scan_id)
+    if scan_proj.id != project.id:
+        raise HTTPException(status_code=404, detail="Scan not found in this project.")
+    artifact = db.scalar(
+        select(ScanSbomArtifact).where(
+            ScanSbomArtifact.scan_id == scan.id,
+            ScanSbomArtifact.project_id == project.id,
+        )
+    )
+    if not artifact:
+        raise HTTPException(status_code=404, detail="SBOM artifact not found for this scan.")
+    return artifact
+
+
+def public_scan_sbom(artifact: ScanSbomArtifact) -> dict:
+    try:
+        sbom_dict = json.loads(artifact.sbom_json or "{}")
+    except json.JSONDecodeError:
+        sbom_dict = {}
+    analyzed = analyze_cyclonedx_sbom(sbom_dict)
+    try:
+        license_summary = json.loads(artifact.license_summary_json or "{}")
+    except json.JSONDecodeError:
+        license_summary = analyzed.license_summary
+
+    return {
+        "id": artifact.id,
+        "scan_id": artifact.scan_id,
+        "project_id": artifact.project_id,
+        "spec_version": artifact.spec_version,
+        "component_count": artifact.component_count,
+        "policy_violations_count": artifact.policy_violations_count,
+        "license_summary": license_summary,
+        "components": analyzed.components,
+        "created_at": artifact.created_at,
+    }
 
 
 def ensure_share_token(db: Session, user: User, scan_id: str) -> Scan:
@@ -763,7 +1051,7 @@ def create_scan(
     code_review: bool | None = None,
     enforce_quota: bool = True,
 ) -> Scan:
-    project = get_owned_project(db, user, project_id)
+    project = get_owned_project(db, user, project_id, require_write=True)
 
     # Quotas: concurrent + hourly rate (skip in test for deterministic suites).
     if enforce_quota and APP_ENV != "test":
@@ -979,7 +1267,7 @@ def handle_github_push_event(db: Session, *, payload: dict, project: Project | N
 
 
 def cancel_scan(db: Session, user: User, scan_id: str) -> Scan:
-    scan, _project = get_owned_scan(db, user, scan_id)
+    scan, _project = get_owned_scan(db, user, scan_id, require_write=True)
     if scan.status not in {"queued", "running"}:
         raise HTTPException(status_code=400, detail="Only queued or running scans can be cancelled.")
     scan.cancel_requested = True
@@ -997,15 +1285,114 @@ def cancel_scan(db: Session, user: User, scan_id: str) -> Scan:
     return scan
 
 
-def update_finding_status(db: Session, user: User, finding_id: str, *, status: str) -> Finding:
+def update_finding_status(
+    db: Session,
+    user: User,
+    finding_id: str,
+    *,
+    status: str,
+    suppress: bool = False,
+    reason: str | None = None,
+    suppression_type: str = "false_positive",
+    justification: str | None = None,
+    expires_in_days: int | None = None,
+    request_approval: bool = False,
+) -> Finding:
     status = (status or "").strip().lower()
-    if status not in FINDING_STATUSES:
+    if status not in VALID_FINDING_STATUS:
         raise HTTPException(status_code=400, detail="Invalid finding status.")
-    finding = db.get(Finding, finding_id)
+    finding = db.scalar(select(Finding).where(Finding.id == finding_id))
     if not finding:
         raise HTTPException(status_code=404, detail="Finding not found.")
-    get_owned_scan(db, user, finding.scan_id)
-    finding.status = status
+
+    scan, project = get_owned_scan(db, user, finding.scan_id, require_write=True)
+    role = get_project_role(db, user, project) or "developer"
+
+    if not finding.fingerprint:
+        finding.fingerprint = finding_fingerprint(
+            engine=finding.engine,
+            rule_id=finding.rule_id,
+            file_path=finding.file_path,
+            line_start=finding.line_start,
+            title=finding.title,
+        )
+
+    wants_suppression = suppress or status == "false_positive"
+    needs_two_person_review = wants_suppression and (
+        role == "developer"
+        or request_approval
+        or (bool(getattr(project, "require_suppression_approval", False)) and role not in {"owner", "security_lead"})
+    )
+
+    expires_at = None
+    if expires_in_days is not None and int(expires_in_days) > 0:
+        expires_at = utcnow() + timedelta(days=int(expires_in_days))
+
+    if wants_suppression and finding.fingerprint:
+        existing = db.scalar(
+            select(FindingSuppression).where(
+                FindingSuppression.project_id == project.id,
+                FindingSuppression.fingerprint == finding.fingerprint,
+            )
+        )
+        effective_reason = (justification or reason or "")[:512] or None
+        effective_just = justification or reason or None
+
+        if needs_two_person_review:
+            if existing is None:
+                supp_row = FindingSuppression(
+                    project_id=project.id,
+                    fingerprint=finding.fingerprint,
+                    reason=effective_reason,
+                    created_by_user_id=user.id,
+                    status="pending_approval",
+                    suppression_type=suppression_type or "risk_accepted",
+                    justification=effective_just,
+                    requested_by_user_id=user.id,
+                    expires_at=expires_at,
+                )
+                db.add(supp_row)
+            else:
+                existing.status = "pending_approval"
+                existing.suppression_type = suppression_type or existing.suppression_type
+                existing.reason = effective_reason
+                existing.justification = effective_just
+                existing.requested_by_user_id = user.id
+                existing.expires_at = expires_at
+                db.add(existing)
+            # Finding remains open/triage until approved by security_lead or owner
+            if finding.status == "false_positive":
+                finding.status = "open"
+        else:
+            now = utcnow()
+            if existing is None:
+                supp_row = FindingSuppression(
+                    project_id=project.id,
+                    fingerprint=finding.fingerprint,
+                    reason=effective_reason,
+                    created_by_user_id=user.id,
+                    status="approved",
+                    suppression_type=suppression_type or "false_positive",
+                    justification=effective_just,
+                    requested_by_user_id=user.id,
+                    reviewed_by_user_id=user.id,
+                    reviewed_at=now,
+                    expires_at=expires_at,
+                )
+                db.add(supp_row)
+            else:
+                existing.status = "approved"
+                existing.suppression_type = suppression_type or existing.suppression_type
+                existing.reason = effective_reason
+                existing.justification = effective_just
+                existing.reviewed_by_user_id = user.id
+                existing.reviewed_at = now
+                existing.expires_at = expires_at
+                db.add(existing)
+            finding.status = status
+    else:
+        finding.status = status
+
     db.add(finding)
     db.commit()
     db.refresh(finding)
@@ -1013,35 +1400,16 @@ def update_finding_status(db: Session, user: User, finding_id: str, *, status: s
 
 
 def suppress_finding(db: Session, user: User, finding_id: str, *, reason: str | None = None) -> Finding:
-    finding = update_finding_status(db, user, finding_id, status="false_positive")
-    scan, project = get_owned_scan(db, user, finding.scan_id)
-    fp = finding.fingerprint or finding_fingerprint(
-        engine=finding.engine,
-        rule_id=finding.rule_id,
-        file_path=finding.file_path,
-        line_start=finding.line_start,
-        title=finding.title,
+    return update_finding_status(
+        db,
+        user,
+        finding_id,
+        status="false_positive",
+        suppress=True,
+        reason=reason,
+        justification=reason,
     )
-    finding.fingerprint = fp
-    existing = db.scalar(
-        select(FindingSuppression).where(
-            FindingSuppression.project_id == project.id,
-            FindingSuppression.fingerprint == fp,
-        )
-    )
-    if not existing:
-        db.add(
-            FindingSuppression(
-                project_id=project.id,
-                fingerprint=fp,
-                reason=(reason or "").strip()[:512] or None,
-                created_by_user_id=user.id,
-            )
-        )
-    db.add(finding)
-    db.commit()
-    db.refresh(finding)
-    return finding
+
 
 
 def compare_scans(db: Session, user: User, project_id: str, *, scan_a: str, scan_b: str) -> dict:
@@ -1131,6 +1499,271 @@ def workspace_dashboard(db: Session, user: User) -> dict:
         "projects": [public_project(p) for p in projects[:6]],
         "charts": _dashboard_charts(db, user),
     }
+
+
+# ============================================================================
+# Phase 6B: Project Member Management & Suppression Review Services
+# ============================================================================
+
+
+def list_project_members(db: Session, user: User, project_id: str) -> list[dict]:
+    project = get_owned_project(db, user, project_id)
+    owner_user = db.scalar(select(User).where(User.id == project.owner_user_id))
+    items: list[dict] = []
+    if owner_user:
+        items.append(
+            {
+                "id": f"owner-{owner_user.id}",
+                "project_id": project.id,
+                "user_id": owner_user.id,
+                "email": owner_user.email,
+                "username": getattr(owner_user, "username", None),
+                "display_name": getattr(owner_user, "display_name", None),
+                "role": "owner",
+                "added_by_user_id": owner_user.id,
+                "created_at": project.created_at,
+            }
+        )
+
+    members = list(
+        db.scalars(
+            select(ProjectMember)
+            .where(ProjectMember.project_id == project.id)
+            .order_by(ProjectMember.created_at.asc())
+        ).all()
+    )
+    for m in members:
+        u = db.scalar(select(User).where(User.id == m.user_id))
+        if not u or u.id == project.owner_user_id:
+            continue
+        items.append(
+            {
+                "id": m.id,
+                "project_id": project.id,
+                "user_id": u.id,
+                "email": u.email,
+                "username": getattr(u, "username", None),
+                "display_name": getattr(u, "display_name", None),
+                "role": m.role,
+                "added_by_user_id": m.added_by_user_id,
+                "created_at": m.created_at,
+            }
+        )
+    return items
+
+
+def add_or_update_project_member(
+    db: Session,
+    actor: User,
+    project_id: str,
+    *,
+    email: str | None = None,
+    username: str | None = None,
+    user_id: str | None = None,
+    role: str,
+) -> dict:
+    project = get_owned_project(
+        db,
+        actor,
+        project_id,
+        allowed_roles={"owner", "security_lead"},
+        require_write=True,
+    )
+    norm_role = (role or "").strip().lower()
+    if norm_role not in VALID_MEMBER_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role. Allowed roles: {', '.join(sorted(VALID_MEMBER_ROLES))}",
+        )
+
+    target_user: User | None = None
+    if user_id:
+        target_user = db.scalar(select(User).where(User.id == user_id.strip()))
+    elif email:
+        target_user = db.scalar(select(User).where(func.lower(User.email) == email.strip().lower()))
+    elif username:
+        target_user = db.scalar(select(User).where(func.lower(User.username) == username.strip().lower()))
+
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Target user not found.")
+    if target_user.id == project.owner_user_id:
+        raise HTTPException(status_code=400, detail="User is already the project owner.")
+
+    existing = db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == target_user.id,
+        )
+    )
+    if existing is None:
+        existing = ProjectMember(
+            project_id=project.id,
+            user_id=target_user.id,
+            role=norm_role,
+            added_by_user_id=actor.id,
+        )
+        db.add(existing)
+    else:
+        existing.role = norm_role
+        existing.added_by_user_id = actor.id
+        db.add(existing)
+
+    record_audit_event(
+        db,
+        action="project.member.added",
+        actor_user_id=actor.id,
+        target_user_id=target_user.id,
+        metadata={"project_id": project.id, "role": norm_role, "member_email": target_user.email},
+    )
+    db.commit()
+    db.refresh(existing)
+
+    return {
+        "id": existing.id,
+        "project_id": project.id,
+        "user_id": target_user.id,
+        "email": target_user.email,
+        "username": getattr(target_user, "username", None),
+        "display_name": getattr(target_user, "display_name", None),
+        "role": existing.role,
+        "added_by_user_id": existing.added_by_user_id,
+        "created_at": existing.created_at,
+    }
+
+
+def remove_project_member(
+    db: Session,
+    actor: User,
+    project_id: str,
+    member_user_id: str,
+) -> None:
+    project = get_owned_project(db, actor, project_id, allowed_roles={"owner"}, require_write=True)
+    member = db.scalar(
+        select(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == member_user_id,
+        )
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="Project member not found.")
+
+    db.delete(member)
+    record_audit_event(
+        db,
+        action="project.member.removed",
+        actor_user_id=actor.id,
+        target_user_id=member_user_id,
+        metadata={"project_id": project.id},
+    )
+    db.commit()
+
+
+def public_suppression(row: FindingSuppression) -> dict:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "fingerprint": row.fingerprint,
+        "reason": row.reason,
+        "status": getattr(row, "status", "approved") or "approved",
+        "suppression_type": getattr(row, "suppression_type", "false_positive") or "false_positive",
+        "justification": getattr(row, "justification", None) or row.reason,
+        "created_by_user_id": row.created_by_user_id,
+        "requested_by_user_id": getattr(row, "requested_by_user_id", None) or row.created_by_user_id,
+        "reviewed_by_user_id": getattr(row, "reviewed_by_user_id", None),
+        "reviewed_at": getattr(row, "reviewed_at", None),
+        "expires_at": getattr(row, "expires_at", None),
+        "created_at": row.created_at,
+    }
+
+
+def list_project_suppressions(db: Session, user: User, project_id: str) -> list[dict]:
+    project = get_owned_project(db, user, project_id)
+    expire_stale_suppressions(db, project.id)
+    rows = list(
+        db.scalars(
+            select(FindingSuppression)
+            .where(FindingSuppression.project_id == project.id)
+            .order_by(FindingSuppression.created_at.desc())
+        ).all()
+    )
+    return [public_suppression(r) for r in rows]
+
+
+def review_finding_suppression(
+    db: Session,
+    reviewer: User,
+    project_id: str,
+    suppression_id: str,
+    *,
+    decision: str,
+    review_note: str | None = None,
+    expires_in_days: int | None = None,
+) -> dict:
+    project, role = get_project_with_role(db, reviewer, project_id, require_write=True)
+    if role not in {"owner", "security_lead"} and reviewer.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Only project owners, security leads, or admins can review suppressions.",
+        )
+
+    norm_decision = (decision or "").strip().lower()
+    if norm_decision not in {"approved", "rejected"}:
+        raise HTTPException(status_code=400, detail="Decision must be 'approved' or 'rejected'.")
+
+    supp = db.scalar(
+        select(FindingSuppression).where(
+            FindingSuppression.id == suppression_id,
+            FindingSuppression.project_id == project.id,
+        )
+    )
+    if not supp:
+        raise HTTPException(status_code=404, detail="Suppression record not found.")
+
+    now = utcnow()
+    supp.status = norm_decision
+    supp.reviewed_by_user_id = reviewer.id
+    supp.reviewed_at = now
+    if review_note:
+        supp.reason = review_note[:512]
+    if expires_in_days is not None and int(expires_in_days) > 0:
+        supp.expires_at = now + timedelta(days=int(expires_in_days))
+
+    db.add(supp)
+
+    # Apply decision across project scans matching this fingerprint
+    scan_ids = list(db.scalars(select(Scan.id).where(Scan.project_id == project.id)).all())
+    if scan_ids and supp.fingerprint:
+        matching_findings = list(
+            db.scalars(
+                select(Finding).where(
+                    Finding.scan_id.in_(scan_ids),
+                    Finding.fingerprint == supp.fingerprint,
+                )
+            ).all()
+        )
+        for f in matching_findings:
+            if norm_decision == "approved":
+                f.status = "false_positive"
+            elif norm_decision == "rejected" and f.status == "false_positive":
+                f.status = "open"
+            db.add(f)
+
+    record_audit_event(
+        db,
+        action="finding.suppression.reviewed",
+        actor_user_id=reviewer.id,
+        target_user_id=supp.requested_by_user_id or supp.created_by_user_id,
+        metadata={
+            "project_id": project.id,
+            "suppression_id": supp.id,
+            "fingerprint": supp.fingerprint,
+            "decision": norm_decision,
+        },
+    )
+    db.commit()
+    db.refresh(supp)
+    return public_suppression(supp)
+
 
 
 

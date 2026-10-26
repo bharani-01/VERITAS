@@ -13,6 +13,12 @@ from app.core.time import ensure_utc, utcnow
 from app.models import AppNotification, Finding, FindingSuppression, Project, Scan, User
 from app.services.ai_code_review import review_repository
 from app.services.ai_report import generate_final_report
+from app.services.compliance import compute_finding_sla
+from app.services.correlator import correlate_findings
+from app.services.engines.dast_probe import run_dast_probe
+from app.services.engines.trivy_sbom import run_trivy_sbom
+from app.services.threat_intel import enrich_findings_with_intel
+
 from app.services.engines import (
     ALL_ENGINES,
     DEFAULT_ENGINES,
@@ -313,6 +319,7 @@ def _playbook_for(family: str, severity: str) -> list[dict]:
         "csrf": ["Require anti-CSRF tokens on state-changing requests.", "Set SameSite=Lax/Strict on session cookies."],
         "secret": ["Rotate the exposed credential immediately.", "Remove secrets from git history; use a secret manager."],
         "sca": ["Upgrade the vulnerable dependency.", "Review advisories and apply patches or replacements."],
+        "license": ["Replace the restricted copyleft dependency with a permissive alternative (MIT/Apache-2.0/BSD) or obtain legal review."],
         "other": ["Review the rule guidance and apply the least-privilege secure alternative."],
     }
     return [{"title": "Recommended countermeasure", "steps": tips.get(family, tips["other"]), "severity": severity}]
@@ -748,21 +755,90 @@ def run_scan_job(scan_id: str) -> None:
                     else:
                         engine_meta.append({"engine": "openrouter_review", "skipped": "disabled"})
 
+                    # Phase 6A Step 1: Generate CycloneDX 1.5 SBOM & License Governance
+                    sbom_res, sbom_meta = run_trivy_sbom(
+                        session,
+                        scan_id=scan.id,
+                        project_id=project.id,
+                        workdir=repo_path,
+                    )
+                    engine_meta.append(sbom_meta)
+                    findings_out.extend(sbom_res.findings)
+
                     root = str(repo_path)
                     for nf in findings_out:
                         nf.file_path = public_repo_path(nf.file_path, repo_root=root)
                 else:
                     for name in (*ALL_ENGINES, "openrouter_review"):
                         engine_meta.append({"engine": name, "skipped": "no repository workspace"})
+                    _, sbom_meta = run_trivy_sbom(
+                        session,
+                        scan_id=scan.id,
+                        project_id=project.id,
+                        workdir=None,
+                    )
+                    engine_meta.append(sbom_meta)
 
                 cleanup_workdir(workdir)
                 workdir = None
 
+                # Phase 6C: Live Web Application URL DAST Probe
+                candidate_dast_url: str | None = None
+                target_str = (scan.target or "").strip()
+                base_url_str = (project.base_url or "").strip()
+                if target_str.startswith(("http://", "https://")) and "github.com/" not in target_str.lower():
+                    candidate_dast_url = target_str
+                elif base_url_str.startswith(("http://", "https://")):
+                    candidate_dast_url = base_url_str
+
+                if candidate_dast_url and options.get("dast", True) is not False:
+                    _check_cancel(session, scan)
+                    _set_progress(
+                        session,
+                        scan,
+                        phase="dast",
+                        percent=84,
+                        log=f"Probing live web application ({candidate_dast_url})…",
+                    )
+                    dast_findings, dast_meta = run_dast_probe(
+                        candidate_dast_url,
+                        security_level=scan.security_level,
+                    )
+                    findings_out.extend(dast_findings)
+                    engine_meta.append(dast_meta)
+
+                from app.services.projects import expire_stale_suppressions
+
+                expire_stale_suppressions(session, project.id)
                 suppressed = {
                     row.fingerprint
                     for row in session.scalars(
-                        select(FindingSuppression).where(FindingSuppression.project_id == project.id)
+                        select(FindingSuppression).where(
+                            FindingSuppression.project_id == project.id,
+                            FindingSuppression.status == "approved",
+                        )
                     ).all()
+                    if row.fingerprint
+                }
+
+
+                # Phase 6A Step 2: Cross-Engine Canonical Correlation & Deduplication
+                corr_result = correlate_findings(findings_out, suppressed_fingerprints=suppressed)
+                raw_findings_count = corr_result.raw_findings_count
+                findings_out = corr_result.findings
+
+                # Phase 6A Step 3: Offline CISA KEV + FIRST EPSS Enrichment & Priority Sorting
+                findings_out = enrich_findings_with_intel(session, findings_out)
+                kev_count = sum(1 for nf in findings_out if (nf.raw or {}).get("is_kev"))
+                intel_summary = {
+                    "headline": (
+                        f"Correlated {raw_findings_count} raw tool hits into {len(findings_out)} unique findings; "
+                        f"{kev_count} are in CISA KEV"
+                    ),
+                    "raw_findings_count": raw_findings_count,
+                    "correlated_findings_count": len(findings_out),
+                    "deduplicated_count": corr_result.deduplicated_count,
+                    "kev_count": kev_count,
                 }
 
                 ai_status = "skipped"
@@ -780,6 +856,7 @@ def run_scan_job(scan_id: str) -> None:
                         findings_out,
                         project_name=project.name,
                         target=scan.target,
+                        intel_summary=intel_summary,
                     )
                     ai_status = report_meta.get("status") or "ok"
                     ai_report = report_meta.get("report_markdown")
@@ -815,17 +892,36 @@ def run_scan_job(scan_id: str) -> None:
                 family_counts: Counter[str] = Counter()
                 suppressed_count = 0
                 for nf in findings_out:
-                    fp = nf.fingerprint()
-                    status = "false_positive" if fp in suppressed else "open"
+                    raw_meta = nf.raw if isinstance(nf.raw, dict) else {}
+                    fp = str(raw_meta.get("canonical_fingerprint") or nf.fingerprint())
+                    is_supp = bool(raw_meta.get("is_suppressed")) or (fp in suppressed)
+                    status = "false_positive" if is_supp else "open"
                     if status == "false_positive":
                         suppressed_count += 1
                     severity_counts[nf.severity] += 1
                     family_counts[nf.vuln_family] += 1
-                    ai_verdict = None
-                    ai_rationale = None
-                    if isinstance(nf.raw, dict):
-                        ai_verdict = nf.raw.get("ai_verdict")
-                        ai_rationale = nf.raw.get("ai_rationale")
+                    ai_verdict = raw_meta.get("ai_verdict")
+                    ai_rationale = raw_meta.get("ai_rationale")
+                    matched_engines = raw_meta.get("matched_engines") or [nf.engine]
+                    engine_count = int(raw_meta.get("engine_count") or len(matched_engines))
+                    confidence_level = str(raw_meta.get("confidence_level") or "medium")
+                    cve_id = raw_meta.get("cve_id")
+                    epss_score = raw_meta.get("epss_score")
+                    epss_percentile = raw_meta.get("epss_percentile")
+                    is_kev = bool(raw_meta.get("is_kev", False))
+                    kev_due_date = raw_meta.get("kev_due_date")
+                    priority_score = float(
+                        raw_meta.get("effective_priority_score")
+                        or nf.risk_score(criticality=project.criticality)
+                    )
+                    sla_due_at, sla_breached = compute_finding_sla(
+                        project,
+                        severity=nf.severity,
+                        is_kev=is_kev,
+                    )
+                    if status in ("false_positive", "fixed"):
+                        sla_breached = False
+
                     session.add(
                         Finding(
                             scan_id=scan.id,
@@ -850,13 +946,38 @@ def run_scan_job(scan_id: str) -> None:
                                 _countermeasures_for(nf, nf.vuln_family, nf.severity)
                             ),
                             raw_json=json.dumps(nf.raw)[:20000] if nf.raw else None,
+                            cve_id=cve_id,
+                            matched_engines_json=json.dumps(matched_engines),
+                            engine_count=engine_count,
+                            confidence_level=confidence_level,
+                            epss_score=epss_score,
+                            epss_percentile=epss_percentile,
+                            is_kev=is_kev,
+                            kev_due_date=kev_due_date,
+                            effective_priority_score=priority_score,
+                            sla_due_at=sla_due_at,
+                            sla_breached=sla_breached,
                         )
                     )
 
-                open_findings = [nf for nf in findings_out if nf.fingerprint() not in suppressed]
+
+                open_findings = [
+                    nf
+                    for nf in findings_out
+                    if not (
+                        bool((nf.raw or {}).get("is_suppressed"))
+                        or str((nf.raw or {}).get("canonical_fingerprint") or nf.fingerprint()) in suppressed
+                    )
+                ]
                 open_count = len(open_findings)
                 max_risk = max(
-                    (nf.risk_score(criticality=project.criticality) for nf in open_findings),
+                    (
+                        float(
+                            (nf.raw or {}).get("effective_priority_score")
+                            or nf.risk_score(criticality=project.criticality)
+                        )
+                        for nf in open_findings
+                    ),
                     default=0.0,
                 )
 
@@ -871,6 +992,10 @@ def run_scan_job(scan_id: str) -> None:
 
                 summary = {
                     "findings_count": len(findings_out),
+                    "raw_findings_count": raw_findings_count,
+                    "correlated_findings_count": len(findings_out),
+                    "deduplicated_count": corr_result.deduplicated_count,
+                    "kev_count": kev_count,
                     "open_count": open_count,
                     "suppressed_count": suppressed_count,
                     "by_severity": dict(severity_counts),
@@ -889,6 +1014,9 @@ def run_scan_job(scan_id: str) -> None:
                     "policy_failed": policy_failed,
                     "fail_severity": fail_at,
                 }
+                scan.raw_findings_count = raw_findings_count
+                scan.correlated_findings_count = len(findings_out)
+                scan.kev_findings_count = kev_count
                 scan.summary_json = json.dumps(summary)
                 scan.risk_summary_json = json.dumps(
                     {"max_risk": max_risk, "open_findings": open_count, "by_severity": dict(severity_counts)}

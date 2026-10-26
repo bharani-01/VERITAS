@@ -6,6 +6,7 @@ import { LoadingMark } from "../components/LoadingMark";
 import { useDocumentTitle } from "../lib/documentTitle";
 import { api } from "../lib/api";
 import { parseUtc } from "../lib/time";
+import type { BlockedIpEntry } from "../lib/workspace";
 
 type HttpItem = {
   id: string;
@@ -128,6 +129,15 @@ export function AdminSecurityPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
+  // Phase 6C Active IPS state
+  const [blockedIps, setBlockedIps] = useState<BlockedIpEntry[]>([]);
+  const [blockedLoading, setBlockedLoading] = useState(false);
+  const [newIpAddress, setNewIpAddress] = useState("");
+  const [newIpReason, setNewIpReason] = useState("Manual administrative quarantine");
+  const [newIpDuration, setNewIpDuration] = useState(60);
+  const [ipsActionError, setIpsActionError] = useState<string | null>(null);
+  const [ipsActionSubmitting, setIpsActionSubmitting] = useState(false);
+
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const loadingMoreRef = useRef(false);
@@ -157,10 +167,28 @@ export function AdminSecurityPage() {
     return `/admin/http-requests?${params.toString()}`;
   }, []);
 
+  const loadBlockedIps = useCallback(async () => {
+    setBlockedLoading(true);
+    try {
+      const res = await api<{ items: BlockedIpEntry[] }>("/admin/security/blocked-ips");
+      setBlockedIps(res.items || []);
+    } catch {
+      // quiet fail for background polling
+    } finally {
+      setBlockedLoading(false);
+    }
+  }, []);
+
   const loadOverview = useCallback(async () => {
     try {
-      const overview = await api<Overview>("/admin/security-overview");
+      const [overview, ipsRes] = await Promise.all([
+        api<Overview>("/admin/security-overview"),
+        api<{ items: BlockedIpEntry[] }>("/admin/security/blocked-ips").catch(() => ({ items: [] })),
+      ]);
       setData(overview);
+      if (ipsRes.items) {
+        setBlockedIps(ipsRes.items);
+      }
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -171,14 +199,18 @@ export function AdminSecurityPage() {
     setLoading(true);
     setTrafficPage(1);
     try {
-      const [overview, feed] = await Promise.all([
+      const [overview, feed, ipsRes] = await Promise.all([
         api<Overview>("/admin/security-overview"),
         api<TrafficResponse>(buildTrafficQuery(1)),
+        api<{ items: BlockedIpEntry[] }>("/admin/security/blocked-ips").catch(() => ({ items: [] })),
       ]);
       setData(overview);
       setTraffic(feed.items);
       setTrafficHasMore(Boolean(feed.has_more ?? feed.items.length < feed.total));
       setTrafficPage(1);
+      if (ipsRes.items) {
+        setBlockedIps(ipsRes.items);
+      }
       setError(null);
     } catch (err) {
       setError((err as Error).message);
@@ -188,6 +220,45 @@ export function AdminSecurityPage() {
       setLoading(false);
     }
   }, [buildTrafficQuery]);
+
+  const handleBlockIp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newIpAddress.trim()) return;
+    setIpsActionSubmitting(true);
+    setIpsActionError(null);
+    try {
+      await api("/admin/security/blocked-ips", {
+        method: "POST",
+        body: JSON.stringify({
+          ip_address: newIpAddress.trim(),
+          reason: newIpReason.trim() || "Manual administrative quarantine",
+          expires_in_minutes: Number(newIpDuration) || 60,
+        }),
+      });
+      setNewIpAddress("");
+      await loadBlockedIps();
+    } catch (err) {
+      setIpsActionError((err as Error).message);
+    } finally {
+      setIpsActionSubmitting(false);
+    }
+  };
+
+  const handleUnblockIp = async (ip: string) => {
+    if (!confirm(`Unblock IP address ${ip}?`)) return;
+    setIpsActionSubmitting(true);
+    setIpsActionError(null);
+    try {
+      await api(`/admin/security/blocked-ips/${encodeURIComponent(ip)}`, {
+        method: "DELETE",
+      });
+      await loadBlockedIps();
+    } catch (err) {
+      setIpsActionError((err as Error).message);
+    } finally {
+      setIpsActionSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     void resetTraffic();
@@ -547,6 +618,145 @@ export function AdminSecurityPage() {
         {!ai && !aiLoading && !aiError ? (
           <p className="sec-ai-msg">Run the agent to get tailored countermeasures for current traffic.</p>
         ) : null}
+      </section>
+
+      {/* Quarantined IPs (Active IPS) */}
+      <section className="sec-panel" style={{ marginTop: "1.5rem", marginBottom: "1.5rem", padding: "1.25rem", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--radius)" }}>
+        <div className="sec-panel-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
+          <div>
+            <h2 style={{ display: "flex", alignItems: "center", gap: "0.5rem", margin: 0, fontSize: "1.1rem" }}>
+              <span>Quarantined IPs (Active IPS)</span>
+              {blockedIps.filter((b) => b.active).length > 0 && (
+                <span className="audit-sev sev-critical" style={{ fontSize: "11px", padding: "2px 8px", borderRadius: "12px" }}>
+                  {blockedIps.filter((b) => b.active).length} Active Block{blockedIps.filter((b) => b.active).length > 1 ? "s" : ""}
+                </span>
+              )}
+            </h2>
+            <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+              Automated quarantine triggers when an IP exceeds 5 attack signals within 60 seconds (60-minute quarantine). Pre-routing 403 block enforced.
+            </p>
+          </div>
+          <button type="button" className="btn ghost" onClick={() => void loadBlockedIps()} disabled={blockedLoading}>
+            {blockedLoading ? "Refreshing…" : "Refresh IPS"}
+          </button>
+        </div>
+
+        {ipsActionError && (
+          <div className="notice error" style={{ margin: "1rem 0" }} role="alert">
+            {ipsActionError}
+          </div>
+        )}
+
+        <form onSubmit={handleBlockIp} style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-end", margin: "1rem 0", padding: "0.85rem", background: "var(--bg)", borderRadius: "var(--radius)" }}>
+          <div style={{ flex: "1 1 180px" }}>
+            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", marginBottom: "4px" }}>
+              IP Address
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. 198.51.100.44"
+              value={newIpAddress}
+              onChange={(e) => setNewIpAddress(e.target.value)}
+              required
+              style={{ width: "100%", padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)" }}
+            />
+          </div>
+          <div style={{ flex: "2 1 240px" }}>
+            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", marginBottom: "4px" }}>
+              Reason
+            </label>
+            <input
+              type="text"
+              placeholder="Reason for block"
+              value={newIpReason}
+              onChange={(e) => setNewIpReason(e.target.value)}
+              style={{ width: "100%", padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)" }}
+            />
+          </div>
+          <div style={{ flex: "0 0 110px" }}>
+            <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "var(--muted)", marginBottom: "4px" }}>
+              Duration (min)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={525600}
+              value={newIpDuration}
+              onChange={(e) => setNewIpDuration(Number(e.target.value))}
+              style={{ width: "100%", padding: "6px 10px", borderRadius: "var(--radius-sm)", border: "1px solid var(--line)" }}
+            />
+          </div>
+          <button type="submit" className="btn primary" disabled={ipsActionSubmitting || !newIpAddress.trim()}>
+            {ipsActionSubmitting ? "Quarantining…" : "Quarantine IP"}
+          </button>
+        </form>
+
+        {!blockedIps.length ? (
+          <p className="sec-empty" style={{ margin: "1rem 0" }}>No IP addresses are currently quarantined.</p>
+        ) : (
+          <div className="table-wrap sec-table-wrap">
+            <table className="audit-table">
+              <thead>
+                <tr>
+                  <th>IP Address</th>
+                  <th>Status</th>
+                  <th>Category</th>
+                  <th>Hits</th>
+                  <th>Blocked At</th>
+                  <th>Expires At</th>
+                  <th>Reason</th>
+                  <th>Created By</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {blockedIps.map((b) => (
+                  <tr key={b.ip_address}>
+                    <td>
+                      <b className="audit-mono">{b.ip_address}</b>
+                    </td>
+                    <td>
+                      <span className={`audit-sev ${b.active ? "sev-critical" : "sev-info"}`}>
+                        {b.active ? "BLOCKED" : "EXPIRED"}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`sec-class sec-class-${b.attack_category}`}>
+                        {classLabel(b.attack_category)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="audit-mono">{b.hit_count}</span>
+                    </td>
+                    <td>
+                      <small>{b.blocked_at ? formatTime(b.blocked_at) : "—"}</small>
+                    </td>
+                    <td>
+                      <small>{b.expires_at ? formatTime(b.expires_at) : "Permanent"}</small>
+                    </td>
+                    <td style={{ maxWidth: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={b.reason}>
+                      {b.reason}
+                    </td>
+                    <td>
+                      <small className="audit-mono">{b.created_by}</small>
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="btn ghost"
+                        style={{ fontSize: "12px", padding: "3px 8px", color: "var(--danger)" }}
+                        onClick={() => void handleUnblockIp(b.ip_address)}
+                        disabled={ipsActionSubmitting}
+                      >
+                        Unblock
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
 
       <section className="sec-traffic">

@@ -13,10 +13,10 @@ from app.api import public as public_api
 from app.api import webhooks as webhooks_api
 from app.api import workspace as workspace_api
 from app.core import database as database
-from app.core.config import reload_env
+from app.core.config import APP_ENV, reload_env
 from app.core.database import SessionLocal, engine
 from app.core.time import to_iso_utc
-from app.models import Base, User
+from app.models import Base, User, apply_phase6a_schema_migrations
 from app.services.auth import bootstrap_admin, ensure_schema
 from app.services.github import github_config_report
 from app.services.http_middleware import HttpTelemetryMiddleware
@@ -37,9 +37,27 @@ async def lifespan(_: FastAPI):
     report = github_config_report()
     print(f"[VERITAS] GitHub integration: configured={report['configured']} missing={report['missing']} env_file={report['env_file_found']}", flush=True)
     Base.metadata.create_all(bind=database.engine)
+    apply_phase6a_schema_migrations(database.engine)
     ensure_schema()
     bootstrap_admin()
     ensure_scan_worker()
+
+    if APP_ENV != "test":
+        import threading
+        from app.services.threat_intel import sync_threat_intel_feeds
+
+        def _daily_threat_intel_loop() -> None:
+            import time
+            while True:
+                try:
+                    with database.SessionLocal() as session:
+                        sync_threat_intel_feeds(session)
+                except Exception:
+                    pass
+                time.sleep(86400)
+
+        threading.Thread(target=_daily_threat_intel_loop, name="veritas-threat-intel", daemon=True).start()
+
     yield
 
 

@@ -206,3 +206,31 @@ def audit(
             context_json=json.dumps(context),
         )
     )
+
+
+def record_audit_event(
+    db: Session,
+    action: str,
+    actor_user_id: str | None = None,
+    target_user_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+    request: Request | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
+) -> AuditEvent:
+    if request:
+        ip, _ = _client_ip(request)
+        ip_address = ip_address or ip
+        user_agent = user_agent or (request.headers.get("user-agent") if request else None)
+
+    event = AuditEvent(
+        actor_user_id=actor_user_id,
+        target_user_id=target_user_id,
+        action=action,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        context_json=json.dumps(metadata) if metadata else None,
+    )
+    db.add(event)
+    return event
+
