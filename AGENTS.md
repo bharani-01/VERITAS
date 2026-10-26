@@ -9,14 +9,15 @@ This repository is optimized for agentic development. Read these files before ch
 3. [docs/product-phase-3.md](docs/product-phase-3.md) — Phase 3 real scans (Semgrep stack + optional AI)
 4. [docs/product-phase-4.md](docs/product-phase-4.md) — Phase 4 findings, Groq, cancel, scope, quotas
 5. [docs/product-phase-5.md](docs/product-phase-5.md) — Phase 5 auto-scan on push + GitHub reauth fix
-6. [docs/architecture.md](docs/architecture.md) — package layout and request flow
-7. [docs/design.md](docs/design.md) — UI system and frontend boundaries
-8. [docs/security.md](docs/security.md) — auth, sessions, and hard constraints
-9. [docs/agents/overview.md](docs/agents/overview.md) — which agent persona to use
+6. [docs/product-phase-6.md](docs/product-phase-6.md) — Phase 6 enterprise correlation, threat intel, compliance, DAST, IPS quarantine, fix PRs
+7. [docs/architecture.md](docs/architecture.md) — package layout and request flow
+8. [docs/design.md](docs/design.md) — UI system and frontend boundaries
+9. [docs/security.md](docs/security.md) — auth, sessions, and hard constraints
+10. [docs/agents/overview.md](docs/agents/overview.md) — which agent persona to use
 
 ## Non-negotiables
 
-- Phase 1 = identity and user management; Phase 2 = projects, stub scans, Connect GitHub; Phase 3 = real engines (secrets/SCA/SAST), optional Groq AI triage (no local LLM required on EC2); Phase 4 = finding workflow, cancel, branch/diff scope, suppressions, compare, scan quotas, GitHub reauth; Phase 5 = auto-scan on push webhooks.
+- Phase 1 = identity and user management; Phase 2 = projects, stub scans, Connect GitHub; Phase 3 = real engines (secrets/SCA/SAST), optional Groq AI triage (no local LLM required on EC2); Phase 4 = finding workflow, cancel, branch/diff scope, suppressions, compare, scan quotas, GitHub reauth; Phase 5 = auto-scan on push webhooks; Phase 6 = correlation/KEV/EPSS, compliance posture/RBAC/two-person suppression, live DAST probe, active IPS auto-quarantine, remediation PR generator.
 - Keep admin (`/admin/`) and user (`/user/`) frontends separate — no shared nav components.
 - Prefer the smallest coherent change that preserves production security posture.
 - Never commit secrets (`.env`, credentials, session tokens, GitHub tokens).

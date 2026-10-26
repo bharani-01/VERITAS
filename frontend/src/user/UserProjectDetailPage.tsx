@@ -4,7 +4,13 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { LoadingMark } from "../components/LoadingMark";
 import { api } from "../lib/api";
 import { useDocumentTitle } from "../lib/documentTitle";
-import type { GitRef, Project, Scan } from "../lib/workspace";
+import type {
+  FindingSuppressionItem,
+  GitRef,
+  Project,
+  ProjectMember,
+  Scan,
+} from "../lib/workspace";
 import { ProjectSwitcher } from "./ProjectSwitcher";
 import { ScanHistoryList } from "./ScanHistoryList";
 
@@ -49,6 +55,15 @@ export function UserProjectDetailPage() {
   const [advancedBusy, setAdvancedBusy] = useState(false);
   const [advancedSaved, setAdvancedSaved] = useState(false);
   const [refsLoading, setRefsLoading] = useState(false);
+  const [baseUrl, setBaseUrl] = useState("");
+  const [requireSuppressionApproval, setRequireSuppressionApproval] = useState(false);
+  const [slaCriticalDays, setSlaCriticalDays] = useState(7);
+  const [slaHighDays, setSlaHighDays] = useState(14);
+  const [members, setMembers] = useState<ProjectMember[]>([]);
+  const [suppressions, setSuppressions] = useState<FindingSuppressionItem[]>([]);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"security_lead" | "developer" | "auditor">("developer");
+  const [teamOpen, setTeamOpen] = useState(false);
   const knownScanIdsRef = useRef<Set<string>>(new Set());
   const initialScansLoadedRef = useRef(false);
   const enterTimersRef = useRef<number[]>([]);
@@ -88,6 +103,10 @@ export function UserProjectDetailPage() {
     // Only hydrate editable Advanced / notify fields on first load (or after save).
     // Polling must not wipe in-progress form edits.
     if (hydrateForm) {
+      setBaseUrl(proj.project.base_url || "");
+      setRequireSuppressionApproval(Boolean((proj.project as Record<string, unknown>).require_suppression_approval));
+      setSlaCriticalDays(Number((proj.project as Record<string, unknown>).sla_critical_days ?? 7));
+      setSlaHighDays(Number((proj.project as Record<string, unknown>).sla_high_days ?? 14));
       if (proj.project.notify_email_default != null) setNotifyEmail(!!proj.project.notify_email_default);
       if (proj.project.notify_in_app_default != null) setNotifyInApp(!!proj.project.notify_in_app_default);
       setAutoScan(!!proj.project.auto_scan_on_push);
@@ -131,6 +150,12 @@ export function UserProjectDetailPage() {
         setScanRef(proj.project.github_default_branch);
       }
     }
+    api<{ items: ProjectMember[] }>(`/workspace/projects/${projectId}/members`)
+      .then((m) => setMembers(m.items || []))
+      .catch(() => {});
+    api<{ items: FindingSuppressionItem[] }>(`/workspace/projects/${projectId}/suppressions`)
+      .then((s) => setSuppressions(s.items || []))
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -278,6 +303,10 @@ export function UserProjectDetailPage() {
       }
       const patch: Record<string, unknown> = {
         security_level: securityLevel,
+        base_url: baseUrl.trim() || null,
+        require_suppression_approval: requireSuppressionApproval,
+        sla_critical_days: slaCriticalDays,
+        sla_high_days: slaHighDays,
         notify_email_default: notifyEmail,
         notify_in_app_default: notifyInApp,
         scan_options: {
@@ -302,6 +331,10 @@ export function UserProjectDetailPage() {
         body: JSON.stringify(patch),
       });
       setProject(res.project);
+      setBaseUrl(res.project.base_url || "");
+      setRequireSuppressionApproval(Boolean((res.project as Record<string, unknown>).require_suppression_approval));
+      setSlaCriticalDays(Number((res.project as Record<string, unknown>).sla_critical_days ?? 7));
+      setSlaHighDays(Number((res.project as Record<string, unknown>).sla_high_days ?? 14));
       setAutoScan(!!res.project.auto_scan_on_push);
       setAutoBranch(res.project.auto_scan_branch || res.project.github_default_branch || "");
       if (res.project.security_level === "basic" || res.project.security_level === "strict") {
@@ -672,6 +705,69 @@ export function UserProjectDetailPage() {
 
             <section className="np-block rr-row">
               <div className="rr-meta">
+                <h2 className="rr-title">Live Web Application URL (DAST Target)</h2>
+                <p>Configures automated non-destructive web application vulnerability probes.</p>
+              </div>
+              <div className="rr-controls">
+                <label className="np-field">
+                  <span className="sr-only">Live Web Application URL</span>
+                  <input
+                    className="np-input"
+                    type="url"
+                    placeholder="https://app.example.com"
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section className="np-block rr-row">
+              <div className="rr-meta">
+                <h2 className="rr-title">Governance &amp; SLA Policy</h2>
+                <p>Two-person approval and finding SLA thresholds.</p>
+              </div>
+              <div className="rr-controls">
+                <label className="np-check" style={{ marginBottom: 10 }}>
+                  <input
+                    type="checkbox"
+                    checked={requireSuppressionApproval}
+                    onChange={(e) => setRequireSuppressionApproval(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Require two-person suppression approval</strong>
+                    <span className="np-check-sub">Lead review required for false-positive / risk-acceptance</span>
+                  </span>
+                </label>
+                <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+                  <label className="np-field" style={{ flex: 1 }}>
+                    <span className="muted small">Critical SLA (days)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={90}
+                      className="np-input"
+                      value={slaCriticalDays}
+                      onChange={(e) => setSlaCriticalDays(Number(e.target.value))}
+                    />
+                  </label>
+                  <label className="np-field" style={{ flex: 1 }}>
+                    <span className="muted small">High SLA (days)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={180}
+                      className="np-input"
+                      value={slaHighDays}
+                      onChange={(e) => setSlaHighDays(Number(e.target.value))}
+                    />
+                  </label>
+                </div>
+              </div>
+            </section>
+
+            <section className="np-block rr-row">
+              <div className="rr-meta">
                 <h2 className="rr-title">Notify when finished</h2>
                 <p>Choose how you hear about scan completion.</p>
               </div>
@@ -841,6 +937,139 @@ export function UserProjectDetailPage() {
               document.body,
             )
           : null}
+
+        {/* Team Access & Suppression Governance */}
+        <div className="card" style={{ marginTop: 16, marginBottom: 16, padding: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Team Access &amp; Suppression Governance</h3>
+              <span className="muted small">
+                {members.length} member(s) · {suppressions.filter((s) => s.status === "pending_approval").length} pending approval(s)
+              </span>
+            </div>
+            <button type="button" className="btn ghost" onClick={() => setTeamOpen((v) => !v)}>
+              {teamOpen ? "Hide governance" : "Manage team & approvals"}
+            </button>
+          </div>
+
+          {teamOpen ? (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16, marginTop: 12 }}>
+              <div>
+                <h4>Project Members (RBAC)</h4>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                  <input
+                    type="email"
+                    placeholder="teammate@example.com"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as "security_lead" | "developer" | "auditor")}>
+                    <option value="security_lead">Security Lead</option>
+                    <option value="developer">Developer</option>
+                    <option value="auditor">Auditor (Read-Only)</option>
+                  </select>
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={async () => {
+                      if (!inviteEmail.trim() || !projectId) return;
+                      const res = await api<{ member: ProjectMember }>(`/workspace/projects/${projectId}/members`, {
+                        method: "POST",
+                        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+                      });
+                      setMembers((prev) => [...prev.filter((m) => m.user_id !== res.member.user_id), res.member]);
+                      setInviteEmail("");
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                  {members.map((m) => (
+                    <li key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0" }}>
+                      <span>
+                        <strong>{m.display_name || m.username || m.email}</strong>{" "}
+                        <span className="badge muted">{m.role}</span>
+                      </span>
+                      {m.role !== "owner" ? (
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={async () => {
+                            await api(`/workspace/projects/${projectId}/members/${m.user_id}`, { method: "DELETE" });
+                            setMembers((prev) => prev.filter((x) => x.user_id !== m.user_id));
+                          }}
+                        >
+                          Remove
+                        </button>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <h4>Suppression Approval Queue</h4>
+                {suppressions.length === 0 ? (
+                  <p className="muted small">No suppressions or risk-acceptance requests yet.</p>
+                ) : (
+                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                    {suppressions.map((s) => (
+                      <li key={s.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--border-subtle, #1e293b)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                          <div>
+                            <code>{s.fingerprint.slice(0, 12)}</code> ·{" "}
+                            <span className={`badge ${s.status === "pending_approval" ? "high" : "muted"}`}>
+                              {s.status}
+                            </span>
+                            <div className="muted small">{s.justification || s.reason || "No justification provided"}</div>
+                          </div>
+                          {s.status === "pending_approval" ? (
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button
+                                type="button"
+                                className="btn"
+                                onClick={async () => {
+                                  const res = await api<{ suppression: FindingSuppressionItem }>(
+                                    `/workspace/projects/${projectId}/suppressions/${s.id}/review`,
+                                    {
+                                      method: "POST",
+                                      body: JSON.stringify({ decision: "approved", expires_in_days: 90 }),
+                                    },
+                                  );
+                                  setSuppressions((prev) => prev.map((x) => (x.id === s.id ? res.suppression : x)));
+                                }}
+                              >
+                                Approve (90d)
+                              </button>
+                              <button
+                                type="button"
+                                className="btn ghost"
+                                onClick={async () => {
+                                  const res = await api<{ suppression: FindingSuppressionItem }>(
+                                    `/workspace/projects/${projectId}/suppressions/${s.id}/review`,
+                                    {
+                                      method: "POST",
+                                      body: JSON.stringify({ decision: "rejected" }),
+                                    },
+                                  );
+                                  setSuppressions((prev) => prev.map((x) => (x.id === s.id ? res.suppression : x)));
+                                }}
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         <ScanHistoryList
           scans={scans}

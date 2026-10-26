@@ -1,0 +1,14 @@
+[VERITAS] GitHub integration: configured=False missing=['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET'] env_file=True
+INFO:     127.0.0.1:63034 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59337 - "POST /auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60275 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60277 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55000 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57887 - "GET /assets/index-B5ptXzGb.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55000 - "GET /assets/index-DQFA9Zrb.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63786 - "GET /site.webmanifest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55000 - "GET /brand/veritas-lockup.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57887 - "GET /apple-touch-icon.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63787 - "POST /auth/login HTTP/1.1" 422 Unprocessable Content
+INFO:     127.0.0.1:63812 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53479 - "POST /auth/login HTTP/1.1" 401 Unauthorized

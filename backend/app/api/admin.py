@@ -821,3 +821,78 @@ def get_rate_limits(_: User = Depends(require_admin)):
         "total_throttled": sum(rate_limiter.stats.values()),
         "active_buckets": len(rate_limiter.events),
     }
+
+
+@router.get("/threat-intel/status")
+def admin_threat_intel_status(
+    db: Session = Depends(db_session),
+    _admin: User = Depends(require_admin),
+) -> dict:
+    from app.services.threat_intel import get_threat_intel_status
+
+    return get_threat_intel_status(db)
+
+
+@router.post("/threat-intel/sync")
+def admin_threat_intel_sync(
+    include_bulk_epss: bool = False,
+    db: Session = Depends(db_session),
+    _admin: User = Depends(require_admin),
+) -> dict:
+    from app.services.threat_intel import sync_threat_intel_feeds
+
+    return sync_threat_intel_feeds(db, include_bulk_epss=include_bulk_epss)
+
+
+from pydantic import BaseModel, Field
+from app.services.http_traffic import block_ip_address, list_blocked_ips, unblock_ip_address
+
+
+class BlockedIpCreateIn(BaseModel):
+    ip_address: str = Field(min_length=3, max_length=64)
+    reason: str = Field(default="Manually quarantined by administrator", max_length=512)
+    expires_in_minutes: int | None = Field(default=60, ge=1, le=525600)
+
+
+@router.get("/security/blocked-ips")
+def get_blocked_ips(_: User = Depends(require_admin), db: Session = Depends(db_session)):
+    items = list_blocked_ips(db)
+    return {"items": items, "blocked_ips": items, "total": len(items)}
+
+
+@router.post("/security/blocked-ips")
+def add_blocked_ip(
+    payload: BlockedIpCreateIn,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    row = block_ip_address(
+        db,
+        ip_address=payload.ip_address,
+        reason=payload.reason,
+        attack_category="manual",
+        expires_in_minutes=payload.expires_in_minutes,
+        created_by=admin.email,
+    )
+    return {
+        "blocked_ip": {
+            "ip_address": row.ip_address,
+            "reason": row.reason,
+            "attack_category": row.attack_category,
+            "hit_count": row.hit_count,
+            "blocked_at": row.blocked_at,
+            "expires_at": row.expires_at,
+            "created_by": row.created_by,
+        }
+    }
+
+
+@router.delete("/security/blocked-ips/{ip_address}")
+def remove_blocked_ip(
+    ip_address: str,
+    _: User = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    removed = unblock_ip_address(db, ip_address)
+    return {"unblocked": removed, "ip_address": ip_address}
+

@@ -1,0 +1,440 @@
+{
+    "total_pages":  42,
+    "items":  [
+                  {
+                      "text":  "TABLE OF CONTENTS",
+                      "style":  "Normal",
+                      "page":  4
+                  },
+                  {
+                      "text":  "LIST OF TABLES",
+                      "style":  "Normal",
+                      "page":  4
+                  },
+                  {
+                      "text":  "LIST OF FIGURES",
+                      "style":  "Normal",
+                      "page":  4
+                  },
+                  {
+                      "text":  "ABSTRACT",
+                      "style":  "Normal",
+                      "page":  4
+                  },
+                  {
+                      "text":  "LIST OF TABLES",
+                      "style":  "Normal",
+                      "page":  5
+                  },
+                  {
+                      "text":  "LIST OF FIGURES",
+                      "style":  "Normal",
+                      "page":  6
+                  },
+                  {
+                      "text":  "ABSTRACT",
+                      "style":  "Normal",
+                      "page":  7
+                  },
+                  {
+                      "text":  "1. INTRODUCTION",
+                      "style":  "Heading 1",
+                      "page":  1
+                  },
+                  {
+                      "text":  "1.1 Background",
+                      "style":  "Heading 3",
+                      "page":  1
+                  },
+                  {
+                      "text":  "1.2 Problem Statement",
+                      "style":  "Heading 3",
+                      "page":  1
+                  },
+                  {
+                      "text":  "1.3 Motivation",
+                      "style":  "Heading 3",
+                      "page":  2
+                  },
+                  {
+                      "text":  "1.4 Objectives",
+                      "style":  "Heading 3",
+                      "page":  2
+                  },
+                  {
+                      "text":  "1.5 Scope",
+                      "style":  "Heading 3",
+                      "page":  3
+                  },
+                  {
+                      "text":  "1.6 Justification",
+                      "style":  "Heading 3",
+                      "page":  3
+                  },
+                  {
+                      "text":  "2. LITERATURE SURVEY",
+                      "style":  "Heading 1",
+                      "page":  4
+                  },
+                  {
+                      "text":  "Table 2.1: Literature Survey",
+                      "style":  "TableCaption",
+                      "page":  4
+                  },
+                  {
+                      "text":  "3. EXISTING SYSTEM",
+                      "style":  "Heading 1",
+                      "page":  6
+                  },
+                  {
+                      "text":  "Table 3.1: Existing System Comparison",
+                      "style":  "TableCaption",
+                      "page":  6
+                  },
+                  {
+                      "text":  "3.1 Static Analysis with Data Mining (Medeiros et al., 2016)",
+                      "style":  "Heading 3",
+                      "page":  6
+                  },
+                  {
+                      "text":  "3.2 DEKANT Learning-Based Static Detection (ISSTA 2016)",
+                      "style":  "Heading 3",
+                      "page":  6
+                  },
+                  {
+                      "text":  "3.3 TAP Token and LSTM Detection (Fang et al., 2019)",
+                      "style":  "Heading 3",
+                      "page":  7
+                  },
+                  {
+                      "text":  "3.4 VulEye Graph Neural Network Detection (2023)",
+                      "style":  "Heading 3",
+                      "page":  7
+                  },
+                  {
+                      "text":  "3.5 RealVul LLM-Based Web Vulnerability Detection (2024)",
+                      "style":  "Heading 3",
+                      "page":  7
+                  },
+                  {
+                      "text":  "3.6 Existing System Gap",
+                      "style":  "Heading 3",
+                      "page":  7
+                  },
+                  {
+                      "text":  "4. PROPOSED SYSTEM",
+                      "style":  "Heading 1",
+                      "page":  8
+                  },
+                  {
+                      "text":  "4.1 Proposed Solution",
+                      "style":  "Heading 3",
+                      "page":  8
+                  },
+                  {
+                      "text":  "4.2 Security Mechanisms",
+                      "style":  "Heading 3",
+                      "page":  8
+                  },
+                  {
+                      "text":  "4.3 Proposed Workflow",
+                      "style":  "Heading 3",
+                      "page":  9
+                  },
+                  {
+                      "text":  "Fig 4.1: Proposed Workflow",
+                      "style":  "Normal",
+                      "page":  9
+                  },
+                  {
+                      "text":  "4.4 Technologies",
+                      "style":  "Heading 3",
+                      "page":  9
+                  },
+                  {
+                      "text":  "4.5 Expected Security Improvements",
+                      "style":  "Heading 3",
+                      "page":  10
+                  },
+                  {
+                      "text":  "5. SYSTEM ARCHITECTURE",
+                      "style":  "Heading 1",
+                      "page":  11
+                  },
+                  {
+                      "text":  "5.1 Architecture Overview",
+                      "style":  "Heading 3",
+                      "page":  11
+                  },
+                  {
+                      "text":  "5.2 Architecture Diagram",
+                      "style":  "Heading 3",
+                      "page":  11
+                  },
+                  {
+                      "text":  "Fig 5.1: System Architecture",
+                      "style":  "Normal",
+                      "page":  11
+                  },
+                  {
+                      "text":  "5.3 Data Flow",
+                      "style":  "Heading 3",
+                      "page":  11
+                  },
+                  {
+                      "text":  "Figure 5.2 (below) is the Level-1 data flow: Users and Admins interact with Auth, Workspace, and Security Telemetry; scan jobs invoke deep engines and optional ",
+                      "style":  "Normal",
+                      "page":  12
+                  },
+                  {
+                      "text":  "Fig 5.2: Data Flow Diagram (Level 1)",
+                      "style":  "FigureCaption",
+                      "page":  12
+                  },
+                  {
+                      "text":  "6. MODULE DESCRIPTION",
+                      "style":  "Heading 1",
+                      "page":  13
+                  },
+                  {
+                      "text":  "6.1 Authentication and User Management Module",
+                      "style":  "Heading 3",
+                      "page":  13
+                  },
+                  {
+                      "text":  "6.2 Project Workspace (Web Application Asset) Module",
+                      "style":  "Heading 3",
+                      "page":  13
+                  },
+                  {
+                      "text":  "6.3 Threat and Scan-Scope Identification Module",
+                      "style":  "Heading 3",
+                      "page":  14
+                  },
+                  {
+                      "text":  "6.4 Vulnerability Detection Engine Module",
+                      "style":  "Heading 3",
+                      "page":  15
+                  },
+                  {
+                      "text":  "6.5 AI Risk Assessment and Reporting Module",
+                      "style":  "Heading 3",
+                      "page":  15
+                  },
+                  {
+                      "text":  "6.6 Security Controls and Residual Risk Module",
+                      "style":  "Heading 3",
+                      "page":  16
+                  },
+                  {
+                      "text":  "6.7 Findings Register and Export Module",
+                      "style":  "Heading 3",
+                      "page":  17
+                  },
+                  {
+                      "text":  "6.8 Dashboard and Continuous Monitoring Module",
+                      "style":  "Heading 3",
+                      "page":  18
+                  },
+                  {
+                      "text":  "7. THREAT MODEL",
+                      "style":  "Heading 1",
+                      "page":  19
+                  },
+                  {
+                      "text":  "7.1 Threat Model Overview",
+                      "style":  "Heading 3",
+                      "page":  19
+                  },
+                  {
+                      "text":  "7.2 Important Assets",
+                      "style":  "Heading 3",
+                      "page":  19
+                  },
+                  {
+                      "text":  "7.3 Possible Threat Sources",
+                      "style":  "Heading 3",
+                      "page":  19
+                  },
+                  {
+                      "text":  "7.4 Threats Affecting Major Assets",
+                      "style":  "Heading 3",
+                      "page":  20
+                  },
+                  {
+                      "text":  "Table 7.1: Threats Affecting Major Assets",
+                      "style":  "TableCaption",
+                      "page":  20
+                  },
+                  {
+                      "text":  "7.5 Asset → Threat → Vulnerability → Risk Relationship",
+                      "style":  "Heading 3",
+                      "page":  20
+                  },
+                  {
+                      "text":  "8. VULNERABILITY ANALYSIS",
+                      "style":  "Heading 1",
+                      "page":  21
+                  },
+                  {
+                      "text":  "8.1 Vulnerability Identification",
+                      "style":  "Heading 3",
+                      "page":  21
+                  },
+                  {
+                      "text":  "8.2 Vulnerability Classification",
+                      "style":  "Heading 3",
+                      "page":  21
+                  },
+                  {
+                      "text":  "8.3 Vulnerability Analysis Table",
+                      "style":  "Heading 3",
+                      "page":  21
+                  },
+                  {
+                      "text":  "Table 8.1: Vulnerability Analysis",
+                      "style":  "TableCaption",
+                      "page":  21
+                  },
+                  {
+                      "text":  "9. RISK ASSESSMENT",
+                      "style":  "Heading 1",
+                      "page":  22
+                  },
+                  {
+                      "text":  "9.1 Risk Assessment Method",
+                      "style":  "Heading 3",
+                      "page":  22
+                  },
+                  {
+                      "text":  "9.2 Risk Register",
+                      "style":  "Heading 3",
+                      "page":  22
+                  },
+                  {
+                      "text":  "Table 9.1: Risk Register",
+                      "style":  "TableCaption",
+                      "page":  22
+                  },
+                  {
+                      "text":  "9.3 Security Controls",
+                      "style":  "Heading 3",
+                      "page":  22
+                  },
+                  {
+                      "text":  "9.4 Residual Risk",
+                      "style":  "Heading 3",
+                      "page":  22
+                  },
+                  {
+                      "text":  "10. IMPLEMENTATION",
+                      "style":  "Heading 1",
+                      "page":  23
+                  },
+                  {
+                      "text":  "10.1 Hardware Requirements",
+                      "style":  "Heading 3",
+                      "page":  23
+                  },
+                  {
+                      "text":  "10.2 Software Requirements",
+                      "style":  "Heading 3",
+                      "page":  23
+                  },
+                  {
+                      "text":  "10.3 Module Implementation",
+                      "style":  "Heading 3",
+                      "page":  23
+                  },
+                  {
+                      "text":  "Fig 10.1: User Login Interface (live VERITAS)",
+                      "style":  "Normal",
+                      "page":  24
+                  },
+                  {
+                      "text":  "Fig 10.2: User Projects Workspace (live production VERITAS)",
+                      "style":  "Normal",
+                      "page":  24
+                  },
+                  {
+                      "text":  "Fig 10.3: Administrator Dashboard (live VERITAS)",
+                      "style":  "Normal",
+                      "page":  25
+                  },
+                  {
+                      "text":  "11. SECURITY IMPLEMENTATION",
+                      "style":  "Heading 1",
+                      "page":  26
+                  },
+                  {
+                      "text":  "11.1 Security Mechanisms",
+                      "style":  "Heading 3",
+                      "page":  26
+                  },
+                  {
+                      "text":  "12. SECURITY TESTING",
+                      "style":  "Heading 1",
+                      "page":  27
+                  },
+                  {
+                      "text":  "12.1 Testing Approach",
+                      "style":  "Heading 3",
+                      "page":  27
+                  },
+                  {
+                      "text":  "12.2 Security Test Cases",
+                      "style":  "Heading 3",
+                      "page":  27
+                  },
+                  {
+                      "text":  "Table 12.1: Security Test Cases",
+                      "style":  "TableCaption",
+                      "page":  27
+                  },
+                  {
+                      "text":  "13. RESULTS AND ANALYSIS",
+                      "style":  "Heading 1",
+                      "page":  28
+                  },
+                  {
+                      "text":  "13.1 Results Table",
+                      "style":  "Heading 3",
+                      "page":  28
+                  },
+                  {
+                      "text":  "Table 13.1: Results Table / Metrics",
+                      "style":  "TableCaption",
+                      "page":  28
+                  },
+                  {
+                      "text":  "Fig 13.1: Live Production Scan Findings — NurseQuest (35 findings, risk 8)",
+                      "style":  "Normal",
+                      "page":  29
+                  },
+                  {
+                      "text":  "Fig 13.2: Live Production Home — Findings by Run and Severity",
+                      "style":  "Normal",
+                      "page":  30
+                  },
+                  {
+                      "text":  "Fig 13.3: Live Production Scan Findings — AI Honeypot (8 findings, risk 8)",
+                      "style":  "Normal",
+                      "page":  30
+                  },
+                  {
+                      "text":  "14. CONCLUSION",
+                      "style":  "Heading 1",
+                      "page":  31
+                  },
+                  {
+                      "text":  "15. FUTURE ENHANCEMENT",
+                      "style":  "Heading 1",
+                      "page":  32
+                  },
+                  {
+                      "text":  "16. REFERENCES",
+                      "style":  "Heading 1",
+                      "page":  34
+                  }
+              ]
+}

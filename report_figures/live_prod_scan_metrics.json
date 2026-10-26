@@ -1,0 +1,98 @@
+{
+  "source": "production",
+  "url": "https://veritas.trackifyapp.co.in",
+  "account": "neelambalguruswami",
+  "captured_at": "2026-09-26T11:32:00+00:00",
+  "project": {
+    "name": "AI Honeypot",
+    "project_id": "95657c22-a6da-47d9-b470-7acb7add86e4",
+    "target": "Swaminathan8237/mirage-honeypot",
+    "scan_id": "626c810c-fd27-4594-b698-8fa75928cafa",
+    "git_version": "d4cb3de",
+    "commit_message": "Merge pull request #3 from Swaminathan8237/docs/roadmap"
+  },
+  "risk": {
+    "score": 8,
+    "findings_total": 8,
+    "by_severity": {
+      "high": 6,
+      "medium": 2,
+      "low": 0,
+      "info": 0
+    }
+  },
+  "findings": [
+    {
+      "severity": "high",
+      "title": "private-key",
+      "tool": "gitleaks",
+      "location": "mirage/emulator/seed_content.py:253",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "high",
+      "title": "private-key",
+      "tool": "gitleaks",
+      "location": "tests/test_vfs_seed.py:86",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "high",
+      "title": "linux shadow file detected",
+      "tool": "semgrep",
+      "location": "mirage/emulator/seed_content.py:67",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "high",
+      "title": "linux shadow file detected",
+      "tool": "semgrep",
+      "location": "mirage/emulator/seed_content.py:94",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "high",
+      "title": "linux shadow file detected",
+      "tool": "semgrep",
+      "location": "mirage/emulator/seed_content.py:105",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "high",
+      "title": "Private Key detected",
+      "tool": "semgrep",
+      "location": "mirage/emulator/seed_content.py:253",
+      "status": "open",
+      "risk": 8.0
+    },
+    {
+      "severity": "medium",
+      "title": "GitHub Actions mutable tag or branch reference",
+      "tool": "semgrep",
+      "location": "GitHub Actions workflow",
+      "status": "open",
+      "risk": null
+    },
+    {
+      "severity": "medium",
+      "title": "GitHub Actions mutable tag or branch reference",
+      "tool": "semgrep",
+      "location": "GitHub Actions workflow",
+      "status": "open",
+      "risk": null
+    }
+  ],
+  "engines_observed": ["gitleaks", "semgrep"],
+  "screenshots": {
+    "home": "report_figures/live_prod_home.png",
+    "projects": "report_figures/live_prod_projects.png",
+    "scan_detail": "report_figures/live_prod_scan_ai_honeypot.png"
+  },
+  "nursequest_note": "NurseQuest in-app scan on production requires Reconnect GitHub OAuth; laboratory NurseQuest metrics remain from read-only local clone (nursequest_scan_metrics.json).",
+  "read_only_test_repos": true
+}

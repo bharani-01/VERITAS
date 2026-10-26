@@ -34,6 +34,7 @@ def generate_final_report(
     *,
     project_name: str,
     target: str,
+    intel_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return {status, report_markdown, countermeasures_by_index}. Never raises."""
     key = _api_key()
@@ -42,7 +43,11 @@ def generate_final_report(
 
     ranked = sorted(
         findings,
-        key=lambda f: {"critical": 4, "high": 3, "medium": 2, "low": 1}.get((f.severity or "").lower(), 0),
+        key=lambda f: (
+            1 if (f.raw or {}).get("is_kev") else 0,
+            float((f.raw or {}).get("effective_priority_score") or 0.0),
+            {"critical": 4, "high": 3, "medium": 2, "low": 1}.get((f.severity or "").lower(), 0),
+        ),
         reverse=True,
     )[:_MAX_FINDINGS]
 
@@ -56,6 +61,7 @@ def generate_final_report(
 
     payload = []
     for i, f in enumerate(ranked):
+        raw_meta = f.raw if isinstance(f.raw, dict) else {}
         payload.append(
             {
                 "i": i,
@@ -63,6 +69,11 @@ def generate_final_report(
                 "severity": f.severity,
                 "family": f.vuln_family,
                 "engine": f.engine,
+                "matched_engines": raw_meta.get("matched_engines") or [f.engine],
+                "cve_id": raw_meta.get("cve_id"),
+                "is_kev": bool(raw_meta.get("is_kev", False)),
+                "epss_score": raw_meta.get("epss_score"),
+                "priority_score": raw_meta.get("effective_priority_score"),
                 "path": (f.file_path or "")[:200],
                 "message": (f.message or "")[:400],
             }
@@ -74,13 +85,18 @@ def generate_final_report(
         '{"summary_markdown":"...","fixes":[{"i":0,"steps":["step1","step2"]}]} . '
         "summary_markdown MUST be GitHub-Flavored Markdown with real structure: "
         "start with '# VERITAS Scan Executive Summary', then '##' sections "
-        "(Critical Issues, Themes, Prioritized Fixes, etc.), use '- ' bullet lists "
-        "for findings and P1/P2 fixes (bold the priority label), and blank lines between sections. "
-        "Do not use plain title-case lines without '#' heading markers. "
-        "Keep steps concrete. No surrounding prose outside JSON."
+        "(Active Exploits & Threat Intelligence, Critical Issues, Themes, Prioritized Fixes, etc.), "
+        "highlight any CISA KEV actively exploited CVEs, top EPSS probability scores, and cross-engine "
+        "deduplication savings first, use '- ' bullet lists for findings and P1/P2 fixes (bold the priority label), "
+        "and blank lines between sections. Keep steps concrete. No surrounding prose outside JSON."
     )
     user_msg = json.dumps(
-        {"project": project_name, "target": target, "findings": payload},
+        {
+            "project": project_name,
+            "target": target,
+            "threat_intel_and_correlation": intel_summary or {},
+            "findings": payload,
+        },
         ensure_ascii=False,
     )
 

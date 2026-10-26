@@ -76,7 +76,7 @@ export function UserScanDetailPage() {
       setFindingsLoading(false);
       return;
     }
-    if (scan.status !== "completed" && scan.status !== "failed") {
+    if (scan.status !== "completed" && scan.status !== "succeeded" && scan.status !== "failed") {
       setFindings([]);
       setFindingsLoading(false);
       return;

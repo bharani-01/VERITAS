@@ -3,12 +3,26 @@ import { createPortal } from "react-dom";
 import { LoadingMark } from "./LoadingMark";
 import { MarkdownReport } from "./MarkdownReport";
 import { OrbitLoader } from "./OrbitLoader";
+import {
+  DeduplicationCalloutBanner,
+  Phase6AFindingBadges,
+} from "./scan/Phase6AFindingBadges";
+import {
+  FindingsToolbar,
+  type SortOption,
+  type GroupByOption,
+  type ThreatFilter,
+} from "./scan/FindingsToolbar";
+import { RiskMatrixCard, computeFindingRiskCell, type RiskCellCoord } from "./scan/RiskMatrixCard";
+import { ScanSbomTab } from "./scan/ScanSbomTab";
+import type { ScanFindingPhase6A } from "../types/phase6a";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
 import { formatScanDuration, scanTriggerLabel, shortCommit } from "../lib/scanDisplay";
 import { scanProgressLabel } from "../lib/scanProgress";
-import type { Finding, Scan } from "../lib/workspace";
+import type { Finding, Scan, ScanComplianceResponse } from "../lib/workspace";
+
 
 type Props = {
   scan: Scan;
@@ -98,6 +112,48 @@ function CommitLink({
   );
 }
 
+function toPhase6AFinding(f: Finding, scanProjectId: string): ScanFindingPhase6A {
+  const extra = f as unknown as Partial<ScanFindingPhase6A> & {
+    category?: string;
+    description?: string;
+    line_number?: number;
+    owasp?: string;
+    code_snippet?: string;
+    countermeasure?: string;
+    is_suppressed?: boolean;
+  };
+  return {
+    id: f.id,
+    scan_id: f.scan_id,
+    project_id: scanProjectId,
+    engine: f.engine,
+    category: extra.category || f.vuln_family || "sast",
+    severity: (f.severity as any) || "medium",
+    title: f.title,
+    description: extra.description || f.message || "",
+    file_path: f.file_path || "",
+    line_number: extra.line_number ?? f.line_start ?? 0,
+    cwe: f.cwe,
+    owasp: extra.owasp || f.owasp_category,
+    code_snippet: extra.code_snippet || f.snippet,
+    countermeasure: extra.countermeasure || "",
+    fingerprint: f.fingerprint || String(f.id),
+    status: (f.status as any) || "open",
+    is_suppressed: Boolean(extra.is_suppressed),
+    cve_id: f.cve_id,
+    matched_engines: f.matched_engines || [f.engine],
+    engine_count: f.engine_count ?? (f.matched_engines ? f.matched_engines.length : 1),
+    confidence_level: f.confidence_level ?? "medium",
+    epss_score: f.epss_score,
+    epss_percentile: f.epss_percentile,
+    is_kev: Boolean(f.is_kev),
+    kev_due_date: f.kev_due_date,
+    effective_priority_score: f.effective_priority_score ?? f.risk_score ?? 0,
+    sla_due_at: f.sla_due_at,
+    sla_breached: f.sla_breached,
+  };
+}
+
 export function ScanReportModal({
   scan,
   findings,
@@ -121,12 +177,328 @@ export function ScanReportModal({
   const [exportOpen, setExportOpen] = useState(false);
   const [exportPos, setExportPos] = useState<{ top: number; left: number } | null>(null);
   const [selected, setSelected] = useState<Finding | null>(null);
+  const [activeTab, setActiveTab] = useState<"findings" | "sbom" | "compliance">("findings");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("risk_desc");
+  const [groupBy, setGroupBy] = useState<GroupByOption>("none");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [threatFilter, setThreatFilter] = useState<ThreatFilter>("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [compliance, setCompliance] = useState<ScanComplianceResponse | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [complianceError, setComplianceError] = useState<string | null>(null);
+  const [matrixCell, setMatrixCell] = useState<RiskCellCoord | null>(null);
+  const [fixPlan, setFixPlan] = useState<{
+    branch_name: string;
+    commit_message: string;
+    pr_title: string;
+    pr_body: string;
+    unified_diff: string;
+  } | null>(null);
+  const [fixPlanBusy, setFixPlanBusy] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== "compliance" || (scan.status !== "completed" && scan.status !== "succeeded" && scan.status !== "failed") || !scan.project_id || !scan.id) return;
+    let cancelled = false;
+    setComplianceLoading(true);
+    setComplianceError(null);
+    api<ScanComplianceResponse>(`/workspace/projects/${scan.project_id}/scans/${scan.id}/compliance`)
+      .then((res) => {
+        if (!cancelled) setCompliance(res);
+      })
+      .catch((err: Error) => {
+        if (!cancelled) setComplianceError(err.message);
+      })
+      .finally(() => {
+        if (!cancelled) setComplianceLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, scan.status, scan.project_id, scan.id]);
+
   const exportWrapRef = useRef<HTMLDivElement>(null);
   const exportBtnRef = useRef<HTMLButtonElement>(null);
   const exportMenuRef = useRef<HTMLDivElement>(null);
   const liveLogRef = useRef<HTMLDivElement>(null);
 
   const sorted = useMemo(() => sortFindingsByRisk(findings), [findings]);
+
+  const computedMaxRisk = useMemo(() => {
+    const fromSummary = scan.risk_summary?.max_risk ?? scan.summary?.max_risk;
+    if (typeof fromSummary === "number" && !isNaN(fromSummary)) {
+      return fromSummary.toFixed(1);
+    }
+    if (findings.length > 0) {
+      const maxVal = Math.max(
+        ...findings.map((f) =>
+          Math.max(
+            typeof f.effective_priority_score === "number" ? f.effective_priority_score : 0,
+            typeof f.risk_score === "number" ? f.risk_score : 0,
+          ),
+        ),
+      );
+      return maxVal > 0 ? maxVal.toFixed(1) : "0.0";
+    }
+    return "—";
+  }, [scan.risk_summary, scan.summary, findings]);
+
+  const filteredAndSortedFindings = useMemo(() => {
+    let list = [...findings];
+
+    if (matrixCell) {
+      list = list.filter((f) => {
+        const cell = computeFindingRiskCell(f);
+        return cell.likelihood === matrixCell.likelihood && cell.impact === matrixCell.impact;
+      });
+    }
+
+    if (threatFilter === "kev") {
+      list = list.filter((f) => f.is_kev);
+    } else if (threatFilter === "high_epss") {
+      list = list.filter((f) => (f.epss_score ?? 0) >= 0.1);
+    } else if (threatFilter === "multi_engine") {
+      list = list.filter((f) => (f.engine_count ?? 1) >= 2);
+    } else if (threatFilter === "license") {
+      list = list.filter(
+        (f) =>
+          f.vuln_family === "license" ||
+          f.engine === "trivy_license" ||
+          (f as any).category === "license",
+      );
+    }
+
+    if (severityFilter !== "all") {
+      list = list.filter((f) => (f.severity || "").toLowerCase() === severityFilter.toLowerCase());
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (f) =>
+          f.title.toLowerCase().includes(q) ||
+          (f.file_path && f.file_path.toLowerCase().includes(q)) ||
+          (f.cve_id && f.cve_id.toLowerCase().includes(q)) ||
+          (f.rule_id && f.rule_id.toLowerCase().includes(q)) ||
+          (f.engine && f.engine.toLowerCase().includes(q)),
+      );
+    }
+
+    const sevWeight: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+    const getSev = (s?: string | null) => sevWeight[(s || "").toLowerCase()] || 0;
+
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case "risk_desc":
+          return (b.risk_score || 0) - (a.risk_score || 0);
+        case "risk_asc":
+          return (a.risk_score || 0) - (b.risk_score || 0);
+        case "priority_desc": {
+          const scoreB = b.effective_priority_score ?? b.risk_score ?? 0;
+          const scoreA = a.effective_priority_score ?? a.risk_score ?? 0;
+          return scoreB - scoreA;
+        }
+        case "severity_desc":
+          return getSev(b.severity) - getSev(a.severity);
+        case "severity_asc":
+          return getSev(a.severity) - getSev(b.severity);
+        case "epss_desc":
+          return (b.epss_score || 0) - (a.epss_score || 0);
+        case "title_asc":
+          return a.title.localeCompare(b.title);
+        case "title_desc":
+          return b.title.localeCompare(a.title);
+        case "engine_asc":
+          return (a.engine || "").localeCompare(b.engine || "");
+        case "sla_asc":
+          return (a.sla_due_at || "9999").localeCompare(b.sla_due_at || "9999");
+        default:
+          return (b.risk_score || 0) - (a.risk_score || 0);
+      }
+    });
+
+    return list;
+  }, [findings, matrixCell, threatFilter, severityFilter, searchQuery, sortBy]);
+
+  type FindingGroup = {
+    key: string;
+    label: string;
+    items: Finding[];
+    maxRisk: number;
+  };
+
+  const groupedFindings = useMemo<FindingGroup[]>(() => {
+    if (groupBy === "none") return [];
+
+    const sevWeight: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+    const getSev = (s?: string | null) => sevWeight[(s || "").toLowerCase()] || 0;
+
+    const map = new Map<string, { label: string; items: Finding[]; order: number }>();
+
+    for (const f of filteredAndSortedFindings) {
+      let key = "other";
+      let label = "Other";
+      let order = 99;
+
+      if (groupBy === "severity") {
+        key = (f.severity || "info").toLowerCase();
+        const names: Record<string, string> = {
+          critical: "Critical Severity",
+          high: "High Severity",
+          medium: "Medium Severity",
+          low: "Low Severity",
+          info: "Informational",
+        };
+        label = names[key] || `${f.severity.toUpperCase()} Severity`;
+        order = 10 - getSev(f.severity);
+      } else if (groupBy === "vuln_family") {
+        key = (f.vuln_family || "general").toLowerCase();
+        label = `Category: ${(f.vuln_family || "General").toUpperCase()}`;
+        order = key.charCodeAt(0);
+      } else if (groupBy === "engine") {
+        key = (f.engine || "unknown").toLowerCase();
+        label = `Engine: ${f.engine || "Unknown"}`;
+        order = key.charCodeAt(0);
+      } else if (groupBy === "status") {
+        key = f.status.toLowerCase();
+        const statusNames: Record<string, string> = {
+          open: "Open Findings",
+          triage: "Under Triage",
+          fixed: "Resolved / Fixed",
+          false_positive: "Suppressed / False Positive",
+        };
+        label = statusNames[key] || f.status;
+        const statusOrder: Record<string, number> = { open: 1, triage: 2, fixed: 3, false_positive: 4 };
+        order = statusOrder[key] || 5;
+      } else if (groupBy === "exploitability") {
+        if (f.is_kev) {
+          key = "kev";
+          label = "Actively Exploited (CISA KEV)";
+          order = 1;
+        } else if ((f.epss_score ?? 0) >= 0.1) {
+          key = "high_epss";
+          label = "High EPSS Exploitability (>10%)";
+          order = 2;
+        } else {
+          key = "standard";
+          label = "Standard Vulnerabilities";
+          order = 3;
+        }
+      }
+
+      if (!map.has(key)) {
+        map.set(key, { label, items: [], order });
+      }
+      map.get(key)!.items.push(f);
+    }
+
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([key, data]) => {
+        const maxRisk = Math.max(
+          ...data.items.map((i) =>
+            Math.max(
+              typeof i.effective_priority_score === "number" ? i.effective_priority_score : 0,
+              typeof i.risk_score === "number" ? i.risk_score : 0,
+            ),
+          ),
+          0,
+        );
+        return {
+          key,
+          label: data.label,
+          items: data.items,
+          maxRisk,
+        };
+      });
+  }, [filteredAndSortedFindings, groupBy]);
+
+  const hasActiveFilters = Boolean(
+    matrixCell ||
+      threatFilter !== "all" ||
+      severityFilter !== "all" ||
+      searchQuery.trim() ||
+      sortBy !== "risk_desc" ||
+      groupBy !== "none",
+  );
+
+  const resetAllFilters = () => {
+    setMatrixCell(null);
+    setThreatFilter("all");
+    setSeverityFilter("all");
+    setSearchQuery("");
+    setSortBy("risk_desc");
+    setGroupBy("none");
+  };
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const renderFindingRow = (f: Finding) => (
+    <li key={f.id}>
+      <button
+        type="button"
+        className="finding-row-btn"
+        onClick={() => {
+          setSelected(f);
+          setFixPlan(null);
+        }}
+      >
+        <span className={`badge ${f.severity}`}>{f.severity}</span>
+        <span className="finding-row-main">
+          <b>{f.title}</b>
+          <span className="muted small">
+            {f.engine}
+            {f.file_path
+              ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}`
+              : ""}
+            {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
+          </span>
+          <Phase6AFindingBadges
+            finding={toPhase6AFinding(f, scan.project_id)}
+          />
+        </span>
+        <span className="finding-row-status">
+          {f.status.replace(/_/g, " ")}
+        </span>
+        <span
+          className="finding-row-risk"
+          title={`Risk Score: ${f.risk_score.toFixed(1)} | Effective Priority Score: ${(f.effective_priority_score ?? f.risk_score).toFixed(1)}`}
+        >
+          {(f.effective_priority_score ?? f.risk_score).toFixed(1)}
+        </span>
+        <span className="finding-row-chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M9 6l6 6-6 6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+    </li>
+  );
+
   const caption = shareCaption(scan, projectName);
   const scanning = scan.status === "queued" || scan.status === "running";
   const progressPct = Math.max(0, Math.min(100, Number(scan.progress?.percent ?? (scanning ? 2 : 100))));
@@ -312,12 +684,12 @@ export function ScanReportModal({
             ) : (
               <>
                 <div>
-                  <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
+                  <b>{computedMaxRisk}</b>
                   <span className="muted">
                     {" "}
                     ·{" "}
                     {findingsLoading
-                      ? `${scan.summary?.findings_count ?? "…"} findings`
+                      ? `${scan.summary?.findings_count ?? (findings.length > 0 ? findings.length : "…")} findings`
                       : `${sorted.length} findings`}
                   </span>
                 </div>
@@ -380,7 +752,176 @@ export function ScanReportModal({
       ) : null}
 
       <div className="report-findings modal-body-pad">
-        {scanning ? null : findingsLoading ? (
+        {/* Tab switcher: Findings vs SBOM */}
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            borderBottom: "1px solid var(--line, #e2e8f0)",
+            marginBottom: "16px",
+          }}
+        >
+          <button
+            type="button"
+            className={`btn ghost ${activeTab === "findings" ? "active" : ""}`}
+            onClick={() => setActiveTab("findings")}
+            style={{
+              borderBottom:
+                activeTab === "findings"
+                  ? "2.5px solid var(--accent, #2563eb)"
+                  : "2.5px solid transparent",
+              borderRadius: 0,
+              padding: "8px 16px",
+              fontWeight: activeTab === "findings" ? 700 : 500,
+              color: activeTab === "findings" ? "var(--ink, #0f172a)" : "var(--muted, #64748b)",
+              background: "transparent",
+            }}
+          >
+            Findings ({findings.length})
+          </button>
+          <button
+            type="button"
+            className={`btn ghost ${activeTab === "sbom" ? "active" : ""}`}
+            onClick={() => setActiveTab("sbom")}
+            style={{
+              borderBottom:
+                activeTab === "sbom"
+                  ? "2.5px solid var(--accent, #2563eb)"
+                  : "2.5px solid transparent",
+              borderRadius: 0,
+              padding: "8px 16px",
+              fontWeight: activeTab === "sbom" ? 700 : 500,
+              color: activeTab === "sbom" ? "var(--ink, #0f172a)" : "var(--muted, #64748b)",
+              background: "transparent",
+            }}
+          >
+            SBOM &amp; Licenses
+          </button>
+          <button
+            type="button"
+            className={`btn ghost ${activeTab === "compliance" ? "active" : ""}`}
+            onClick={() => setActiveTab("compliance")}
+            style={{
+              borderBottom:
+                activeTab === "compliance"
+                  ? "2.5px solid var(--accent, #2563eb)"
+                  : "2.5px solid transparent",
+              borderRadius: 0,
+              padding: "8px 16px",
+              fontWeight: activeTab === "compliance" ? 700 : 500,
+              color: activeTab === "compliance" ? "var(--ink, #0f172a)" : "var(--muted, #64748b)",
+              background: "transparent",
+            }}
+          >
+            Compliance &amp; SLA
+          </button>
+        </div>
+
+        {activeTab === "compliance" ? (
+          <section className="scan-report-section">
+            {complianceLoading ? (
+              <div className="report-findings-loading">
+                <LoadingMark label="Evaluating OWASP Top 10, SOC 2 Type II & ISO 27001 controls…" />
+              </div>
+            ) : complianceError || !compliance ? (
+              <p className="muted small">{complianceError || "Compliance posture unavailable."}</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+                  <div>
+                    <h4 style={{ margin: 0 }}>
+                      Overall Readiness: {compliance.overall_readiness_score}% · {compliance.overall_verdict}
+                    </h4>
+                    <span className="muted small">
+                      Overdue SLA: {compliance.total_overdue_sla} · Pending Suppressions: {compliance.pending_suppressions_count} · SBOM Verified:{" "}
+                      {compliance.sbom_verified ? "Yes" : "No"}
+                    </span>
+                  </div>
+                  <a
+                    className="btn primary btn-sm"
+                    href={`/workspace/projects/${scan.project_id}/scans/${scan.id}/compliance/export`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Download Audit Certificate (.html / Print PDF)
+                  </a>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                  {(
+                    [
+                      compliance.frameworks.owasp_top_10,
+                      compliance.frameworks.soc2,
+                      compliance.frameworks.iso27001,
+                    ] as const
+                  ).map((fw) => (
+                    <div key={fw.name} className="card" style={{ padding: 14, borderTop: "3px solid var(--accent-primary, #3b82f6)" }}>
+                      <div className="muted small">{fw.name}</div>
+                      <div style={{ fontSize: "1.6rem", fontWeight: 700, margin: "6px 0" }}>{fw.readiness_score}%</div>
+                      <div className="muted small">
+                        Pass: {fw.pass_count} · Warn: {fw.warn_count} · Fail: {fw.fail_count}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {(
+                  [
+                    compliance.frameworks.owasp_top_10,
+                    compliance.frameworks.soc2,
+                    compliance.frameworks.iso27001,
+                  ] as const
+                ).map((fw) => (
+                  <div key={fw.name} style={{ border: "1px solid var(--line, #e2e8f0)", borderRadius: 10, overflow: "hidden", background: "var(--surface, #ffffff)" }}>
+                    <div style={{ padding: "10px 14px", background: "var(--bg, #f8fafc)", color: "var(--ink, #0f172a)", borderBottom: "1px solid var(--line, #e2e8f0)", fontWeight: 700 }}>
+                      {fw.name} ({fw.verdict})
+                    </div>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                      <thead>
+                        <tr style={{ textAlign: "left", borderBottom: "1px solid var(--line, #e2e8f0)", color: "var(--ink-soft, #334155)", background: "var(--bg, #f8fafc)" }}>
+                          <th style={{ padding: "8px 12px" }}>Control</th>
+                          <th style={{ padding: "8px 12px" }}>Objective</th>
+                          <th style={{ padding: "8px 12px" }}>Status</th>
+                          <th style={{ padding: "8px 12px" }}>Open Findings</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fw.controls.map((ctrl) => (
+                          <tr key={ctrl.control_id} style={{ borderBottom: "1px solid var(--line, #e2e8f0)" }}>
+                            <td style={{ padding: "8px 12px" }}>
+                              <code>{ctrl.control_id}</code>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <strong>{ctrl.title}</strong>
+                              <div className="muted small">{ctrl.description}</div>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>
+                              <span
+                                className={`badge ${
+                                  ctrl.status === "pass"
+                                    ? "info"
+                                    : ctrl.status === "warn"
+                                      ? "medium"
+                                      : "critical"
+                                }`}
+                              >
+                                {ctrl.status.toUpperCase()}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px 12px" }}>{ctrl.finding_count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : activeTab === "sbom" ? (
+          <ScanSbomTab projectId={scan.project_id} scanId={scan.id} />
+        ) : scanning ? null : findingsLoading ? (
+
           <div className="report-findings-loading">
             <LoadingMark
               size="sm"
@@ -391,49 +932,140 @@ export function ScanReportModal({
               }
             />
           </div>
-        ) : !sorted.length ? (
-          <div className="empty-state compact">No findings.</div>
         ) : (
-          <div className="finding-table">
-            <div className="finding-table-head" aria-hidden="true">
-              <span>Severity</span>
-              <span>Finding</span>
-              <span>Status</span>
-              <span>Risk</span>
-              <span />
-            </div>
-            <ul className="finding-list">
-              {sorted.map((f) => (
-                <li key={f.id}>
-                  <button type="button" className="finding-row-btn" onClick={() => setSelected(f)}>
-                    <span className={`badge ${f.severity}`}>{f.severity}</span>
-                    <span className="finding-row-main">
-                      <b>{f.title}</b>
-                      <span className="muted small">
-                        {f.engine}
-                        {f.file_path ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}` : ""}
-                        {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
-                      </span>
-                    </span>
-                    <span className="finding-row-status">{f.status.replace(/_/g, " ")}</span>
-                    <span className="finding-row-risk">{f.risk_score.toFixed(1)}</span>
-                    <span className="finding-row-chevron" aria-hidden="true">
-                      <svg viewBox="0 0 24 24">
-                        <path
-                          d="M9 6l6 6-6 6"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.75"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
+          <>
+            {/* Phase 6A Correlation Callout Banner */}
+            {(scan.raw_findings_count && scan.raw_findings_count > (scan.correlated_findings_count ?? findings.length)) ||
+            (scan.kev_findings_count ?? 0) > 0 ? (
+              <DeduplicationCalloutBanner
+                rawCount={scan.raw_findings_count || findings.length}
+                correlatedCount={scan.correlated_findings_count || findings.length}
+                kevCount={scan.kev_findings_count || 0}
+              />
+            ) : null}
+
+            {/* 5x5 Quantitative Risk Assessment Matrix */}
+            {!scanning && sorted.length > 0 ? (
+              <RiskMatrixCard
+                findings={sorted}
+                selectedCell={matrixCell}
+                onSelectCell={setMatrixCell}
+              />
+            ) : null}
+
+            {/* Findings Toolbar: Search, Sort By, Group By, Severity & Threat Filtering */}
+            <FindingsToolbar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              groupBy={groupBy}
+              onGroupChange={setGroupBy}
+              severityFilter={severityFilter}
+              onSeverityFilterChange={setSeverityFilter}
+              threatFilter={threatFilter}
+              onThreatFilterChange={setThreatFilter}
+              totalCount={findings.length}
+              filteredCount={filteredAndSortedFindings.length}
+              onResetFilters={resetAllFilters}
+              hasActiveFilters={hasActiveFilters}
+            />
+
+            {!filteredAndSortedFindings.length ? (
+              <div className="empty-state compact">
+                {findings.length === 0
+                  ? "No findings."
+                  : "No findings match the selected filters."}
+              </div>
+            ) : groupBy !== "none" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {groupedFindings.map((group) => {
+                  const isCollapsed = collapsedGroups[group.key];
+                  return (
+                    <div
+                      key={group.key}
+                      style={{
+                        border: "1px solid var(--line, #e2e8f0)",
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        backgroundColor: "var(--surface, #ffffff)",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.key)}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "10px 14px",
+                          backgroundColor: "var(--bg, #f8fafc)",
+                          border: "none",
+                          borderBottom: isCollapsed ? "none" : "1px solid var(--line, #e2e8f0)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: "0.8rem", color: "var(--muted, #64748b)" }}>
+                            {isCollapsed ? "▶" : "▼"}
+                          </span>
+                          <strong style={{ fontSize: "0.85rem", color: "var(--ink, #0f172a)" }}>
+                            {group.label}
+                          </strong>
+                          <span
+                            style={{
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              padding: "1px 7px",
+                              borderRadius: 999,
+                              backgroundColor: "var(--surface, #ffffff)",
+                              border: "1px solid var(--line, #cbd5e1)",
+                              color: "var(--ink-soft, #334155)",
+                            }}
+                          >
+                            {group.items.length}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: "0.75rem", color: "var(--muted, #64748b)" }}>
+                          Max Risk: <strong>{group.maxRisk.toFixed(1)}</strong>
+                        </span>
+                      </button>
+
+                      {!isCollapsed ? (
+                        <div className="finding-table" style={{ margin: 0, border: "none", borderRadius: 0 }}>
+                          <div className="finding-table-head" aria-hidden="true">
+                            <span>Severity</span>
+                            <span>Finding</span>
+                            <span>Status</span>
+                            <span>Risk</span>
+                            <span />
+                          </div>
+                          <ul className="finding-list">
+                            {group.items.map(renderFindingRow)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="finding-table">
+                <div className="finding-table-head" aria-hidden="true">
+                  <span>Severity</span>
+                  <span>Finding</span>
+                  <span>Status</span>
+                  <span>Risk</span>
+                  <span />
+                </div>
+                <ul className="finding-list">
+                  {filteredAndSortedFindings.map(renderFindingRow)}
+                </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
@@ -487,6 +1119,11 @@ export function ScanReportModal({
                     <span className="badge muted">{selected.vuln_family}</span>
                     <span className="badge muted">risk {selected.risk_score.toFixed(1)}</span>
                   </div>
+                  <div style={{ marginTop: "10px", marginBottom: "10px" }}>
+                    <Phase6AFindingBadges
+                      finding={toPhase6AFinding(selected, scan.project_id)}
+                    />
+                  </div>
                   <p className="muted small">
                     {selected.engine}
                     {selected.rule_id ? ` · ${selected.rule_id}` : ""}
@@ -509,6 +1146,50 @@ export function ScanReportModal({
                   ) : null}
                   {selected.message ? <p>{selected.message}</p> : null}
                   {selected.snippet ? <pre className="finding-snippet">{selected.snippet}</pre> : null}
+
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={fixPlanBusy}
+                      onClick={async () => {
+                        setFixPlanBusy(true);
+                        try {
+                          const plan = await api<{
+                            branch_name: string;
+                            commit_message: string;
+                            pr_title: string;
+                            pr_body: string;
+                            unified_diff: string;
+                          }>(`/workspace/findings/${selected.id}/fix-plan`, { method: "POST" });
+                          setFixPlan(plan);
+                        } finally {
+                          setFixPlanBusy(false);
+                        }
+                      }}
+                    >
+                      {fixPlanBusy ? "Generating Patch…" : "Generate Fix Patch / PR"}
+                    </button>
+                  </div>
+
+                  {fixPlan ? (
+                    <div style={{ marginTop: 12, padding: 12, borderRadius: 8, border: "1px solid var(--border-subtle, #1e293b)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <strong>Branch: <code>{fixPlan.branch_name}</code></strong>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => navigator.clipboard.writeText(fixPlan.unified_diff)}
+                        >
+                          Copy Unified Diff
+                        </button>
+                      </div>
+                      <div className="muted small" style={{ marginBottom: 6 }}>
+                        Commit: <code>{fixPlan.commit_message}</code>
+                      </div>
+                      <pre className="finding-snippet">{fixPlan.unified_diff}</pre>
+                    </div>
+                  ) : null}
                   {selected.ai_verdict ? (
                     <p>
                       <b>AI:</b> {selected.ai_verdict}
