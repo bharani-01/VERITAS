@@ -19,15 +19,29 @@ export function AdminShell() {
   }, []);
 
   useEffect(() => {
-    api<{ user: User }>("/auth/me")
-      .then(({ user: current }) => {
+    let active = true;
+    async function checkAuth(retries = 1) {
+      try {
+        const { user: current } = await api<{ user: User }>("/auth/me");
+        if (!active) return;
         if (current.role !== "admin") {
-          navigate("/user/");
+          navigate("/user/", { replace: true });
           return;
         }
         setUser(current);
-      })
-      .catch(() => navigate("/"));
+      } catch (err) {
+        if (!active) return;
+        if (retries > 0) {
+          setTimeout(() => void checkAuth(retries - 1), 600);
+          return;
+        }
+        navigate("/");
+      }
+    }
+    void checkAuth();
+    return () => {
+      active = false;
+    };
   }, [navigate]);
 
   function onToggle() {

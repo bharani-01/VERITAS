@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthLinks, AuthShell, Link } from "../components/AuthShell";
@@ -23,6 +23,23 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    api<{ user: User }>("/auth/me")
+      .then(({ user: current }) => {
+        if (!active) return;
+        if (current?.status === "active") {
+          navigate(current.role === "admin" ? "/admin/" : "/user/", { replace: true });
+        }
+      })
+      .catch(() => {
+        /* Not logged in, stay on LoginPage */
+      });
+    return () => {
+      active = false;
+    };
+  }, [navigate]);
 
   function fillDemo(kind: keyof typeof DEMO) {
     const next = DEMO[kind];

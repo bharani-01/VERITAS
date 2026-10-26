@@ -26,7 +26,7 @@ from app.services.http_classifier import (
     _XSS,
 )
 
-# Paths exempt from rate limiting (assets, liveness, long-lived websockets)
+# Paths exempt from rate limiting (assets, liveness, session check, long-lived websockets)
 EXEMPT_PREFIXES = (
     "/assets",
     "/brand",
@@ -36,6 +36,7 @@ EXEMPT_PREFIXES = (
     "/site.webmanifest",
     "/icons",
     "/health",
+    "/auth/me",
     "/admin/audit-events/ws",
 )
 
@@ -195,7 +196,7 @@ class RateLimiter:
                 name="global_api",
                 description="Baseline global IP rate limit across all application routes",
                 scope="Catch-all baseline for all API endpoints",
-                limit=120,
+                limit=300,
                 window_seconds=60,
                 path_regex=r"^/(auth|admin|workspace|public|api)",
                 exempt_in_test=True,
