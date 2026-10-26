@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import Chart from "react-apexcharts";
 import type { ApexOptions } from "apexcharts";
 import { LoadingMark } from "../components/LoadingMark";
@@ -119,6 +118,7 @@ export function AdminSecurityPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [wsConnected, setWsConnected] = useState(false);
   const [scope, setScope] = useState<Scope>("all");
   const [classFilter, setClassFilter] = useState<ClassFilter>("");
   const [sevFilter, setSevFilter] = useState<SevFilter>("");
@@ -197,6 +197,102 @@ export function AdminSecurityPage() {
     if (!autoRefresh) return;
     const timer = window.setInterval(() => void loadOverview(), POLL_MS);
     return () => window.clearInterval(timer);
+  }, [autoRefresh, loadOverview]);
+
+  // Real-time WebSocket stream for instant security and HTTP telemetry updates
+  useEffect(() => {
+    if (!autoRefresh) {
+      setWsConnected(false);
+      return;
+    }
+
+    let socket: WebSocket | null = null;
+    let pingTimer: number | undefined;
+    let isDisposed = false;
+
+    function connect() {
+      if (isDisposed) return;
+      try {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/admin/audit-events/ws`;
+        socket = new WebSocket(wsUrl);
+
+        socket.onopen = () => {
+          if (isDisposed) {
+            socket?.close();
+            return;
+          }
+          setWsConnected(true);
+          pingTimer = window.setInterval(() => {
+            if (socket?.readyState === WebSocket.OPEN) {
+              socket.send("ping");
+            }
+          }, 20000);
+        };
+
+        socket.onmessage = (event) => {
+          if (isDisposed) return;
+          try {
+            const parsed = JSON.parse(event.data);
+            if (parsed.type === "audit_event" && parsed.event) {
+              const ev = parsed.event;
+              if (ev.how?.path) {
+                const item: HttpItem = {
+                  id: ev.id,
+                  method: (ev.how.method || "GET").toUpperCase(),
+                  path: ev.how.path,
+                  status_code: ev.status_code ?? ev.how.status_code ?? 200,
+                  duration_ms: 10,
+                  ip_address: ev.ip_address,
+                  classification:
+                    ev.action.startsWith("api_") && ev.action !== "api_request"
+                      ? ev.action.replace("api_", "")
+                      : ev.action === "rate_limited"
+                      ? "auth_anomaly"
+                      : "clean",
+                  severity: ev.severity || "info",
+                  signals: [],
+                  created_at: ev.created_at,
+                };
+
+                const sc = scopeRef.current;
+                const cf = classRef.current;
+                const sf = sevRef.current;
+                const pq = pathRef.current.toLowerCase();
+
+                const matchesScope = sc === "all" || (sc === "flagged" && item.classification !== "clean");
+                const matchesClass = !cf || item.classification === cf;
+                const matchesSev = !sf || item.severity.toLowerCase() === sf.toLowerCase();
+                const matchesPath = !pq || item.path.toLowerCase().includes(pq);
+
+                if (matchesScope && matchesClass && matchesSev && matchesPath) {
+                  setTraffic((prev) => [item, ...prev.filter((i) => i.id !== item.id)]);
+                }
+              }
+
+              void loadOverview();
+            }
+          } catch {
+            // ignore non-json
+          }
+        };
+
+        socket.onclose = () => {
+          setWsConnected(false);
+          window.clearInterval(pingTimer);
+        };
+      } catch {
+        setWsConnected(false);
+      }
+    }
+
+    connect();
+
+    return () => {
+      isDisposed = true;
+      window.clearInterval(pingTimer);
+      socket?.close();
+    };
   }, [autoRefresh, loadOverview]);
 
   const loadMore = useCallback(async () => {
@@ -421,20 +517,10 @@ export function AdminSecurityPage() {
           <h1>Security</h1>
         </div>
         <div className="sec-dash-actions">
-          <span className={`sec-live-pill sec-live-${status}`}>
-            <span className="sec-live-dot" aria-hidden="true" />
-            {STATUS_LABEL[status]}
-          </span>
           <label className="sec-auto">
             <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
-            Live
+            <span>Live {wsConnected && autoRefresh ? "(WS)" : ""}</span>
           </label>
-          <button type="button" className="btn ghost" onClick={() => void resetTraffic()} disabled={loading}>
-            Refresh
-          </button>
-          <Link className="btn ghost" to="/admin/audit">
-            Audit log
-          </Link>
         </div>
       </header>
 

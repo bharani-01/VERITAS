@@ -227,7 +227,6 @@ export function AdminAuditPage() {
 
   // Live Stream & State
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [wsConnected, setWsConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -246,6 +245,15 @@ export function AdminAuditPage() {
   actionRef.current = actionFilter;
 
   const hasMore = items.length < total;
+
+  useEffect(() => {
+    if (!selected) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
 
   const copyText = useCallback((text: string, field: string) => {
     if (!text) return;
@@ -310,7 +318,6 @@ export function AdminAuditPage() {
   // WebSocket Live Stream
   useEffect(() => {
     if (!autoRefresh) {
-      setWsConnected(false);
       return;
     }
 
@@ -330,7 +337,6 @@ export function AdminAuditPage() {
             socket?.close();
             return;
           }
-          setWsConnected(true);
           pingTimer = window.setInterval(() => {
             if (socket?.readyState === WebSocket.OPEN) {
               socket.send("ping");
@@ -427,11 +433,10 @@ export function AdminAuditPage() {
         };
 
         socket.onclose = () => {
-          setWsConnected(false);
           window.clearInterval(pingTimer);
         };
       } catch {
-        setWsConnected(false);
+        // ws connection failed
       }
     }
 
@@ -516,14 +521,7 @@ export function AdminAuditPage() {
           </nav>
           <div className="audit-title-row">
             <h1 className="audit-console-title">Audit Logs</h1>
-            <div className={`sec-live-badge ${wsConnected && autoRefresh ? "active" : ""}`}>
-              <span className="sec-pulse-dot" />
-              <span>{autoRefresh ? (wsConnected ? "Live (WebSocket)" : "Connecting…") : "Stream Paused"}</span>
-            </div>
           </div>
-          <p className="audit-console-subtitle">
-            Tamper-evident, real-time audit ledger tracking authentication, administrative operations, and API telemetry.
-          </p>
         </div>
 
         <div className="audit-console-actions">
@@ -794,7 +792,7 @@ export function AdminAuditPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className="audit-system-pill">⚙ System</span>
+                          <span className="audit-system-pill">System</span>
                         )}
                       </td>
                       <td>
@@ -837,7 +835,7 @@ export function AdminAuditPage() {
                           <code className="sec-ip-code">{event.ip_address || "—"}</code>
                           {event.location_label && (
                             <span className="sec-ip-loc" title={event.location_label}>
-                              📍 {event.location_label}
+                              {event.location_label}
                             </span>
                           )}
                         </div>
@@ -871,15 +869,25 @@ export function AdminAuditPage() {
       {/* 5. Deep Event Inspector Modal */}
       {selected &&
         createPortal(
-          <div className="audit-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modal-action-title">
-            <div className="audit-modal-box">
-              <div className="audit-modal-header">
-                <div className="audit-modal-title-col">
-                  <div className="audit-modal-kicker">Security & Audit Event Inspector</div>
-                  <h3 id="modal-action-title" className="audit-modal-action-title">
+          <div className="modal-root" role="presentation">
+            <button
+              type="button"
+              className="modal-backdrop"
+              aria-label="Close dialog"
+              onClick={() => setSelected(null)}
+            />
+            <div className="modal-panel audit-modal" role="dialog" aria-modal="true" aria-labelledby="modal-action-title">
+              <div className="audit-modal-head">
+                <div className="audit-modal-head-main">
+                  <div className="audit-modal-kicker-row">
+                    <span>Audit &amp; Security Inspector</span>
+                    <span className="audit-modal-dot" />
+                    <span className="audit-modal-time">{formatTime(selected.created_at).full}</span>
+                  </div>
+                  <h2 id="modal-action-title">
                     {selected.action}
-                  </h3>
-                  <div className="audit-modal-chips-row">
+                  </h2>
+                  <div className="audit-modal-chips">
                     <span className={`audit-sev sev-${severityTone(selected.severity)}`}>
                       {(selected.severity || "info").toUpperCase()}
                     </span>
