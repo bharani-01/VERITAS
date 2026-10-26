@@ -5,12 +5,17 @@ import { MarkdownReport } from "./MarkdownReport";
 import { OrbitLoader } from "./OrbitLoader";
 import {
   DeduplicationCalloutBanner,
-  FindingQuickFilterBar,
   Phase6AFindingBadges,
 } from "./scan/Phase6AFindingBadges";
+import {
+  FindingsToolbar,
+  type SortOption,
+  type GroupByOption,
+  type ThreatFilter,
+} from "./scan/FindingsToolbar";
 import { RiskMatrixCard, computeFindingRiskCell, type RiskCellCoord } from "./scan/RiskMatrixCard";
 import { ScanSbomTab } from "./scan/ScanSbomTab";
-import type { FindingQuickFilter, ScanFindingPhase6A } from "../types/phase6a";
+import type { ScanFindingPhase6A } from "../types/phase6a";
 import { api } from "../lib/api";
 import { githubBlobUrl, githubCommitUrl } from "../lib/githubLinks";
 import { exportScanReport, sortFindingsByRisk, type ExportFormat } from "../lib/reportExport";
@@ -173,7 +178,12 @@ export function ScanReportModal({
   const [exportPos, setExportPos] = useState<{ top: number; left: number } | null>(null);
   const [selected, setSelected] = useState<Finding | null>(null);
   const [activeTab, setActiveTab] = useState<"findings" | "sbom" | "compliance">("findings");
-  const [quickFilter, setQuickFilter] = useState<FindingQuickFilter>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortOption>("risk_desc");
+  const [groupBy, setGroupBy] = useState<GroupByOption>("none");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [threatFilter, setThreatFilter] = useState<ThreatFilter>("all");
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [compliance, setCompliance] = useState<ScanComplianceResponse | null>(null);
   const [complianceLoading, setComplianceLoading] = useState(false);
   const [complianceError, setComplianceError] = useState<string | null>(null);
@@ -213,26 +223,43 @@ export function ScanReportModal({
   const liveLogRef = useRef<HTMLDivElement>(null);
 
   const sorted = useMemo(() => sortFindingsByRisk(findings), [findings]);
-  const phase6aFindings = useMemo(
-    () => findings.map((f) => toPhase6AFinding(f, scan.project_id)),
-    [findings, scan.project_id],
-  );
 
-  const filteredFindings = useMemo(() => {
-    let list = sorted;
+  const computedMaxRisk = useMemo(() => {
+    const fromSummary = scan.risk_summary?.max_risk ?? scan.summary?.max_risk;
+    if (typeof fromSummary === "number" && !isNaN(fromSummary)) {
+      return fromSummary.toFixed(1);
+    }
+    if (findings.length > 0) {
+      const maxVal = Math.max(
+        ...findings.map((f) =>
+          Math.max(
+            typeof f.effective_priority_score === "number" ? f.effective_priority_score : 0,
+            typeof f.risk_score === "number" ? f.risk_score : 0,
+          ),
+        ),
+      );
+      return maxVal > 0 ? maxVal.toFixed(1) : "0.0";
+    }
+    return "—";
+  }, [scan.risk_summary, scan.summary, findings]);
+
+  const filteredAndSortedFindings = useMemo(() => {
+    let list = [...findings];
+
     if (matrixCell) {
       list = list.filter((f) => {
         const cell = computeFindingRiskCell(f);
         return cell.likelihood === matrixCell.likelihood && cell.impact === matrixCell.impact;
       });
     }
-    if (quickFilter === "kev") {
+
+    if (threatFilter === "kev") {
       list = list.filter((f) => f.is_kev);
-    } else if (quickFilter === "high_epss") {
+    } else if (threatFilter === "high_epss") {
       list = list.filter((f) => (f.epss_score ?? 0) >= 0.1);
-    } else if (quickFilter === "multi_engine") {
+    } else if (threatFilter === "multi_engine") {
       list = list.filter((f) => (f.engine_count ?? 1) >= 2);
-    } else if (quickFilter === "license") {
+    } else if (threatFilter === "license") {
       list = list.filter(
         (f) =>
           f.vuln_family === "license" ||
@@ -240,8 +267,238 @@ export function ScanReportModal({
           (f as any).category === "license",
       );
     }
+
+    if (severityFilter !== "all") {
+      list = list.filter((f) => (f.severity || "").toLowerCase() === severityFilter.toLowerCase());
+    }
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (f) =>
+          f.title.toLowerCase().includes(q) ||
+          (f.file_path && f.file_path.toLowerCase().includes(q)) ||
+          (f.cve_id && f.cve_id.toLowerCase().includes(q)) ||
+          (f.rule_id && f.rule_id.toLowerCase().includes(q)) ||
+          (f.engine && f.engine.toLowerCase().includes(q)),
+      );
+    }
+
+    const sevWeight: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+    const getSev = (s?: string | null) => sevWeight[(s || "").toLowerCase()] || 0;
+
+    list.sort((a, b) => {
+      switch (sortBy) {
+        case "risk_desc":
+          return (b.risk_score || 0) - (a.risk_score || 0);
+        case "risk_asc":
+          return (a.risk_score || 0) - (b.risk_score || 0);
+        case "priority_desc": {
+          const scoreB = b.effective_priority_score ?? b.risk_score ?? 0;
+          const scoreA = a.effective_priority_score ?? a.risk_score ?? 0;
+          return scoreB - scoreA;
+        }
+        case "severity_desc":
+          return getSev(b.severity) - getSev(a.severity);
+        case "severity_asc":
+          return getSev(a.severity) - getSev(b.severity);
+        case "epss_desc":
+          return (b.epss_score || 0) - (a.epss_score || 0);
+        case "title_asc":
+          return a.title.localeCompare(b.title);
+        case "title_desc":
+          return b.title.localeCompare(a.title);
+        case "engine_asc":
+          return (a.engine || "").localeCompare(b.engine || "");
+        case "sla_asc":
+          return (a.sla_due_at || "9999").localeCompare(b.sla_due_at || "9999");
+        default:
+          return (b.risk_score || 0) - (a.risk_score || 0);
+      }
+    });
+
     return list;
-  }, [sorted, quickFilter, matrixCell]);
+  }, [findings, matrixCell, threatFilter, severityFilter, searchQuery, sortBy]);
+
+  type FindingGroup = {
+    key: string;
+    label: string;
+    items: Finding[];
+    maxRisk: number;
+  };
+
+  const groupedFindings = useMemo<FindingGroup[]>(() => {
+    if (groupBy === "none") return [];
+
+    const sevWeight: Record<string, number> = {
+      critical: 5,
+      high: 4,
+      medium: 3,
+      low: 2,
+      info: 1,
+    };
+    const getSev = (s?: string | null) => sevWeight[(s || "").toLowerCase()] || 0;
+
+    const map = new Map<string, { label: string; items: Finding[]; order: number }>();
+
+    for (const f of filteredAndSortedFindings) {
+      let key = "other";
+      let label = "Other";
+      let order = 99;
+
+      if (groupBy === "severity") {
+        key = (f.severity || "info").toLowerCase();
+        const names: Record<string, string> = {
+          critical: "Critical Severity",
+          high: "High Severity",
+          medium: "Medium Severity",
+          low: "Low Severity",
+          info: "Informational",
+        };
+        label = names[key] || `${f.severity.toUpperCase()} Severity`;
+        order = 10 - getSev(f.severity);
+      } else if (groupBy === "vuln_family") {
+        key = (f.vuln_family || "general").toLowerCase();
+        label = `Category: ${(f.vuln_family || "General").toUpperCase()}`;
+        order = key.charCodeAt(0);
+      } else if (groupBy === "engine") {
+        key = (f.engine || "unknown").toLowerCase();
+        label = `Engine: ${f.engine || "Unknown"}`;
+        order = key.charCodeAt(0);
+      } else if (groupBy === "status") {
+        key = f.status.toLowerCase();
+        const statusNames: Record<string, string> = {
+          open: "Open Findings",
+          triage: "Under Triage",
+          fixed: "Resolved / Fixed",
+          false_positive: "Suppressed / False Positive",
+        };
+        label = statusNames[key] || f.status;
+        const statusOrder: Record<string, number> = { open: 1, triage: 2, fixed: 3, false_positive: 4 };
+        order = statusOrder[key] || 5;
+      } else if (groupBy === "exploitability") {
+        if (f.is_kev) {
+          key = "kev";
+          label = "Actively Exploited (CISA KEV)";
+          order = 1;
+        } else if ((f.epss_score ?? 0) >= 0.1) {
+          key = "high_epss";
+          label = "High EPSS Exploitability (>10%)";
+          order = 2;
+        } else {
+          key = "standard";
+          label = "Standard Vulnerabilities";
+          order = 3;
+        }
+      }
+
+      if (!map.has(key)) {
+        map.set(key, { label, items: [], order });
+      }
+      map.get(key)!.items.push(f);
+    }
+
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([key, data]) => {
+        const maxRisk = Math.max(
+          ...data.items.map((i) =>
+            Math.max(
+              typeof i.effective_priority_score === "number" ? i.effective_priority_score : 0,
+              typeof i.risk_score === "number" ? i.risk_score : 0,
+            ),
+          ),
+          0,
+        );
+        return {
+          key,
+          label: data.label,
+          items: data.items,
+          maxRisk,
+        };
+      });
+  }, [filteredAndSortedFindings, groupBy]);
+
+  const hasActiveFilters = Boolean(
+    matrixCell ||
+      threatFilter !== "all" ||
+      severityFilter !== "all" ||
+      searchQuery.trim() ||
+      sortBy !== "risk_desc" ||
+      groupBy !== "none",
+  );
+
+  const resetAllFilters = () => {
+    setMatrixCell(null);
+    setThreatFilter("all");
+    setSeverityFilter("all");
+    setSearchQuery("");
+    setSortBy("risk_desc");
+    setGroupBy("none");
+  };
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const renderFindingRow = (f: Finding) => (
+    <li key={f.id}>
+      <button
+        type="button"
+        className="finding-row-btn"
+        onClick={() => {
+          setSelected(f);
+          setFixPlan(null);
+        }}
+      >
+        <span className={`badge ${f.severity}`}>{f.severity}</span>
+        <span className="finding-row-main">
+          <b>{f.title}</b>
+          <span className="muted small">
+            {f.engine}
+            {f.file_path
+              ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}`
+              : ""}
+            {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
+          </span>
+          <Phase6AFindingBadges
+            finding={toPhase6AFinding(f, scan.project_id)}
+          />
+        </span>
+        <span className="finding-row-status">
+          {f.status.replace(/_/g, " ")}
+        </span>
+        <span
+          className="finding-row-risk"
+          title={`Risk Score: ${f.risk_score.toFixed(1)} | Effective Priority Score: ${(f.effective_priority_score ?? f.risk_score).toFixed(1)}`}
+        >
+          {(f.effective_priority_score ?? f.risk_score).toFixed(1)}
+        </span>
+        <span className="finding-row-chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path
+              d="M9 6l6 6-6 6"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </button>
+    </li>
+  );
+
   const caption = shareCaption(scan, projectName);
   const scanning = scan.status === "queued" || scan.status === "running";
   const progressPct = Math.max(0, Math.min(100, Number(scan.progress?.percent ?? (scanning ? 2 : 100))));
@@ -427,12 +684,12 @@ export function ScanReportModal({
             ) : (
               <>
                 <div>
-                  <b>{scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}</b>
+                  <b>{computedMaxRisk}</b>
                   <span className="muted">
                     {" "}
                     ·{" "}
                     {findingsLoading
-                      ? `${scan.summary?.findings_count ?? "…"} findings`
+                      ? `${scan.summary?.findings_count ?? (findings.length > 0 ? findings.length : "…")} findings`
                       : `${sorted.length} findings`}
                   </span>
                 </div>
@@ -696,18 +953,103 @@ export function ScanReportModal({
               />
             ) : null}
 
-            {/* Quick Filter Bar */}
-            <FindingQuickFilterBar
-              activeFilter={quickFilter}
-              onSelectFilter={setQuickFilter}
-              findings={phase6aFindings}
+            {/* Findings Toolbar: Search, Sort By, Group By, Severity & Threat Filtering */}
+            <FindingsToolbar
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              groupBy={groupBy}
+              onGroupChange={setGroupBy}
+              severityFilter={severityFilter}
+              onSeverityFilterChange={setSeverityFilter}
+              threatFilter={threatFilter}
+              onThreatFilterChange={setThreatFilter}
+              totalCount={findings.length}
+              filteredCount={filteredAndSortedFindings.length}
+              onResetFilters={resetAllFilters}
+              hasActiveFilters={hasActiveFilters}
             />
 
-            {!filteredFindings.length ? (
+            {!filteredAndSortedFindings.length ? (
               <div className="empty-state compact">
                 {findings.length === 0
                   ? "No findings."
-                  : "No findings match the selected quick filter."}
+                  : "No findings match the selected filters."}
+              </div>
+            ) : groupBy !== "none" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {groupedFindings.map((group) => {
+                  const isCollapsed = collapsedGroups[group.key];
+                  return (
+                    <div
+                      key={group.key}
+                      style={{
+                        border: "1px solid var(--line, #e2e8f0)",
+                        borderRadius: 8,
+                        overflow: "hidden",
+                        backgroundColor: "var(--surface, #ffffff)",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleGroup(group.key)}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          padding: "10px 14px",
+                          backgroundColor: "var(--bg, #f8fafc)",
+                          border: "none",
+                          borderBottom: isCollapsed ? "none" : "1px solid var(--line, #e2e8f0)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: "0.8rem", color: "var(--muted, #64748b)" }}>
+                            {isCollapsed ? "▶" : "▼"}
+                          </span>
+                          <strong style={{ fontSize: "0.85rem", color: "var(--ink, #0f172a)" }}>
+                            {group.label}
+                          </strong>
+                          <span
+                            style={{
+                              fontSize: "0.72rem",
+                              fontWeight: 700,
+                              padding: "1px 7px",
+                              borderRadius: 999,
+                              backgroundColor: "var(--surface, #ffffff)",
+                              border: "1px solid var(--line, #cbd5e1)",
+                              color: "var(--ink-soft, #334155)",
+                            }}
+                          >
+                            {group.items.length}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: "0.75rem", color: "var(--muted, #64748b)" }}>
+                          Max Risk: <strong>{group.maxRisk.toFixed(1)}</strong>
+                        </span>
+                      </button>
+
+                      {!isCollapsed ? (
+                        <div className="finding-table" style={{ margin: 0, border: "none", borderRadius: 0 }}>
+                          <div className="finding-table-head" aria-hidden="true">
+                            <span>Severity</span>
+                            <span>Finding</span>
+                            <span>Status</span>
+                            <span>Risk</span>
+                            <span />
+                          </div>
+                          <ul className="finding-list">
+                            {group.items.map(renderFindingRow)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <div className="finding-table">
@@ -719,54 +1061,7 @@ export function ScanReportModal({
                   <span />
                 </div>
                 <ul className="finding-list">
-                  {filteredFindings.map((f) => (
-                    <li key={f.id}>
-                      <button
-                        type="button"
-                        className="finding-row-btn"
-                        onClick={() => {
-                          setSelected(f);
-                          setFixPlan(null);
-                        }}
-                      >
-                        <span className={`badge ${f.severity}`}>{f.severity}</span>
-                        <span className="finding-row-main">
-                          <b>{f.title}</b>
-                          <span className="muted small">
-                            {f.engine}
-                            {f.file_path
-                              ? ` · ${f.file_path}${f.line_start ? `:${f.line_start}` : ""}`
-                              : ""}
-                            {f.ai_verdict ? ` · AI ${f.ai_verdict}` : ""}
-                          </span>
-                          <Phase6AFindingBadges
-                            finding={toPhase6AFinding(f, scan.project_id)}
-                          />
-                        </span>
-                        <span className="finding-row-status">
-                          {f.status.replace(/_/g, " ")}
-                        </span>
-                        <span
-                          className="finding-row-risk"
-                          title={`Risk Score: ${f.risk_score.toFixed(1)} | Effective Priority Score: ${(f.effective_priority_score ?? f.risk_score).toFixed(1)}`}
-                        >
-                          {(f.effective_priority_score ?? f.risk_score).toFixed(1)}
-                        </span>
-                        <span className="finding-row-chevron" aria-hidden="true">
-                          <svg viewBox="0 0 24 24">
-                            <path
-                              d="M9 6l6 6-6 6"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="1.75"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                  {filteredAndSortedFindings.map(renderFindingRow)}
                 </ul>
               </div>
             )}

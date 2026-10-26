@@ -381,6 +381,52 @@ def public_scan(scan: Scan, project_name: str | None = None) -> dict:
             risk = json.loads(scan.risk_summary_json)
         except json.JSONDecodeError:
             risk = None
+
+    if summary is None and risk is not None:
+        summary = {
+            "max_risk": risk.get("max_risk"),
+            "findings_count": risk.get("open_findings"),
+            "by_severity": risk.get("by_severity"),
+        }
+    elif risk is None and summary is not None:
+        risk = {
+            "max_risk": summary.get("max_risk"),
+            "open_findings": summary.get("findings_count"),
+            "by_severity": summary.get("by_severity"),
+        }
+    elif summary is None and risk is None and scan.status in ("completed", "succeeded", "failed"):
+        try:
+            from sqlalchemy.orm import object_session
+            sess = object_session(scan)
+            if sess is not None:
+                from app.models.workspace import Finding
+                rows = (
+                    sess.query(Finding.severity, Finding.risk_score, Finding.effective_priority_score)
+                    .filter(Finding.scan_id == scan.id)
+                    .all()
+                )
+                if rows:
+                    sev_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
+                    max_r = 0.0
+                    for sev, rs, eps in rows:
+                        s = (sev or "info").lower()
+                        if s in sev_counts:
+                            sev_counts[s] += 1
+                        r = max(float(rs or 0.0), float(eps or 0.0))
+                        if r > max_r:
+                            max_r = r
+                    summary = {
+                        "findings_count": len(rows),
+                        "by_severity": sev_counts,
+                        "max_risk": round(max_r, 1),
+                    }
+                    risk = {
+                        "max_risk": round(max_r, 1),
+                        "open_findings": len(rows),
+                        "by_severity": sev_counts,
+                    }
+        except Exception:
+            pass
     return {
         "id": scan.id,
         "project_id": scan.project_id,

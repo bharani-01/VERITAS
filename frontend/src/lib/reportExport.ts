@@ -32,7 +32,20 @@ export function buildMarkdownReport(scan: Scan, findings: Finding[], projectName
     `- **Commit:** ${scan.commit_message || "—"}`,
     `- **Author:** ${scan.commit_author || "—"}`,
     `- **Findings:** ${sorted.length}`,
-    `- **Max risk:** ${scan.risk_summary?.max_risk ?? scan.summary?.max_risk ?? "—"}`,
+    `- **Max risk:** ${
+      scan.risk_summary?.max_risk ??
+      scan.summary?.max_risk ??
+      (sorted.length > 0
+        ? Math.max(
+            ...sorted.map((f) =>
+              Math.max(
+                typeof f.effective_priority_score === "number" ? f.effective_priority_score : 0,
+                typeof f.risk_score === "number" ? f.risk_score : 0,
+              ),
+            ),
+          ).toFixed(1)
+        : "—")
+    }`,
     ``,
   ];
   lines.push(`## Findings (risk-sorted)`, ``);
