@@ -2,6 +2,7 @@ import os
 from unittest.mock import MagicMock, patch
 
 os.environ["APP_ENV"] = "test"
+os.environ["SESSION_COOKIE_SECURE"] = "false"
 os.environ["VERITAS_BOOTSTRAP_ADMIN_EMAIL"] = "admin@veritas.example"
 os.environ["VERITAS_BOOTSTRAP_ADMIN_PASSWORD"] = "bootstrap-password-123"
 os.environ["VERITAS_BOOTSTRAP_ADMIN_NAME"] = "Bootstrap Admin"
